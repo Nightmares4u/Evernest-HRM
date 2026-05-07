@@ -1,10 +1,12 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-
-const PUBLIC_PATHS = ["/login", "/api/cron"];
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
+  let res = NextResponse.next({
+    request: {
+      headers: req.headers,
+    },
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,8 +16,15 @@ export async function middleware(req: NextRequest) {
         getAll() {
           return req.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(
+          cookiesToSet: {
+            name: string;
+            value: string;
+            options: CookieOptions;
+          }[]
+        ) {
           cookiesToSet.forEach(({ name, value, options }) => {
+            req.cookies.set(name, value);
             res.cookies.set(name, value, options);
           });
         },
@@ -23,20 +32,11 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const pathname = req.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-
-  if (!user && !isPublic) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
+  await supabase.auth.getUser();
 
   return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.svg).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
