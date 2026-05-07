@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 4 — attendance UI foundation.
+**Last updated**: Phase 5 — admin foundations. End of autonomous run for this session.
 
 ## Branch & commits
 
@@ -13,7 +13,8 @@
   - `76e7b1e` — feat: prepare Supabase seed workflow (Phase 1 — admin client + seed script).
   - `06c973e` — feat: HRM domain types + employee directory mock data (Phase 2).
   - `6f19103` — fix: stabilize auth middleware and prepare real sign-in flow (Phase 3).
-  - (next) — Phase 4: attendance UI foundation (Today panel, status chips, dashboard wired to mock).
+  - `6e2d620` — feat: add attendance UI foundation (Phase 4).
+  - (next) — Phase 5: admin foundations.
 - Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
 ## Build / typecheck
@@ -31,7 +32,7 @@
 - `app/(dashboard)/dashboard/page.tsx` — derives stat counts from `makeMockTodayAttendance()`. Two side panels: headcount/payroll, attendance snapshot. Both link into deeper pages.
 - `app/(dashboard)/employees/page.tsx` — directory table backed by mock data. Shows branch, department, role, shift, salary, remote days, exemption flags.
 - `app/(dashboard)/attendance/page.tsx` — Today panel: 5 summary cards (present/late/half-day/absent/pending), full row table with mode chip, expected/check-in/check-out times, worked minutes, status + needs-review chips, disabled Override button (lands Phase 5). Sunday banner. Footer note about exempt staff.
-- `app/(dashboard)/admin/page.tsx` — placeholder shell (Phase 5).
+- `app/(dashboard)/admin/page.tsx` — admin overview. Top stats (employees/payroll/exempt/remote-allowed), branch cards with default-shift + IP-whitelist, departments table, shifts table with grace/half-day thresholds, remote-roster table, and 6 dashed "planned" cards for upcoming controls (holidays, recurring tasks, payroll runs, audit log, IP whitelists, system settings). All buttons disabled — read-only foundations.
 
 ### Supabase glue
 - `lib/supabase/client.ts` — browser client (anon key).
@@ -104,8 +105,42 @@ Explicit paths:
 1. **Phase 1**: admin client + seed script + state refresh. ✅
 2. **Phase 2**: HRM domain types + mock employee directory. ✅
 3. **Phase 3**: Real login server action + middleware route protection (both env-safe). ✅
-4. **Phase 4 (this commit)**: Today attendance panel UI + status chips + dashboard wired to mock. ✅
-5. **Phase 5**: Admin foundations — branch/shift display, admin placeholders (no destructive actions).
+4. **Phase 4**: Today attendance panel UI + status chips + dashboard wired to mock. ✅
+5. **Phase 5 (this commit)**: Admin foundations — branch/shift/department display + remote roster + planned-control placeholders. ✅
+
+## End-of-session checkpoint
+
+All 5 phases of the autonomous-run plan complete on `dev`. Five green
+checkpoints — `npm run build` and `npx tsc --noEmit` clean before each
+commit. No destructive actions wired anywhere. No env vars required to
+build / serve the shell.
+
+### What's next (Phase 6+ — not yet started)
+
+In priority order for when work resumes:
+
+1. **Yashal — out of band**: provision Supabase project, apply
+   `supabase/migrations/0001_init.sql`, populate `.env.local`, run
+   `npm run seed:users`. After this, the existing auth scaffolding
+   activates automatically and middleware starts enforcing.
+2. **Real check-in / check-out** server actions in
+   `app/(dashboard)/attendance/actions.ts`. Wire the disabled Override
+   button to admin server actions with `audit_logs` writes.
+3. **Leave** request form + admin queue (already typed in
+   `lib/types/hrm.ts`).
+4. **Tasks** module — list, assign UI, today/upcoming/overdue filters.
+   Then recurring tasks template CRUD + daily-generation cron.
+5. **Marketing approval flow** — `requires_approval` + super-admin
+   approve action that sets `approved_by`/`approved_at`/`status='done'`.
+   Plus the redline view (`employee_overdue_tasks`) surfaced in admin.
+6. **Payroll runs + payslips** — generate-for-month, adjustments
+   editor, disbursement entry, printable HTML payslip. Dual
+   `/30` + `/26` math already documented in `HRM_MASTER_CONTEXT.md` §7.
+7. **Cron handlers** under `app/api/cron/*` — nightly attendance close,
+   monthly leave accrual, daily recurring-task generation. Protected
+   by `CRON_SECRET` header.
+8. **Audit log UI**.
+9. **Branch-manager filtered admin** view.
 6. **(Yashal — out of band)**: Provision Supabase project. Apply `0001_init.sql`. Populate `.env.local`. Run `npm run seed:users`.
 
 ## Decisions made autonomously this phase
