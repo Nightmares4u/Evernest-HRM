@@ -139,7 +139,47 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
   });
 }
 
-// ---------- attendance ----------
+// ---------- attendance: my own ----------
+
+export type MyTodayAttendance = AttendanceRecord & {
+  expected_start_pkt: string;
+  expected_end_pkt: string;
+};
+
+export async function getMyTodayAttendance(): Promise<MyTodayAttendance | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: empRow } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!empRow) return null;
+
+  const today = todayPKT();
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .select("*")
+    .eq("employee_id", empRow.id)
+    .eq("date", today)
+    .maybeSingle();
+  if (error) throw new Error(`getMyTodayAttendance: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    ...(data as AttendanceRecord),
+    expected_start_pkt: data.expected_start,
+    expected_end_pkt: data.expected_end,
+  };
+}
+
+// ---------- attendance: today panel ----------
 
 export async function listTodayAttendance(
   date?: string

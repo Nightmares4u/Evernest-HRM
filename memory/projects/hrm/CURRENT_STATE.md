@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 6 — real DB reads wired (Supabase live).
+**Last updated**: Phase 7 — real check-in / check-out wired.
 
 ## Branch & commits
 
@@ -15,7 +15,8 @@
   - `6f19103` — fix: stabilize auth middleware and prepare real sign-in flow (Phase 3).
   - `6e2d620` — feat: add attendance UI foundation (Phase 4).
   - `3918d0e` — feat: add admin foundation overview (Phase 5).
-  - (next) — Phase 6: wire pages to real Supabase reads (mock fallback for dev shell).
+  - `0db1dca` — feat: wire HRM pages to real Supabase reads (Phase 6).
+  - (next) — Phase 7: real check-in / check-out actions + dashboard widget.
 - Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
 ## Build / typecheck

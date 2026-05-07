@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Chip } from "@/components/StatusChip";
+import { MyAttendanceCard } from "@/components/MyAttendanceCard";
 import { weekdayPKT } from "@/lib/attendance/format";
 import {
   isSupabaseConfigured,
@@ -26,9 +27,14 @@ const PKR = new Intl.NumberFormat("en-PK", {
   maximumFractionDigits: 0,
 });
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; ok?: string }>;
+}) {
   const today = new Date();
   const live = isSupabaseConfigured();
+  const { error, ok } = await searchParams;
 
   const [me, records, employees] = await Promise.all([
     getCurrentUser(),
@@ -64,11 +70,24 @@ export default async function DashboardPage() {
         </p>
       </header>
 
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+      {ok && (
+        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+          {ok}
+        </div>
+      )}
+
       {!live && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
           Mock data (no Supabase env).
         </div>
       )}
+
+      <MyAttendanceCard me={me} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Present today" value={presentToday} tone="text-green-700" />
