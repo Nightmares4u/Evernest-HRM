@@ -1,0 +1,10 @@
+account_type,full_name,company_email,initial_password,user_role,branch_code,department,shift_name,monthly_salary,attendance_exempt,payroll_exempt,remote_allowed,remote_default_days,manager_email,hire_date,role_description,notes
+# Template for users.csv (the real file is gitignored).
+# account_type: 'system_admin' (Auth + app_users only) or 'employee' (full record).
+# branch_code: 'KHI' | 'LHE' | 'RMT'.
+# department: B2C Sales | B2B | Operations | Marketing | B2C Closing | Management.
+# shift_name: Karachi-Standard | Lahore-Standard | Komal-Extended | Sufyan.
+# remote_default_days: ISO weekdays as Postgres array string, e.g. "{1,2}" for Mon+Tue.
+# manager_email: must match a row in this same file (resolved 2-pass during seed).
+system_admin,Example Admin,admin@evernestconsultants.com,REPLACE_ME_STRONG_PASSWORD,super_admin,,,,,,,,,,2025-01-01,Example Role,
+employee,Example Employee,employee@evernestconsultants.com,REPLACE_ME_STRONG_PASSWORD,employee,KHI,B2C Sales,Karachi-Standard,50000,FALSE,FALSE,FALSE,{},,2025-01-01,Counsellor,
