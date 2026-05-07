@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 2 — domain types + employee directory mock data.
+**Last updated**: Phase 3 — auth scaffolding (env-safe).
 
 ## Branch & commits
 
@@ -11,7 +11,8 @@
 - `dev` ahead of `main`:
   - `6168b8e` — feat: add initial HRM dashboard shell (Day 1, Gemini-authored, Claude-audited).
   - `76e7b1e` — feat: prepare Supabase seed workflow (Phase 1 — admin client + seed script).
-  - (next) — Phase 2: domain types + employee directory mock data.
+  - `06c973e` — feat: HRM domain types + employee directory mock data (Phase 2).
+  - (next) — Phase 3: real login server action + middleware route protection (env-safe).
 - Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
 ## Build / typecheck
@@ -23,8 +24,9 @@
 
 ### App code
 - `app/page.tsx` — redirect to `/login`.
-- `app/login/page.tsx` — **mock** form. Submit is a `<Link>` to `/dashboard`. No Supabase auth wired yet.
-- `app/(dashboard)/layout.tsx` — sidebar + header shell, "Mock User" indicator + Logout link.
+- `app/login/page.tsx` — dual-mode. With Supabase env: real form posting to `signIn` server action. Without env: "Continue (Mock)" Link to `/dashboard` + amber dev-mode banner. Renders error from `?error=` query param.
+- `app/login/actions.ts` — server actions `signIn` and `signOut`. Env-safe (degrade to mock behavior if Supabase isn't configured). Uses `redirect()` for both success and error paths.
+- `app/(dashboard)/layout.tsx` — sidebar + header. Header shows "mock mode" pill when env is missing. Logout is a form posting to `signOut`.
 - `app/(dashboard)/dashboard/page.tsx` — 4 stat cards with **hardcoded mock numbers** (42 / 3 / 5 / 7).
 - `app/(dashboard)/employees/page.tsx` — directory table backed by mock data. Shows branch, department, role, shift, salary, remote days, exemption flags.
 - `app/(dashboard)/admin/page.tsx`, `attendance/page.tsx` — placeholder shells (Phase 4 / 5).
@@ -34,7 +36,7 @@
 - `lib/supabase/server.ts` — server-only. Exports:
   - `createClient()` — request-cookie-bound anon client (RLS enforced).
   - `createAdminClient()` — service-role client (RLS bypassed). Throws if env vars are missing.
-- `middleware.ts` — session refresh + cookie mirroring. Auth gate not yet enforced (Phase 3).
+- `middleware.ts` — env-safe. Skips all auth checks when Supabase env is missing (dev/mock mode). With env: refreshes session, redirects unauthenticated users away from non-public paths to `/login`, redirects authenticated users away from `/login` to `/dashboard`. Public paths: `/login`, `/api/cron`.
 
 ### Domain types + mock data
 - `lib/types/hrm.ts` — TypeScript types for every HRM entity (enums + tables + view + UI-helper composed types). Aligned with `0001_init.sql`.
@@ -65,8 +67,7 @@
 
 ## What is NOT real yet
 
-- **Auth**: login is mocked (`<Link>` to dashboard). No `signInWithPassword` call.
-- **Middleware route protection**: not enforcing auth yet. Will be added in Phase 3.
+- **Auth at runtime**: scaffolded. Real `signInWithPassword` flow in place but inert until `.env.local` exists. Dev navigation via "Continue (Mock)" still works.
 - **Dashboard data**: hardcoded mock numbers.
 - **Supabase project**: not provisioned. URL/keys not set.
 - **`.env.local`**: does not exist locally.
@@ -97,8 +98,8 @@ Explicit paths:
 ## Next phases (in order)
 
 1. **Phase 1**: admin client + seed script + state refresh. ✅
-2. **Phase 2 (this commit)**: HRM domain types + mock employee directory. ✅
-3. **Phase 3**: Real login server action (with dev-mode safe fallback). Middleware route protection that doesn't crash without env vars.
+2. **Phase 2**: HRM domain types + mock employee directory. ✅
+3. **Phase 3 (this commit)**: Real login server action + middleware route protection (both env-safe). ✅
 4. **Phase 4**: Today attendance panel UI (status chips, mock attendance rows).
 5. **Phase 5**: Admin foundations — branch/shift display, admin placeholders (no destructive actions).
 6. **(Yashal — out of band)**: Provision Supabase project. Apply `0001_init.sql`. Populate `.env.local`. Run `npm run seed:users`.
