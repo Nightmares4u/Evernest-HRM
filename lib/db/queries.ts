@@ -225,6 +225,169 @@ export async function listTodayAttendance(
   });
 }
 
+// ---------- leave ----------
+
+export type LeaveBalanceVM = {
+  year: number;
+  month: number;
+  accrued: number;
+  used: number;
+  carry_forward_in: number;
+  balance: number;
+};
+
+export async function getMyLeaveBalanceThisMonth(): Promise<LeaveBalanceVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: empRow } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!empRow) return null;
+
+  const today = todayPKT();
+  const [y, m] = today.split("-").map((p) => Number.parseInt(p, 10));
+
+  const { data, error } = await supabase
+    .from("leave_balances")
+    .select("year, month, accrued, used, carry_forward_in, balance")
+    .eq("employee_id", empRow.id)
+    .eq("year", y)
+    .eq("month", m)
+    .maybeSingle();
+  if (error) throw new Error(`getMyLeaveBalanceThisMonth: ${error.message}`);
+
+  if (!data) {
+    return {
+      year: y,
+      month: m,
+      accrued: 0,
+      used: 0,
+      carry_forward_in: 0,
+      balance: 0,
+    };
+  }
+  return {
+    year: data.year,
+    month: data.month,
+    accrued: toNum(data.accrued),
+    used: toNum(data.used),
+    carry_forward_in: toNum(data.carry_forward_in),
+    balance: toNum(data.balance),
+  };
+}
+
+export type MyLeaveRequestRow = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  days_count: number;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  review_note: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export async function listMyLeaveRequests(): Promise<MyLeaveRequestRow[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: empRow } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!empRow) return [];
+
+  const { data, error } = await supabase
+    .from("leave_requests")
+    .select("id, start_date, end_date, days_count, reason, status, review_note, reviewed_at, created_at")
+    .eq("employee_id", empRow.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) throw new Error(`listMyLeaveRequests: ${error.message}`);
+  return ((data ?? []) as MyLeaveRequestRow[]).map((r) => ({
+    ...r,
+    days_count: toNum(r.days_count),
+  }));
+}
+
+export type LeaveRequestAdminRow = MyLeaveRequestRow & {
+  employee_id: string;
+  employee_full_name: string;
+  branch_code: string | null;
+};
+
+export async function listLeaveRequestsForAdmin(
+  filter: "pending" | "all" = "pending"
+): Promise<LeaveRequestAdminRow[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("leave_requests")
+    .select(
+      `
+      id, start_date, end_date, days_count, reason, status,
+      review_note, reviewed_at, created_at, employee_id,
+      employees!inner ( full_name, branches ( code ) )
+      `
+    )
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (filter === "pending") query = query.eq("status", "pending");
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listLeaveRequestsForAdmin: ${error.message}`);
+
+  type Row = MyLeaveRequestRow & {
+    employee_id: string;
+    employees:
+      | {
+          full_name: string;
+          branches: { code: string } | { code: string }[] | null;
+        }
+      | {
+          full_name: string;
+          branches: { code: string } | { code: string }[] | null;
+        }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((r) => {
+    const emp = pickOne(r.employees);
+    const branch = emp ? pickOne(emp.branches) : null;
+    return {
+      id: r.id,
+      employee_id: r.employee_id,
+      start_date: r.start_date,
+      end_date: r.end_date,
+      days_count: toNum(r.days_count),
+      reason: r.reason,
+      status: r.status,
+      review_note: r.review_note,
+      reviewed_at: r.reviewed_at,
+      created_at: r.created_at,
+      employee_full_name: emp?.full_name ?? "?",
+      branch_code: branch?.code ?? null,
+    } satisfies LeaveRequestAdminRow;
+  });
+}
+
 // ---------- taxonomy ----------
 
 export async function listBranches(): Promise<Branch[]> {

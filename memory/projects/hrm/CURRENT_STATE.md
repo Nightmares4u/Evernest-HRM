@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 7 — real check-in / check-out wired.
+**Last updated**: Phase 8 — leave (request + balance + admin queue).
 
 ## Branch & commits
 
@@ -16,7 +16,8 @@
   - `6e2d620` — feat: add attendance UI foundation (Phase 4).
   - `3918d0e` — feat: add admin foundation overview (Phase 5).
   - `0db1dca` — feat: wire HRM pages to real Supabase reads (Phase 6).
-  - (next) — Phase 7: real check-in / check-out actions + dashboard widget.
+  - `cc34f52` — feat: real check-in / check-out flow (Phase 7).
+  - (next) — Phase 8: leave (employee request + admin approve/reject + audit).
 - Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
 ## Build / typecheck
