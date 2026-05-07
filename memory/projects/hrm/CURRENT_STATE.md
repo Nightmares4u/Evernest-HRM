@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 5 — admin foundations. End of autonomous run for this session.
+**Last updated**: Phase 6 — real DB reads wired (Supabase live).
 
 ## Branch & commits
 
@@ -14,7 +14,8 @@
   - `06c973e` — feat: HRM domain types + employee directory mock data (Phase 2).
   - `6f19103` — fix: stabilize auth middleware and prepare real sign-in flow (Phase 3).
   - `6e2d620` — feat: add attendance UI foundation (Phase 4).
-  - (next) — Phase 5: admin foundations.
+  - `3918d0e` — feat: add admin foundation overview (Phase 5).
+  - (next) — Phase 6: wire pages to real Supabase reads (mock fallback for dev shell).
 - Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
 ## Build / typecheck

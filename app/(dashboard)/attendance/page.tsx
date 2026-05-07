@@ -5,7 +5,11 @@ import {
   isSundayPKT,
   weekdayPKT,
 } from "@/lib/attendance/format";
-import { MOCK_EMPLOYEES, makeMockTodayAttendance } from "@/lib/mock/hrm";
+import {
+  isSupabaseConfigured,
+  listEmployees,
+  listTodayAttendance,
+} from "@/lib/db/queries";
 import type { AttendanceStatus } from "@/lib/types/hrm";
 
 const PRESENT_STATES: AttendanceStatus[] = [
@@ -20,9 +24,13 @@ const PENDING_STATES: AttendanceStatus[] = [
   "remote_pending_review",
 ];
 
-export default function AttendancePage() {
+export default async function AttendancePage() {
   const today = new Date();
-  const records = makeMockTodayAttendance(today);
+  const live = isSupabaseConfigured();
+  const [records, employees] = await Promise.all([
+    listTodayAttendance(),
+    listEmployees(),
+  ]);
 
   const presentCount = records.filter((r) => PRESENT_STATES.includes(r.status)).length;
   const lateCount = records.filter((r) => LATE_STATES.includes(r.status)).length;
@@ -30,8 +38,8 @@ export default function AttendancePage() {
   const absentCount = records.filter((r) => r.status === "absent").length;
   const pendingCount = records.filter((r) => PENDING_STATES.includes(r.status)).length;
 
-  const trackedTotal = MOCK_EMPLOYEES.filter((e) => !e.attendance_exempt).length;
-  const exemptTotal = MOCK_EMPLOYEES.filter((e) => e.attendance_exempt).length;
+  const trackedTotal = employees.filter((e) => !e.attendance_exempt).length;
+  const exemptTotal = employees.filter((e) => e.attendance_exempt).length;
 
   return (
     <div className="space-y-6">
@@ -40,7 +48,7 @@ export default function AttendancePage() {
           <h1 className="text-2xl font-semibold text-gray-900">Today</h1>
           <p className="text-sm text-gray-500">
             {weekdayPKT(today)} — {trackedTotal} attendance-tracked staff &middot;{" "}
-            {exemptTotal} exempt (Yashal + Marketing)
+            {exemptTotal} exempt
           </p>
         </div>
         {isSundayPKT(today) && (
@@ -48,11 +56,11 @@ export default function AttendancePage() {
         )}
       </header>
 
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-        Mock attendance. Wired to{" "}
-        <code className="font-mono">makeMockTodayAttendance()</code>. Real data
-        replaces this once Supabase is configured and check-in is wired (Day 2).
-      </div>
+      {!live && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Mock attendance (no Supabase env).
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <SummaryCard label="Present" value={presentCount} tone="green" />
@@ -119,7 +127,7 @@ export default function AttendancePage() {
                   <button
                     type="button"
                     disabled
-                    title="Override actions land in Phase 5"
+                    title="Override actions land in Phase 8"
                     className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-400"
                   >
                     Override
@@ -127,6 +135,14 @@ export default function AttendancePage() {
                 </Td>
               </tr>
             ))}
+            {records.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-4 py-6 text-center text-sm text-gray-500">
+                  No attendance records yet for today. Records appear once
+                  someone checks in.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -134,8 +150,7 @@ export default function AttendancePage() {
       {exemptTotal > 0 && (
         <p className="text-xs text-gray-500">
           {exemptTotal} attendance-exempt staff (Yashal, Marketing team) don't
-          appear in the Today panel — they're verified by task completion. See
-          the Tasks board (coming next).
+          appear in the Today panel — they're verified by task completion.
         </p>
       )}
     </div>

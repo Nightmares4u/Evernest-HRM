@@ -1,4 +1,4 @@
-import { MOCK_EMPLOYEES } from "@/lib/mock/hrm";
+import { listEmployees, isSupabaseConfigured } from "@/lib/db/queries";
 import type { EmployeeWithJoins } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -7,12 +7,13 @@ const PKR = new Intl.NumberFormat("en-PK", {
   maximumFractionDigits: 0,
 });
 
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 function formatRemoteDays(days: number[]): string {
   if (!days || days.length === 0) return "—";
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   return days
     .filter((d) => d >= 1 && d <= 7)
-    .map((d) => labels[d - 1])
+    .map((d) => WEEKDAY_LABELS[d - 1])
     .join(", ");
 }
 
@@ -24,10 +25,13 @@ function exemptionBadges(e: EmployeeWithJoins): string[] {
   return out;
 }
 
-export default function EmployeesPage() {
-  const total = MOCK_EMPLOYEES.length;
-  const totalSalary = MOCK_EMPLOYEES.reduce((sum, e) => sum + e.monthly_salary, 0);
-  const byBranch = MOCK_EMPLOYEES.reduce<Record<string, number>>((acc, e) => {
+export default async function EmployeesPage() {
+  const employees = await listEmployees();
+  const live = isSupabaseConfigured();
+
+  const total = employees.length;
+  const totalSalary = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
+  const byBranch = employees.reduce<Record<string, number>>((acc, e) => {
     const k = e.branch_code ?? "—";
     acc[k] = (acc[k] ?? 0) + 1;
     return acc;
@@ -54,11 +58,12 @@ export default function EmployeesPage() {
         </div>
       </header>
 
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-        Mock directory. Wired to{" "}
-        <code className="font-mono">lib/mock/hrm.ts</code>. Real data lands once
-        Supabase is configured and seeded.
-      </div>
+      {!live && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Mock directory (no Supabase env). Real data activates once{" "}
+          <code className="font-mono">.env.local</code> is set.
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
         <table className="min-w-full divide-y divide-gray-200">
@@ -75,7 +80,7 @@ export default function EmployeesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {MOCK_EMPLOYEES.map((e) => (
+            {employees.map((e) => (
               <tr key={e.id} className="hover:bg-gray-50">
                 <Td>
                   <div className="font-medium text-gray-900">{e.full_name}</div>
@@ -106,6 +111,13 @@ export default function EmployeesPage() {
                 </Td>
               </tr>
             ))}
+            {employees.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-500">
+                  No employees visible to your account.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

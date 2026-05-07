@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { Chip } from "@/components/StatusChip";
 import { weekdayPKT } from "@/lib/attendance/format";
-import { MOCK_EMPLOYEES, makeMockTodayAttendance } from "@/lib/mock/hrm";
+import {
+  isSupabaseConfigured,
+  listEmployees,
+  listTodayAttendance,
+} from "@/lib/db/queries";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import type { AttendanceStatus } from "@/lib/types/hrm";
 
 const PRESENT_STATES: AttendanceStatus[] = [
@@ -21,31 +26,49 @@ const PKR = new Intl.NumberFormat("en-PK", {
   maximumFractionDigits: 0,
 });
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
   const today = new Date();
-  const records = makeMockTodayAttendance(today);
+  const live = isSupabaseConfigured();
+
+  const [me, records, employees] = await Promise.all([
+    getCurrentUser(),
+    listTodayAttendance(),
+    listEmployees(),
+  ]);
 
   const presentToday = records.filter((r) => PRESENT_STATES.includes(r.status)).length;
   const lateToday = records.filter((r) => LATE_STATES.includes(r.status)).length;
   const absentToday = records.filter((r) => r.status === "absent").length;
   const pendingToday = records.filter((r) => PENDING_STATES.includes(r.status)).length;
 
-  const totalEmployees = MOCK_EMPLOYEES.length;
-  const totalPayroll = MOCK_EMPLOYEES.reduce((sum, e) => sum + e.monthly_salary, 0);
+  const totalEmployees = employees.length;
+  const totalPayroll = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500">
-          {weekdayPKT(today)} — quick view of today
+          {weekdayPKT(today)}
+          {me && (
+            <>
+              {" — signed in as "}
+              <span className="font-medium text-gray-700">
+                {me.appUser.display_name}
+              </span>{" "}
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                {me.appUser.role}
+              </span>
+            </>
+          )}
         </p>
       </header>
 
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-        Numbers below are derived from mock data. Live counts arrive once
-        Supabase is configured and check-in is wired.
-      </div>
+      {!live && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Mock data (no Supabase env).
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Present today" value={presentToday} tone="text-green-700" />

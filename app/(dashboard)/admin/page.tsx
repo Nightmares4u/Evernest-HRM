@@ -1,10 +1,11 @@
 import { Chip } from "@/components/StatusChip";
 import {
-  MOCK_BRANCHES,
-  MOCK_DEPARTMENTS,
-  MOCK_EMPLOYEES,
-  MOCK_SHIFTS,
-} from "@/lib/mock/hrm";
+  isSupabaseConfigured,
+  listBranches,
+  listDepartments,
+  listEmployees,
+  listShifts,
+} from "@/lib/db/queries";
 
 const PKR = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -22,20 +23,28 @@ function formatDays(days: number[]): string {
     .join(", ");
 }
 
-export default function AdminPage() {
-  const totalEmployees = MOCK_EMPLOYEES.length;
-  const totalPayroll = MOCK_EMPLOYEES.reduce((s, e) => s + e.monthly_salary, 0);
-  const exemptCount = MOCK_EMPLOYEES.filter((e) => e.attendance_exempt).length;
-  const remoteAllowed = MOCK_EMPLOYEES.filter((e) => e.remote_allowed).length;
+export default async function AdminPage() {
+  const live = isSupabaseConfigured();
+  const [employees, branches, departments, shifts] = await Promise.all([
+    listEmployees(),
+    listBranches(),
+    listDepartments(),
+    listShifts(),
+  ]);
 
-  const employeesByBranch = MOCK_BRANCHES.map((b) => ({
+  const totalEmployees = employees.length;
+  const totalPayroll = employees.reduce((s, e) => s + e.monthly_salary, 0);
+  const exemptCount = employees.filter((e) => e.attendance_exempt).length;
+  const remoteAllowed = employees.filter((e) => e.remote_allowed).length;
+
+  const employeesByBranch = branches.map((b) => ({
     branch: b,
-    employees: MOCK_EMPLOYEES.filter((e) => e.branch_id === b.id),
+    count: employees.filter((e) => e.branch_id === b.id).length,
   }));
 
-  const employeesByDept = MOCK_DEPARTMENTS.map((d) => ({
+  const employeesByDept = departments.map((d) => ({
     dept: d,
-    count: MOCK_EMPLOYEES.filter((e) => e.department_id === d.id).length,
+    count: employees.filter((e) => e.department_id === d.id).length,
   }));
 
   return (
@@ -51,21 +60,25 @@ export default function AdminPage() {
 
       <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
         Read-only foundations. Destructive actions (edit, delete, override,
-        approve) are disabled until Supabase is wired and audit logging is in
-        place.
+        approve) land in Phase 7+ alongside audit logging.
+        {!live && " Showing mock data (no Supabase env)."}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Employees" value={totalEmployees} />
         <Stat label="Monthly payroll" value={PKR.format(totalPayroll)} />
-        <Stat label="Attendance-exempt" value={exemptCount} hint="Yashal + Marketing" />
+        <Stat
+          label="Attendance-exempt"
+          value={exemptCount}
+          hint="Yashal + Marketing"
+        />
         <Stat label="Remote-allowed" value={remoteAllowed} />
       </div>
 
       <Section title="Branches">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {employeesByBranch.map(({ branch, employees }) => {
-            const defaultShift = MOCK_SHIFTS.find(
+          {employeesByBranch.map(({ branch, count }) => {
+            const defaultShift = shifts.find(
               (s) => s.id === branch.default_shift_id
             );
             return (
@@ -78,7 +91,7 @@ export default function AdminPage() {
                   <Chip label={branch.code} tone="gray" />
                 </div>
                 <dl className="mt-3 space-y-1 text-sm">
-                  <Row label="Employees" value={String(employees.length)} />
+                  <Row label="Employees" value={String(count)} />
                   <Row
                     label="Default shift"
                     value={
@@ -89,7 +102,11 @@ export default function AdminPage() {
                   />
                   <Row
                     label="IP whitelist"
-                    value={branch.ip_whitelist.length ? branch.ip_whitelist.join(", ") : "(none — soft mode)"}
+                    value={
+                      branch.ip_whitelist.length
+                        ? branch.ip_whitelist.join(", ")
+                        : "(none — soft mode)"
+                    }
                   />
                 </dl>
               </div>
@@ -132,7 +149,7 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {MOCK_SHIFTS.map((s) => (
+              {shifts.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <Td className="font-medium text-gray-900">{s.name}</Td>
                   <Td className="tabular-nums">{s.start_time.slice(0, 5)}</Td>
@@ -158,31 +175,33 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {MOCK_EMPLOYEES.filter((e) => e.remote_allowed).map((e) => (
-                <tr key={e.id} className="hover:bg-gray-50">
-                  <Td>
-                    <div className="font-medium text-gray-900">{e.full_name}</div>
-                    <div className="text-xs text-gray-500">{e.email}</div>
-                  </Td>
-                  <Td>{e.branch_code ?? "—"}</Td>
-                  <Td className="text-xs">
-                    {formatDays(e.remote_default_days)}
-                  </Td>
-                  <Td>
-                    {e.attendance_exempt ? (
-                      <Chip label="exempt — task-based" tone="gray" />
-                    ) : (
-                      <Chip label="enforced" tone="green" />
-                    )}
-                  </Td>
-                </tr>
-              ))}
+              {employees
+                .filter((e) => e.remote_allowed)
+                .map((e) => (
+                  <tr key={e.id} className="hover:bg-gray-50">
+                    <Td>
+                      <div className="font-medium text-gray-900">{e.full_name}</div>
+                      <div className="text-xs text-gray-500">{e.email}</div>
+                    </Td>
+                    <Td>{e.branch_code ?? "—"}</Td>
+                    <Td className="text-xs">
+                      {formatDays(e.remote_default_days)}
+                    </Td>
+                    <Td>
+                      {e.attendance_exempt ? (
+                        <Chip label="exempt — task-based" tone="gray" />
+                      ) : (
+                        <Chip label="enforced" tone="green" />
+                      )}
+                    </Td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
       </Section>
 
-      <Section title="Configuration panels (Phase 6+)">
+      <Section title="Configuration panels (Phase 7+)">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <PendingCard
             title="Holidays & day-offs"
