@@ -1,32 +1,104 @@
 # EN HRM — Current State
 
-## Day-0 Checkpoint
+> Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Current project path:** `~/EN HRM`
-**Git status:** Initialized, no commits yet.
+**Last updated**: Phase 1 — foundation stabilization (admin client + seed script).
 
-### What Exists
-- Next.js 15 / Tailwind CSS scaffold
-- Supabase client/server files
-- Supabase migration `0001_init.sql`
-- HRM planning docs under `memory/projects/hrm/`
-- Ignored password-bearing seed file at `memory/projects/hrm/seed/users.csv`
+## Branch & commits
 
-### What is Safe to Commit
-- All planning documentation (`memory/projects/hrm/*.md` and `memory/projects/hrm/seed/users.csv.example`)
-- Next.js application structure, configuration files, and middleware
-- Supabase migrations and helper scripts
-- `.gitignore`, `package.json`, `README.md`, etc.
+- Working branch: **`dev`**.
+- `main` holds: Day-0 scaffold + planning docs (commit `d7e055a`).
+- `dev` ahead of `main`:
+  - `6168b8e` — feat: add initial HRM dashboard shell (Day 1, Gemini-authored, Claude-audited).
+  - (next) — Phase 1: restore admin client + seed script + middleware/state hardening.
+- Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
-### What Must Never Be Committed
-- **`memory/projects/hrm/seed/users.csv`** (contains real, plaintext passwords)
-- **`.env.local`** (when created, will contain real Supabase and Cron secrets)
+## Build / typecheck
 
-### Known Missing Day-1 Items
-- `scripts/seed-users.ts`
-- `.env.local`
-- Real Supabase project/keys
-- Actual UI/server actions
+- `npm run build`: green.
+- `npx tsc --noEmit`: green.
 
-### Next Recommended Step
-- Prepare initial commit of safe scaffold/planning docs only.
+## What exists (real, in-tree)
+
+### App code
+- `app/page.tsx` — redirect to `/login`.
+- `app/login/page.tsx` — **mock** form. Submit is a `<Link>` to `/dashboard`. No Supabase auth wired yet.
+- `app/(dashboard)/layout.tsx` — sidebar + header shell, "Mock User" indicator + Logout link.
+- `app/(dashboard)/dashboard/page.tsx` — 4 stat cards with **hardcoded mock numbers** (42 / 3 / 5 / 7).
+- `app/(dashboard)/admin/page.tsx`, `attendance/page.tsx`, `employees/page.tsx` — placeholder shells.
+
+### Supabase glue
+- `lib/supabase/client.ts` — browser client (anon key).
+- `lib/supabase/server.ts` — server-only. Exports:
+  - `createClient()` — request-cookie-bound anon client (RLS enforced).
+  - `createAdminClient()` — service-role client (RLS bypassed). Throws if env vars are missing.
+- `middleware.ts` — session refresh + cookie mirroring. Auth gate not yet enforced (Phase 3).
+
+### Scripts
+- `scripts/seed-users.ts` — one-shot user seeder.
+  - Reads `memory/projects/hrm/seed/users.csv`.
+  - Refuses to run if CSV or `.env.local` missing.
+  - Validates required columns.
+  - Two-pass FK resolution (creates everyone, then resolves `manager_email -> manager_id`).
+  - Creates `auth.users` + `app_users` + (for employees) `employees`.
+  - Idempotent — skips users whose email already exists.
+  - Run with: `npm run seed:users`.
+
+### Schema
+- `supabase/migrations/0001_init.sql` — full schema (enums, tables, RLS, seed for branches/departments/shifts/settings, `employee_overdue_tasks` view). 418 lines. **Not yet applied to a real Supabase project.**
+
+### Planning docs
+- `memory/projects/hrm/HRM_MASTER_CONTEXT.md`
+- `memory/projects/hrm/PROJECT_CHARTER.md`
+- `memory/projects/hrm/MVP_SCOPE.md`
+- `memory/projects/hrm/DATA_MODEL.md`
+- `memory/projects/hrm/IMPLEMENTATION_PLAN.md`
+- `memory/projects/hrm/OPEN_QUESTIONS.md`
+- `memory/projects/hrm/CURRENT_STATE.md` (this file)
+- `memory/projects/hrm/seed/users.csv.example` — sanitized template (committed).
+
+## What is NOT real yet
+
+- **Auth**: login is mocked (`<Link>` to dashboard). No `signInWithPassword` call.
+- **Middleware route protection**: not enforcing auth yet. Will be added in Phase 3.
+- **Dashboard data**: hardcoded mock numbers.
+- **Supabase project**: not provisioned. URL/keys not set.
+- **`.env.local`**: does not exist locally.
+- **Migration**: not yet applied.
+- **Seed**: not yet run.
+- **Cron jobs**: not yet implemented.
+- **Domain types**: no shared TypeScript types matching the schema yet (Phase 2).
+
+## What is safe to commit
+
+Explicit paths:
+- `app/**`
+- `lib/**`
+- `middleware.ts`
+- `scripts/**` (the script itself contains no credentials)
+- `supabase/migrations/*.sql`
+- `memory/projects/hrm/*.md`
+- `memory/projects/hrm/seed/users.csv.example`
+- `package.json`, `package-lock.json`, `tsconfig.json`, `next.config.ts`, `tailwind.config.ts`, `postcss.config.mjs`
+- `.gitignore`, `.env.local.example`, `README.md`
+
+## What MUST NEVER be committed
+
+- `memory/projects/hrm/seed/users.csv` — plaintext passwords. **In `.gitignore`.**
+- `.env.local` — Supabase keys + cron secret. **In `.gitignore`.**
+- `node_modules/`, `.next/`, `tsconfig.tsbuildinfo`, `next-env.d.ts` — build artifacts. **In `.gitignore`.**
+
+## Next phases (in order)
+
+1. **Phase 1 (this commit)**: admin client + seed script + state refresh. ✅
+2. **Phase 2**: HRM domain types in `lib/types/hrm.ts`. Mock employee directory using those types.
+3. **Phase 3**: Real login server action (with dev-mode safe fallback). Middleware route protection that doesn't crash without env vars.
+4. **Phase 4**: Today attendance panel UI (status chips, mock attendance rows).
+5. **Phase 5**: Admin foundations — employee directory list, branch/shift display, admin placeholders (no destructive actions).
+6. **(Yashal — out of band)**: Provision Supabase project. Apply `0001_init.sql`. Populate `.env.local`. Run `npm run seed:users`.
+
+## Decisions made autonomously this phase
+
+- Renamed npm script `seed` -> `seed:users` (more explicit; future seeds can follow `seed:<thing>` pattern).
+- `createAdminClient()` uses `@supabase/supabase-js` directly (not `@supabase/ssr`) since admin operations don't need cookie binding.
+- Middleware unchanged from Gemini's commit in this phase. Auth gate moves in Phase 3 with explicit env-missing safety.

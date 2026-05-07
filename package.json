@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed": "tsx scripts/seed-users.ts"
+    "seed:users": "tsx scripts/seed-users.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
