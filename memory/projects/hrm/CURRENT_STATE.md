@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 1 — foundation stabilization (admin client + seed script).
+**Last updated**: Phase 2 — domain types + employee directory mock data.
 
 ## Branch & commits
 
@@ -10,7 +10,8 @@
 - `main` holds: Day-0 scaffold + planning docs (commit `d7e055a`).
 - `dev` ahead of `main`:
   - `6168b8e` — feat: add initial HRM dashboard shell (Day 1, Gemini-authored, Claude-audited).
-  - (next) — Phase 1: restore admin client + seed script + middleware/state hardening.
+  - `76e7b1e` — feat: prepare Supabase seed workflow (Phase 1 — admin client + seed script).
+  - (next) — Phase 2: domain types + employee directory mock data.
 - Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
 
 ## Build / typecheck
@@ -25,7 +26,8 @@
 - `app/login/page.tsx` — **mock** form. Submit is a `<Link>` to `/dashboard`. No Supabase auth wired yet.
 - `app/(dashboard)/layout.tsx` — sidebar + header shell, "Mock User" indicator + Logout link.
 - `app/(dashboard)/dashboard/page.tsx` — 4 stat cards with **hardcoded mock numbers** (42 / 3 / 5 / 7).
-- `app/(dashboard)/admin/page.tsx`, `attendance/page.tsx`, `employees/page.tsx` — placeholder shells.
+- `app/(dashboard)/employees/page.tsx` — directory table backed by mock data. Shows branch, department, role, shift, salary, remote days, exemption flags.
+- `app/(dashboard)/admin/page.tsx`, `attendance/page.tsx` — placeholder shells (Phase 4 / 5).
 
 ### Supabase glue
 - `lib/supabase/client.ts` — browser client (anon key).
@@ -33,6 +35,10 @@
   - `createClient()` — request-cookie-bound anon client (RLS enforced).
   - `createAdminClient()` — service-role client (RLS bypassed). Throws if env vars are missing.
 - `middleware.ts` — session refresh + cookie mirroring. Auth gate not yet enforced (Phase 3).
+
+### Domain types + mock data
+- `lib/types/hrm.ts` — TypeScript types for every HRM entity (enums + tables + view + UI-helper composed types). Aligned with `0001_init.sql`.
+- `lib/mock/hrm.ts` — mock branches, departments, shifts, employees, and a `makeMockTodayAttendance()` helper. Used by UI surfaces while Supabase is unconfigured.
 
 ### Scripts
 - `scripts/seed-users.ts` — one-shot user seeder.
@@ -67,7 +73,7 @@
 - **Migration**: not yet applied.
 - **Seed**: not yet run.
 - **Cron jobs**: not yet implemented.
-- **Domain types**: no shared TypeScript types matching the schema yet (Phase 2).
+- **Live employee data**: directory uses `MOCK_EMPLOYEES`, not DB.
 
 ## What is safe to commit
 
@@ -90,11 +96,11 @@ Explicit paths:
 
 ## Next phases (in order)
 
-1. **Phase 1 (this commit)**: admin client + seed script + state refresh. ✅
-2. **Phase 2**: HRM domain types in `lib/types/hrm.ts`. Mock employee directory using those types.
+1. **Phase 1**: admin client + seed script + state refresh. ✅
+2. **Phase 2 (this commit)**: HRM domain types + mock employee directory. ✅
 3. **Phase 3**: Real login server action (with dev-mode safe fallback). Middleware route protection that doesn't crash without env vars.
 4. **Phase 4**: Today attendance panel UI (status chips, mock attendance rows).
-5. **Phase 5**: Admin foundations — employee directory list, branch/shift display, admin placeholders (no destructive actions).
+5. **Phase 5**: Admin foundations — branch/shift display, admin placeholders (no destructive actions).
 6. **(Yashal — out of band)**: Provision Supabase project. Apply `0001_init.sql`. Populate `.env.local`. Run `npm run seed:users`.
 
 ## Decisions made autonomously this phase
