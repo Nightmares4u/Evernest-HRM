@@ -137,6 +137,18 @@ function ViewTabs({
       <Link href={`${basePath}?view=schedule`} className={cls(current === "schedule")}>
         Schedule
       </Link>
+      <Link
+        href={`${basePath}/history`}
+        className="rounded-md bg-white px-3 py-1 text-xs text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+      >
+        Done history
+      </Link>
+      <Link
+        href="/admin/tasks/recurring"
+        className="rounded-md bg-white px-3 py-1 text-xs text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+      >
+        Recurring
+      </Link>
     </nav>
   );
 }

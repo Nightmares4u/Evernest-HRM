@@ -93,6 +93,34 @@ function rowToVM(row: TaskRowRaw): TaskRowVM {
 }
 
 /**
+ * Done tasks within a (since..until) timestamp range, ordered by completed_at desc.
+ * Used by the history pages — employee (own) and admin (everyone).
+ */
+export async function listDoneTasks(
+  sinceIso: string,
+  untilIso: string,
+  userId?: string
+): Promise<TaskRowVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("status", "done")
+    .gte("completed_at", sinceIso)
+    .lte("completed_at", untilIso)
+    .order("completed_at", { ascending: false })
+    .limit(1000);
+
+  if (userId) query = query.eq("assigned_to", userId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listDoneTasks: ${error.message}`);
+  return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
+}
+
+/**
  * Tasks for a date range — used by the schedule grid.
  * If userId is provided, restricts to tasks assigned to that user.
  */

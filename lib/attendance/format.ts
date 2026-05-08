@@ -121,3 +121,66 @@ export function weekdayPKT(now: Date = new Date()): string {
 export function isSundayPKT(now: Date = new Date()): boolean {
   return weekdayPKT(now) === "Sunday";
 }
+
+// ---------- date-range helpers (UTC, but operate on YYYY-MM-DD strings) ----------
+
+/** Start of the ISO week (Monday) for a YYYY-MM-DD date. */
+export function startOfWeek(iso: string): string {
+  const [y, m, d] = iso.split("-").map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const offset = dow === 0 ? -6 : 1 - dow;
+  dt.setUTCDate(dt.getUTCDate() + offset);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Start of the calendar month for a YYYY-MM-DD date. */
+export function startOfMonth(iso: string): string {
+  return iso.slice(0, 7) + "-01";
+}
+
+/** End of the calendar month for a YYYY-MM-DD date. */
+export function endOfMonth(iso: string): string {
+  const [y, m] = iso.split("-").map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m, 0));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Add days to a YYYY-MM-DD date. */
+export function addDaysIso(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Generate the last N week-start (Monday) ISO dates ending in the week of `iso`. */
+export function lastNWeekStarts(n: number, iso: string): string[] {
+  const thisMonday = startOfWeek(iso);
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    out.push(addDaysIso(thisMonday, -i * 7));
+  }
+  return out;
+}
+
+/** Build an inclusive UTC ISO timestamp range for a YYYY-MM-DD date range. */
+export function dateRangeToTimestamps(
+  startIso: string,
+  endIso: string
+): { since: string; until: string } {
+  return {
+    since: `${startIso}T00:00:00.000Z`,
+    until: `${endIso}T23:59:59.999Z`,
+  };
+}
+
+/** Format a YYYY-MM-DD as "DD MMM" in PKT. */
+export function shortDatePKT(iso: string): string {
+  const [y, m, d] = iso.split("-").map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+  }).format(dt);
+}
