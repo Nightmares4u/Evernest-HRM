@@ -4,6 +4,7 @@ import { signOut } from "@/app/login/actions";
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/attendance", label: "Attendance" },
+  { href: "/tasks", label: "Tasks" },
   { href: "/leave", label: "Leave" },
   { href: "/employees", label: "Employees" },
   { href: "/admin", label: "Admin" },
