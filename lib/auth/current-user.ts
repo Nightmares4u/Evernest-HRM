@@ -1,7 +1,11 @@
 // Server-side helper to fetch the currently signed-in user along with their
 // app_users row and employees row (if present). Used by pages to render
 // role-aware UI and gate actions.
+//
+// Wrapped in React's cache() so multiple components within the same request
+// (e.g. dashboard page + MyAttendanceCard) share one fetch.
 
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { AppUser, Employee } from "@/lib/types/hrm";
 
@@ -19,33 +23,30 @@ function isSupabaseConfigured(): boolean {
   );
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
-  if (!isSupabaseConfigured()) return null;
+export const getCurrentUser = cache(
+  async (): Promise<CurrentUser | null> => {
+    if (!isSupabaseConfigured()) return null;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
 
-  const { data: appUserRow } = await supabase
-    .from("app_users")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
+    // Parallel — saves one full round-trip on every page load.
+    const [appUserRes, empRes] = await Promise.all([
+      supabase.from("app_users").select("*").eq("id", user.id).maybeSingle(),
+      supabase.from("employees").select("*").eq("user_id", user.id).maybeSingle(),
+    ]);
 
-  if (!appUserRow) return null;
+    const appUserRow = appUserRes.data;
+    if (!appUserRow) return null;
 
-  const { data: employeeRow } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  return {
-    authUserId: user.id,
-    email: user.email ?? "",
-    appUser: appUserRow as AppUser,
-    employee: (employeeRow as Employee | null) ?? null,
-  };
-}
+    return {
+      authUserId: user.id,
+      email: user.email ?? "",
+      appUser: appUserRow as AppUser,
+      employee: (empRes.data as Employee | null) ?? null,
+    };
+  }
+);

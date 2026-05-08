@@ -63,5 +63,12 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Run on real page navigations; skip static assets, image optimisation
+  // pipeline, internal RSC payloads, and any path that looks like a static
+  // file (anything with a dot in the last segment). Without these
+  // exclusions, every prefetch / hot-reload asset triggers a Supabase
+  // auth.getUser() round-trip and the dev server crawls.
+  matcher: [
+    "/((?!_next/static|_next/image|_next/data|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|css|js|map)).*)",
+  ],
 };
