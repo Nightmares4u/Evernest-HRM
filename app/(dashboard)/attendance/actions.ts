@@ -3,6 +3,9 @@
 // Check-in / check-out server actions. Both are env-safe — they redirect to
 // /dashboard?error=… with a friendly message instead of throwing when business
 // rules block the action (Sunday, holiday, exempt employee, etc.).
+//
+// checkIn accepts an optional FormData with browser-captured lat/lng/accuracy
+// (the client component captures these before submitting).
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -13,6 +16,7 @@ import {
   buildPktTimestamp,
   computeOnCheckIn,
   computeOnCheckOut,
+  ipMatchesWhitelist,
   isoWeekdayPKT,
 } from "@/lib/attendance/policy";
 import type { AttendanceMode } from "@/lib/types/hrm";
@@ -29,6 +33,11 @@ type ShiftLite = {
   half_day_threshold_minutes: number;
 };
 
+type BranchLite = {
+  id: string;
+  ip_whitelist: string[] | null;
+};
+
 type EmployeeLite = {
   id: string;
   branch_id: string | null;
@@ -36,6 +45,7 @@ type EmployeeLite = {
   remote_allowed: boolean;
   remote_default_days: number[] | null;
   shifts: ShiftLite | ShiftLite[] | null;
+  branches: BranchLite | BranchLite[] | null;
 };
 
 async function loadMyEmployee() {
@@ -50,7 +60,8 @@ async function loadMyEmployee() {
     .select(
       `
       id, branch_id, attendance_exempt, remote_allowed, remote_default_days,
-      shifts ( id, start_time, end_time, late_grace_minutes, half_day_threshold_minutes )
+      shifts ( id, start_time, end_time, late_grace_minutes, half_day_threshold_minutes ),
+      branches ( id, ip_whitelist )
       `
     )
     .eq("user_id", user.id)
@@ -63,11 +74,30 @@ async function loadMyEmployee() {
   const shift = Array.isArray(emp.shifts) ? emp.shifts[0] : emp.shifts;
   if (!shift) fail("No shift assigned to your account. Ask admin to set one.");
 
-  return { supabase, employee: emp, shift };
+  const branch = Array.isArray(emp.branches) ? emp.branches[0] : emp.branches;
+
+  return { supabase, employee: emp, shift, branch };
 }
 
-export async function checkIn() {
-  const { supabase, employee, shift } = await loadMyEmployee();
+function parseGeolocation(formData?: FormData): {
+  lat: number;
+  lng: number;
+  accuracy: number;
+} | null {
+  if (!formData) return null;
+  const lat = Number(formData.get("lat"));
+  const lng = Number(formData.get("lng"));
+  const accuracy = Number(formData.get("accuracy"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {
+    lat,
+    lng,
+    accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+  };
+}
+
+export async function checkIn(formData?: FormData) {
+  const { supabase, employee, shift, branch } = await loadMyEmployee();
 
   if (employee.attendance_exempt) {
     fail("Your account is attendance-exempt — no check-in required.");
@@ -105,12 +135,23 @@ export async function checkIn() {
     mode,
   });
 
+  // IP capture (server-side; can't be spoofed by the client).
   const headerStore = await headers();
   const ip =
     headerStore.get("x-forwarded-for")?.split(",")[0].trim() ||
     headerStore.get("x-real-ip") ||
     null;
   const userAgent = headerStore.get("user-agent") || null;
+
+  // Soft IP whitelist match. Office mode only — remote check-ins are expected
+  // off-network. Mismatch flags `requires_review` (admin must clear), never blocks.
+  const whitelistOk =
+    mode === "remote"
+      ? true
+      : ipMatchesWhitelist(ip, branch?.ip_whitelist ?? []);
+
+  // Browser-supplied geolocation (optional).
+  const coords = parseGeolocation(formData);
 
   const { error } = await supabase.from("attendance_records").upsert(
     {
@@ -128,7 +169,9 @@ export async function checkIn() {
       mode,
       ip_address: ip,
       user_agent: userAgent,
+      geolocation: coords,
       branch_id: employee.branch_id,
+      requires_review: !whitelistOk,
     },
     { onConflict: "employee_id,date" }
   );

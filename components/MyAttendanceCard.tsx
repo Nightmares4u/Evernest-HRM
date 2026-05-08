@@ -1,4 +1,5 @@
-import { checkIn, checkOut } from "@/app/(dashboard)/attendance/actions";
+import { checkOut } from "@/app/(dashboard)/attendance/actions";
+import { CheckInButton } from "@/components/CheckInButton";
 import { StatusChip, Chip } from "@/components/StatusChip";
 import {
   formatTimePKT,
@@ -45,16 +46,9 @@ export async function MyAttendanceCard({ me }: { me: CurrentUser | null }) {
         {!record && (
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
-              You haven't checked in yet today.
+              You haven&apos;t checked in yet today.
             </p>
-            <form action={checkIn}>
-              <button
-                type="submit"
-                className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-              >
-                Check in now
-              </button>
-            </form>
+            <CheckInButton />
           </div>
         )}
 
