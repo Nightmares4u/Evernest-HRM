@@ -178,6 +178,20 @@ export default async function RecurringTasksPage({
             </select>
           </div>
 
+          <div>
+            <label className="block text-xs font-medium text-gray-700">
+              Due time on each occurrence (optional)
+            </label>
+            <input
+              type="time"
+              name="due_time"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Generated tasks land in this hour on the schedule grid; blank = EOD.
+            </p>
+          </div>
+
           <div className="flex items-end">
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input
@@ -261,6 +275,9 @@ function RecurringRow({
             Assignee: {t.assignee_name} &middot; recurrence: {t.recurrence_type}
             {t.recurrence_type !== "daily" && (
               <> ({formatDays(t.recurrence_days)})</>
+            )}
+            {t.due_time && (
+              <> &middot; at <span className="tabular-nums">{t.due_time.slice(0, 5)}</span></>
             )}
           </div>
           {t.description && (

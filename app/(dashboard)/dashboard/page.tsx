@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { Chip } from "@/components/StatusChip";
 import { MyAttendanceCard } from "@/components/MyAttendanceCard";
-import { weekdayPKT } from "@/lib/attendance/format";
+import { QuickAssignTaskForm } from "@/components/QuickAssignTaskForm";
+import { TaskScheduleGrid } from "@/components/TaskScheduleGrid";
+import { todayPKT, weekdayPKT } from "@/lib/attendance/format";
 import {
   isSupabaseConfigured,
   listEmployees,
   listTodayAttendance,
 } from "@/lib/db/queries";
+import {
+  listAssignableUsers,
+  listTasksInRange,
+  type AssignableUser,
+  type TaskRowVM,
+} from "@/lib/db/tasks";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import type { AttendanceStatus } from "@/lib/types/hrm";
 
@@ -27,28 +35,59 @@ const PKR = new Intl.NumberFormat("en-PK", {
   maximumFractionDigits: 0,
 });
 
+const SCHEDULE_DAYS = 7;
+
+function addDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const today = new Date();
+  const todayIso = todayPKT();
   const live = isSupabaseConfigured();
   const { error, ok } = await searchParams;
 
-  const [me, records, employees] = await Promise.all([
-    getCurrentUser(),
-    listTodayAttendance(),
-    listEmployees(),
-  ]);
+  const me = await getCurrentUser();
+  const isSuperAdmin = me?.appUser.role === "super_admin";
 
-  const presentToday = records.filter((r) => PRESENT_STATES.includes(r.status)).length;
+  const [records, employees, myUpcomingTasks, allUpcomingTasks, assignees] =
+    await Promise.all([
+      listTodayAttendance(),
+      listEmployees(),
+      me
+        ? listTasksInRange(
+            todayIso,
+            addDays(todayIso, SCHEDULE_DAYS - 1),
+            me.authUserId
+          )
+        : Promise.resolve<TaskRowVM[]>([]),
+      isSuperAdmin
+        ? listTasksInRange(todayIso, addDays(todayIso, SCHEDULE_DAYS - 1))
+        : Promise.resolve<TaskRowVM[]>([]),
+      isSuperAdmin
+        ? listAssignableUsers()
+        : Promise.resolve<AssignableUser[]>([]),
+    ]);
+
+  const presentToday = records.filter((r) => PRESENT_STATES.includes(r.status))
+    .length;
   const lateToday = records.filter((r) => LATE_STATES.includes(r.status)).length;
   const absentToday = records.filter((r) => r.status === "absent").length;
-  const pendingToday = records.filter((r) => PENDING_STATES.includes(r.status)).length;
+  const pendingToday = records.filter((r) => PENDING_STATES.includes(r.status))
+    .length;
 
   const totalEmployees = employees.length;
   const totalPayroll = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
+
+  // schedule grid for the dashboard: super-admin sees company-wide, everyone else sees their own
+  const scheduleTasks = isSuperAdmin ? allUpcomingTasks : myUpcomingTasks;
+  const myTaskCount = myUpcomingTasks.length;
 
   return (
     <div className="space-y-6">
@@ -89,6 +128,55 @@ export default async function DashboardPage({
 
       <MyAttendanceCard me={me} />
 
+      {isSuperAdmin && <QuickAssignTaskForm assignees={assignees} />}
+
+      {me && (
+        <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-700">
+              {isSuperAdmin
+                ? `Company schedule — next ${SCHEDULE_DAYS} days`
+                : `My schedule — next ${SCHEDULE_DAYS} days`}
+              <span className="ml-2 text-xs font-normal text-gray-500">
+                {scheduleTasks.length} task{scheduleTasks.length === 1 ? "" : "s"}
+              </span>
+            </h2>
+            <div className="flex gap-2 text-xs">
+              <Link
+                href="/tasks?view=schedule"
+                className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+              >
+                My tasks
+              </Link>
+              {isSuperAdmin && (
+                <Link
+                  href="/admin/tasks?view=schedule"
+                  className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+                >
+                  Open admin schedule
+                </Link>
+              )}
+            </div>
+          </div>
+          <div className="mt-3">
+            {scheduleTasks.length === 0 ? (
+              <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+                {isSuperAdmin
+                  ? "No tasks across the team in the next 7 days."
+                  : `No tasks assigned to you in the next ${SCHEDULE_DAYS} days.`}
+              </p>
+            ) : (
+              <TaskScheduleGrid
+                tasks={scheduleTasks}
+                startDate={todayIso}
+                days={SCHEDULE_DAYS}
+                showAssignee={isSuperAdmin}
+              />
+            )}
+          </div>
+        </section>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Present today" value={presentToday} tone="text-green-700" />
         <StatCard label="Late today" value={lateToday} tone="text-amber-700" />
@@ -124,6 +212,12 @@ export default async function DashboardPage({
             <Chip label={`${lateToday} late`} tone="amber" />
             <Chip label={`${absentToday} absent`} tone="red" />
             <Chip label={`${pendingToday} pending`} tone="yellow" />
+            {!isSuperAdmin && me && (
+              <Chip
+                label={`${myTaskCount} task${myTaskCount === 1 ? "" : "s"} in next ${SCHEDULE_DAYS}d`}
+                tone="indigo"
+              />
+            )}
           </div>
           <Link
             href="/attendance"

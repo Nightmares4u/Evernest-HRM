@@ -142,8 +142,20 @@ export async function submitForApproval(formData: FormData) {
 
 const PRIORITIES: TaskPriority[] = ["low", "normal", "urgent"];
 
+function normaliseDueTime(raw: string): string | null {
+  // Accept "HH:MM" or "HH:MM:SS"; reject anything else; empty -> null.
+  const v = raw.trim();
+  if (!v) return null;
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    return v.length === 5 ? `${v}:00` : v;
+  }
+  return null;
+}
+
 /**
  * Super-admin creates a one-off task assigned to anyone (employee or admin).
+ * Optional `due_time` lets the schedule grid place it in the right hour cell.
+ * `redirect_to` lets the form post from anywhere (e.g., dashboard quick-assign).
  */
 export async function createTask(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
@@ -151,15 +163,21 @@ export async function createTask(formData: FormData) {
     String(formData.get("description") ?? "").trim() || null;
   const assigned_to = String(formData.get("assigned_to") ?? "").trim();
   const due_date = String(formData.get("due_date") ?? "").trim();
+  const due_time = normaliseDueTime(String(formData.get("due_time") ?? ""));
   const priorityRaw = String(formData.get("priority") ?? "normal").trim();
   const priority = (PRIORITIES.includes(priorityRaw as TaskPriority)
     ? priorityRaw
     : "normal") as TaskPriority;
   const requires_approval = formData.get("requires_approval") === "on";
+  const redirectToRaw = String(formData.get("redirect_to") ?? "").trim();
+  const redirectTo =
+    redirectToRaw === "/dashboard" || redirectToRaw === "/admin/tasks"
+      ? redirectToRaw
+      : "/admin/tasks";
 
-  if (!title) fail("/admin/tasks", "Title is required.");
-  if (!assigned_to) fail("/admin/tasks", "Pick an assignee.");
-  if (!due_date) fail("/admin/tasks", "Due date is required.");
+  if (!title) fail(redirectTo, "Title is required.");
+  if (!assigned_to) fail(redirectTo, "Pick an assignee.");
+  if (!due_date) fail(redirectTo, "Due date is required.");
 
   const supabase = await createClient();
   const {
@@ -176,6 +194,7 @@ export async function createTask(formData: FormData) {
       assigned_to,
       assigned_by: user.id,
       due_date,
+      due_time,
       priority,
       status: "to_do",
       origin: "hrm",
@@ -184,19 +203,27 @@ export async function createTask(formData: FormData) {
     .select("id")
     .single();
   if (error || !data)
-    fail("/admin/tasks", `Create failed: ${error?.message ?? "unknown"}`);
+    fail(redirectTo, `Create failed: ${error?.message ?? "unknown"}`);
 
   await logAudit(admin, {
     actor_id: user.id,
     target_type: "task",
     target_id: data.id,
     action: "create_task",
-    new_value: { title, assigned_to, due_date, priority, requires_approval },
+    new_value: {
+      title,
+      assigned_to,
+      due_date,
+      due_time,
+      priority,
+      requires_approval,
+    },
   });
 
   revalidatePath("/tasks");
   revalidatePath("/admin/tasks");
-  ok("/admin/tasks", `Task assigned (${title}).`);
+  revalidatePath("/dashboard");
+  ok(redirectTo, `Task assigned (${title}).`);
 }
 
 /**

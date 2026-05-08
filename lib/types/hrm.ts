@@ -200,6 +200,7 @@ export type RecurringTask = {
   priority: TaskPriority;
   requires_approval: boolean;
   active: boolean;
+  due_time: string | null; // 'HH:MM[:SS]' or null = EOD
   created_at: string;
   updated_at: string;
 };
@@ -213,6 +214,7 @@ export type Task = {
   branch_id: string | null;
   department_id: string | null;
   due_date: string;
+  due_time: string | null; // 'HH:MM[:SS]' or null = EOD
   priority: TaskPriority;
   status: TaskStatus;
   origin: string;

@@ -51,6 +51,15 @@ async function logAudit(
   });
 }
 
+function normaliseDueTime(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    return v.length === 5 ? `${v}:00` : v;
+  }
+  return null;
+}
+
 export async function createRecurringTask(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
@@ -64,6 +73,7 @@ export async function createRecurringTask(formData: FormData) {
     ? priorityRaw
     : "normal") as TaskPriority;
   const requires_approval = formData.get("requires_approval") === "on";
+  const due_time = normaliseDueTime(String(formData.get("due_time") ?? ""));
 
   // Collect recurrence_days from checkboxes (form sends repeated keys).
   const days = formData
@@ -97,6 +107,7 @@ export async function createRecurringTask(formData: FormData) {
       recurrence_days: days,
       priority,
       requires_approval,
+      due_time,
       active: true,
     })
     .select("id")
@@ -115,6 +126,7 @@ export async function createRecurringTask(formData: FormData) {
       recurrence_days: days,
       priority,
       requires_approval,
+      due_time,
     },
   });
 
@@ -224,7 +236,7 @@ export async function generateTasksForToday() {
   const { data: templates, error: tErr } = await admin
     .from("recurring_tasks")
     .select(
-      "id, title, description, assigned_to, assigned_by, branch_id, department_id, priority, requires_approval, recurrence_type, recurrence_days"
+      "id, title, description, assigned_to, assigned_by, branch_id, department_id, priority, requires_approval, recurrence_type, recurrence_days, due_time"
     )
     .eq("active", true);
   if (tErr) fail(`Could not load templates: ${tErr.message}`);
@@ -262,6 +274,7 @@ export async function generateTasksForToday() {
       branch_id: t.branch_id,
       department_id: t.department_id,
       due_date: today,
+      due_time: t.due_time ?? null,
       priority: t.priority,
       status: "to_do",
       origin: "recurring",

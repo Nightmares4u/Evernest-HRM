@@ -37,7 +37,7 @@ function pickOne<T>(value: T | T[] | null | undefined): T | null {
 
 const TASK_SELECT = `
   id, title, description, assigned_to, assigned_by,
-  branch_id, department_id, due_date, priority, status, origin,
+  branch_id, department_id, due_date, due_time, priority, status, origin,
   recurring_task_id, requires_approval, approved_by, approved_at,
   created_at, completed_at,
   assignee:app_users!tasks_assigned_to_fkey ( display_name, email, role ),
@@ -73,6 +73,7 @@ function rowToVM(row: TaskRowRaw): TaskRowVM {
     branch_id: row.branch_id,
     department_id: row.department_id,
     due_date: row.due_date,
+    due_time: row.due_time ?? null,
     priority: row.priority,
     status: row.status,
     origin: row.origin,
@@ -89,6 +90,33 @@ function rowToVM(row: TaskRowRaw): TaskRowVM {
     branch_code: branch?.code ?? null,
     department_name: dept?.name ?? null,
   };
+}
+
+/**
+ * Tasks for a date range — used by the schedule grid.
+ * If userId is provided, restricts to tasks assigned to that user.
+ */
+export async function listTasksInRange(
+  startDate: string,
+  endDate: string,
+  userId?: string
+): Promise<TaskRowVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .gte("due_date", startDate)
+    .lte("due_date", endDate)
+    .order("due_date", { ascending: true })
+    .order("due_time", { ascending: true, nullsFirst: false });
+
+  if (userId) query = query.eq("assigned_to", userId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listTasksInRange: ${error.message}`);
+  return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
 }
 
 // ---------- employee-side ----------
@@ -259,7 +287,7 @@ export async function listRecurringTasks(): Promise<RecurringTaskRowVM[]> {
       `
       id, title, description, assigned_to, assigned_by, branch_id, department_id,
       recurrence_type, recurrence_days, priority, requires_approval, active,
-      created_at, updated_at,
+      due_time, created_at, updated_at,
       assignee:app_users!recurring_tasks_assigned_to_fkey ( display_name, email )
       `
     )

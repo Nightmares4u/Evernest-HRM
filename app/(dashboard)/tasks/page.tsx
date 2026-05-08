@@ -1,16 +1,40 @@
+import Link from "next/link";
 import { Chip } from "@/components/StatusChip";
-import { listMyTasks, type TaskRowVM } from "@/lib/db/tasks";
+import { TaskScheduleGrid } from "@/components/TaskScheduleGrid";
+import {
+  listMyTasks,
+  listTasksInRange,
+  type TaskRowVM,
+} from "@/lib/db/tasks";
 import { isSupabaseConfigured } from "@/lib/db/queries";
+import { todayPKT } from "@/lib/attendance/format";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { markTaskDone, submitForApproval } from "./actions";
+
+const SCHEDULE_DAYS = 7;
+
+function addDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+}
 
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; ok?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string; view?: string }>;
 }) {
-  const { error, ok } = await searchParams;
+  const sp = await searchParams;
+  const view = sp.view === "schedule" ? "schedule" : "list";
   const live = isSupabaseConfigured();
-  const groups = await listMyTasks();
+  const today = todayPKT();
+  const endDate = addDays(today, SCHEDULE_DAYS - 1);
+
+  const me = await getCurrentUser();
+  const [groups, scheduleTasks] = await Promise.all([
+    listMyTasks(),
+    me ? listTasksInRange(today, endDate, me.authUserId) : Promise.resolve<TaskRowVM[]>([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -18,25 +42,20 @@ export default async function TasksPage({
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">My tasks</h1>
           <p className="text-sm text-gray-500">
-            Today, upcoming, overdue, and recently done.
+            Switch between a list view and the {SCHEDULE_DAYS}-day schedule grid.
           </p>
         </div>
-        <div className="flex gap-2 text-xs">
-          <Chip label={`${groups.today.length} today`} tone="green" />
-          <Chip label={`${groups.upcoming.length} upcoming`} tone="gray" />
-          <Chip label={`${groups.overdue.length} overdue`} tone="red" />
-          <Chip label={`${groups.awaiting_approval.length} awaiting approval`} tone="yellow" />
-        </div>
+        <ViewTabs current={view} basePath="/tasks" />
       </header>
 
-      {error && (
+      {sp.error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-          {error}
+          {sp.error}
         </div>
       )}
-      {ok && (
+      {sp.ok && (
         <div className="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
-          {ok}
+          {sp.ok}
         </div>
       )}
       {!live && (
@@ -45,6 +64,64 @@ export default async function TasksPage({
         </div>
       )}
 
+      {view === "list" ? (
+        <ListView groups={groups} />
+      ) : (
+        <ScheduleView
+          tasks={scheduleTasks}
+          startDate={today}
+          counts={{
+            today: groups.today.length,
+            upcoming: groups.upcoming.length,
+            overdue: groups.overdue.length,
+            awaiting: groups.awaiting_approval.length,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ViewTabs({
+  current,
+  basePath,
+}: {
+  current: "list" | "schedule";
+  basePath: string;
+}) {
+  const cls = (active: boolean) =>
+    `rounded-md px-3 py-1 text-xs ring-1 ring-inset ${
+      active
+        ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+        : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
+    }`;
+  return (
+    <nav className="flex gap-2">
+      <Link href={`${basePath}?view=list`} className={cls(current === "list")}>
+        List
+      </Link>
+      <Link
+        href={`${basePath}?view=schedule`}
+        className={cls(current === "schedule")}
+      >
+        Schedule
+      </Link>
+    </nav>
+  );
+}
+
+function ListView({ groups }: { groups: Awaited<ReturnType<typeof listMyTasks>> }) {
+  return (
+    <>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <Chip label={`${groups.today.length} today`} tone="green" />
+        <Chip label={`${groups.upcoming.length} upcoming`} tone="gray" />
+        <Chip label={`${groups.overdue.length} overdue`} tone="red" />
+        <Chip
+          label={`${groups.awaiting_approval.length} awaiting approval`}
+          tone="yellow"
+        />
+      </div>
       <Section title="Today" tasks={groups.today} emptyHint="Nothing due today." />
       <Section
         title="Awaiting approval"
@@ -67,6 +144,40 @@ export default async function TasksPage({
         tasks={groups.recently_done}
         emptyHint="No completions yet."
         compact
+      />
+    </>
+  );
+}
+
+function ScheduleView({
+  tasks,
+  startDate,
+  counts,
+}: {
+  tasks: TaskRowVM[];
+  startDate: string;
+  counts: { today: number; upcoming: number; overdue: number; awaiting: number };
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 text-xs">
+        <Chip label={`${counts.today} today`} tone="green" />
+        <Chip label={`${counts.upcoming} upcoming`} tone="gray" />
+        <Chip label={`${counts.overdue} overdue`} tone="red" />
+        <Chip
+          label={`${counts.awaiting} awaiting approval`}
+          tone="yellow"
+        />
+      </div>
+      <p className="text-xs text-gray-500">
+        Cells show tasks placed at their due time. Tasks without a specific time
+        bucket into the EOD column. Sundays are weekly off (locked).
+      </p>
+      <TaskScheduleGrid
+        tasks={tasks}
+        startDate={startDate}
+        days={SCHEDULE_DAYS}
+        showAssignee={false}
       />
     </div>
   );
@@ -139,7 +250,11 @@ function TaskRow({ t, compact }: { t: TaskRowVM; compact?: boolean }) {
             )}
           </div>
           <div className="mt-1 text-xs text-gray-500">
-            Due {t.due_date} &middot; assigned by {t.assigner_name}
+            Due {t.due_date}
+            {t.due_time && (
+              <> at <span className="tabular-nums">{t.due_time.slice(0, 5)}</span></>
+            )}{" "}
+            &middot; assigned by {t.assigner_name}
             {t.branch_code && <> &middot; {t.branch_code}</>}
             {t.department_name && <> &middot; {t.department_name}</>}
           </div>
