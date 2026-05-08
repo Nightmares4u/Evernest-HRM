@@ -10,6 +10,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { sendEmail, sendEmailSafely } from "@/lib/email/send";
+import { taskAssignedEmail } from "@/lib/email/templates";
 import type { TaskPriority } from "@/lib/types/hrm";
 
 function fail(path: string, msg: string): never {
@@ -218,6 +220,39 @@ export async function createTask(formData: FormData) {
       priority,
       requires_approval,
     },
+  });
+
+  // Notify the assignee (and capture assigner name for the email body).
+  await sendEmailSafely(async () => {
+    const [{ data: assigneeRow }, { data: assignerRow }] = await Promise.all([
+      admin
+        .from("app_users")
+        .select("display_name, email")
+        .eq("id", assigned_to)
+        .maybeSingle(),
+      admin
+        .from("app_users")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
+    if (!assigneeRow?.email) return;
+    const tpl = taskAssignedEmail({
+      to_name: assigneeRow.display_name ?? assigneeRow.email,
+      title,
+      description,
+      due_date,
+      due_time,
+      priority,
+      assigner_name: assignerRow?.display_name ?? "Admin",
+      requires_approval,
+    });
+    await sendEmail({
+      to: assigneeRow.email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
   });
 
   revalidatePath("/tasks");

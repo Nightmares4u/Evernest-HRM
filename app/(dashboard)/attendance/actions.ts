@@ -15,8 +15,10 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { todayPKT } from "@/lib/attendance/format";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { sendEmail, sendEmailSafely } from "@/lib/email/send";
+import { checkInEmail, checkOutEmail } from "@/lib/email/templates";
+import { formatTimePKT, todayPKT } from "@/lib/attendance/format";
 import {
   buildPktTimestamp,
   computeOnCheckIn,
@@ -25,6 +27,19 @@ import {
   isoWeekdayPKT,
 } from "@/lib/attendance/policy";
 import type { AttendanceMode } from "@/lib/types/hrm";
+
+async function getSuperAdminEmails(
+  admin: ReturnType<typeof createAdminClient>
+): Promise<string[]> {
+  const { data } = await admin
+    .from("app_users")
+    .select("email")
+    .eq("role", "super_admin")
+    .eq("is_active", true);
+  return ((data ?? []) as Array<{ email: string }>)
+    .map((u) => u.email)
+    .filter((e): e is string => Boolean(e));
+}
 
 function fail(msg: string): never {
   redirect(`/dashboard?error=${encodeURIComponent(msg)}`);
@@ -199,6 +214,47 @@ export async function checkIn(formData?: FormData) {
 
   if (error) fail(`Check-in failed: ${error.message}`);
 
+  // Notify super-admins. Uses admin client to read both employee display name
+  // and the super_admin email list (RLS would block this for an employee).
+  await sendEmailSafely(async () => {
+    const admin = createAdminClient();
+    const [meRes, branchRes, superAdminEmails] = await Promise.all([
+      supabase
+        .from("app_users")
+        .select("display_name")
+        .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
+        .maybeSingle(),
+      employee.branch_id
+        ? admin
+            .from("branches")
+            .select("code")
+            .eq("id", employee.branch_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      getSuperAdminEmails(admin),
+    ]);
+
+    if (superAdminEmails.length === 0) return;
+    const tpl = checkInEmail({
+      employee_name: meRes.data?.display_name ?? "Someone",
+      time_pkt: formatTimePKT(checkInIso),
+      mode,
+      is_late: isLate,
+      late_minutes: lateMinutes,
+      requires_review: requiresReview,
+      geo_status: geo.status,
+      ip,
+      branch_code:
+        (branchRes.data as { code?: string } | null)?.code ?? null,
+    });
+    await sendEmail({
+      to: superAdminEmails,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
+  });
+
   revalidatePath("/dashboard");
   revalidatePath("/attendance");
 }
@@ -239,6 +295,43 @@ export async function checkOut() {
     .eq("id", existing.id);
 
   if (error) fail(`Check-out failed: ${error.message}`);
+
+  // Notify super-admins of the checkout.
+  await sendEmailSafely(async () => {
+    const admin = createAdminClient();
+    const [meRes, branchRes, superAdminEmails] = await Promise.all([
+      supabase
+        .from("app_users")
+        .select("display_name")
+        .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
+        .maybeSingle(),
+      employee.branch_id
+        ? admin
+            .from("branches")
+            .select("code")
+            .eq("id", employee.branch_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      getSuperAdminEmails(admin),
+    ]);
+
+    if (superAdminEmails.length === 0) return;
+    const tpl = checkOutEmail({
+      employee_name: meRes.data?.display_name ?? "Someone",
+      time_pkt: formatTimePKT(checkOutIso),
+      worked_minutes: result.workedMinutes,
+      is_half_day: result.isHalfDay,
+      status: result.status,
+      branch_code:
+        (branchRes.data as { code?: string } | null)?.code ?? null,
+    });
+    await sendEmail({
+      to: superAdminEmails,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/attendance");
