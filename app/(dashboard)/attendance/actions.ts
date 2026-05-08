@@ -5,7 +5,12 @@
 // rules block the action (Sunday, holiday, exempt employee, etc.).
 //
 // checkIn accepts an optional FormData with browser-captured lat/lng/accuracy
-// (the client component captures these before submitting).
+// and a geolocation_status string. The status is recorded on the attendance
+// record so super-admins can see when a check-in had no location proof.
+//
+// requires_review is set when:
+//   - office mode AND IP doesn't match the branch whitelist, OR
+//   - remote mode AND no geolocation captured (any non-"granted" status).
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -79,20 +84,29 @@ async function loadMyEmployee() {
   return { supabase, employee: emp, shift, branch };
 }
 
-function parseGeolocation(formData?: FormData): {
-  lat: number;
-  lng: number;
-  accuracy: number;
-} | null {
-  if (!formData) return null;
+type ParsedGeo = {
+  coords: { lat: number; lng: number; accuracy: number } | null;
+  status: string;
+};
+
+function parseGeolocation(formData?: FormData): ParsedGeo {
+  if (!formData) return { coords: null, status: "not_provided" };
+  const status = String(
+    formData.get("geolocation_status") ?? "not_provided"
+  ).trim();
   const lat = Number(formData.get("lat"));
   const lng = Number(formData.get("lng"));
   const accuracy = Number(formData.get("accuracy"));
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { coords: null, status };
+  }
   return {
-    lat,
-    lng,
-    accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+    coords: {
+      lat,
+      lng,
+      accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+    },
+    status,
   };
 }
 
@@ -143,15 +157,22 @@ export async function checkIn(formData?: FormData) {
     null;
   const userAgent = headerStore.get("user-agent") || null;
 
-  // Soft IP whitelist match. Office mode only — remote check-ins are expected
-  // off-network. Mismatch flags `requires_review` (admin must clear), never blocks.
-  const whitelistOk =
+  // Geolocation (browser-supplied + status).
+  const geo = parseGeolocation(formData);
+  const geoJson = geo.coords
+    ? { ...geo.coords, status: geo.status }
+    : { status: geo.status };
+
+  // requires_review logic:
+  //   - office mode  -> require IP whitelist match (when whitelist is set)
+  //   - remote mode  -> require geolocation captured
+  //   - either mode  -> if both are absent, definitely flag
+  const ipOk =
     mode === "remote"
       ? true
       : ipMatchesWhitelist(ip, branch?.ip_whitelist ?? []);
-
-  // Browser-supplied geolocation (optional).
-  const coords = parseGeolocation(formData);
+  const geoOk = mode === "remote" ? geo.status === "granted" : true;
+  const requiresReview = !ipOk || !geoOk;
 
   const { error } = await supabase.from("attendance_records").upsert(
     {
@@ -169,9 +190,9 @@ export async function checkIn(formData?: FormData) {
       mode,
       ip_address: ip,
       user_agent: userAgent,
-      geolocation: coords,
+      geolocation: geoJson,
       branch_id: employee.branch_id,
-      requires_review: !whitelistOk,
+      requires_review: requiresReview,
     },
     { onConflict: "employee_id,date" }
   );
