@@ -1,11 +1,14 @@
+import Link from "next/link";
 import { Chip } from "@/components/StatusChip";
 import {
+  getAdminPendingCounts,
   isSupabaseConfigured,
   listBranches,
   listDepartments,
   listEmployees,
   listShifts,
 } from "@/lib/db/queries";
+import { listRedlinedEmployees } from "@/lib/db/tasks";
 
 const PKR = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -25,12 +28,15 @@ function formatDays(days: number[]): string {
 
 export default async function AdminPage() {
   const live = isSupabaseConfigured();
-  const [employees, branches, departments, shifts] = await Promise.all([
-    listEmployees(),
-    listBranches(),
-    listDepartments(),
-    listShifts(),
-  ]);
+  const [employees, branches, departments, shifts, counts, redlined] =
+    await Promise.all([
+      listEmployees(),
+      listBranches(),
+      listDepartments(),
+      listShifts(),
+      getAdminPendingCounts(),
+      listRedlinedEmployees(),
+    ]);
 
   const totalEmployees = employees.length;
   const totalPayroll = employees.reduce((s, e) => s + e.monthly_salary, 0);
@@ -58,22 +64,109 @@ export default async function AdminPage() {
         </div>
       </header>
 
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-        Read-only foundations. Destructive actions (edit, delete, override,
-        approve) land in Phase 7+ alongside audit logging.
-        {!live && " Showing mock data (no Supabase env)."}
-      </div>
+      {!live && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Mock data (no Supabase env).
+        </div>
+      )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Employees" value={totalEmployees} />
-        <Stat label="Monthly payroll" value={PKR.format(totalPayroll)} />
-        <Stat
-          label="Attendance-exempt"
-          value={exemptCount}
-          hint="Yashal + Marketing"
-        />
-        <Stat label="Remote-allowed" value={remoteAllowed} />
-      </div>
+      <Section title="Action items">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <ActionCard
+            label="Pending leave"
+            value={counts.pending_leave}
+            href="/admin/leave?filter=pending"
+            tone={counts.pending_leave > 0 ? "yellow" : "gray"}
+            hint={counts.pending_leave === 0 ? "Inbox clear" : "Review and act"}
+          />
+          <ActionCard
+            label="Pending task approvals"
+            value={counts.pending_task_approvals}
+            href="/admin/tasks?filter=pending_approval"
+            tone={counts.pending_task_approvals > 0 ? "yellow" : "gray"}
+            hint={
+              counts.pending_task_approvals === 0
+                ? "Nothing waiting"
+                : "Marketing / approval-required"
+            }
+          />
+          <ActionCard
+            label="Today's check-in coverage"
+            value={
+              counts.tracked_total === 0
+                ? "—"
+                : `${counts.checked_in_today}/${counts.tracked_total}`
+            }
+            href="/attendance"
+            tone={
+              counts.tracked_total > 0 &&
+              counts.checked_in_today === counts.tracked_total
+                ? "green"
+                : "amber"
+            }
+            hint={
+              counts.tracked_total > 0
+                ? `${counts.tracked_total - counts.checked_in_today} not yet in`
+                : "No tracked staff"
+            }
+          />
+          <ActionCard
+            label="Active recurring tasks"
+            value={counts.active_recurring}
+            href="/admin/tasks/recurring"
+            tone={counts.active_recurring > 0 ? "indigo" : "gray"}
+            hint="Manage templates"
+          />
+        </div>
+      </Section>
+
+      {redlined.length > 0 && (
+        <Section title={`Redlined (${redlined.length})`}>
+          <div className="rounded-lg border border-red-200 bg-red-50/40 p-4">
+            <p className="text-xs text-red-800">
+              Employees with 3+ overdue undone tasks. Conversation, then
+              consider a payroll adjustment if warranted.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {redlined.map((r) => (
+                <li
+                  key={r.employee_id}
+                  className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm shadow-sm"
+                >
+                  <span className="font-medium text-gray-900">
+                    {r.full_name}
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <Chip
+                      label={`${r.overdue_count} overdue`}
+                      tone="red"
+                    />
+                    <Link
+                      href={`/admin/tasks?filter=overdue`}
+                      className="text-xs text-indigo-600 hover:text-indigo-500"
+                    >
+                      Review →
+                    </Link>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Section>
+      )}
+
+      <Section title="Headcount & payroll">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Employees" value={totalEmployees} />
+          <Stat label="Monthly payroll" value={PKR.format(totalPayroll)} />
+          <Stat
+            label="Attendance-exempt"
+            value={exemptCount}
+            hint="Yashal + Marketing"
+          />
+          <Stat label="Remote-allowed" value={remoteAllowed} />
+        </div>
+      </Section>
 
       <Section title="Branches">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -201,31 +294,45 @@ export default async function AdminPage() {
         </div>
       </Section>
 
-      <Section title="Configuration panels (Phase 7+)">
+      <Section title="Quick links">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <QuickLink
+            href="/admin/leave"
+            title="Leave admin"
+            description="Approve / reject leave requests. Audit-logged."
+            live
+          />
+          <QuickLink
+            href="/admin/tasks"
+            title="Tasks admin"
+            description="Assign tasks. Approve marketing submissions."
+            live
+          />
+          <QuickLink
+            href="/admin/tasks/recurring"
+            title="Recurring tasks"
+            description="Templates that auto-generate task instances on scheduled days."
+            live
+          />
           <PendingCard
             title="Holidays & day-offs"
             description="Add public holidays and per-employee day-offs. Affects attendance auto-marking."
           />
           <PendingCard
-            title="Recurring tasks"
-            description="Define weekly recurring tasks (e.g., Aayan/Sufyan Mon–Tue lead-sheet cleanup). Daily cron generates per-day task instances."
-          />
-          <PendingCard
             title="Payroll runs"
-            description="Generate monthly payslips, edit per-employee adjustments, record disbursement. Uses dual /30 + /26 denominator."
+            description="Monthly payslips with prorated /30 earnings and /26 deductions, adjustments, and disbursement entry."
           />
           <PendingCard
-            title="Audit log"
-            description="Searchable log of every manual override (attendance, leave, salary, status). Append-only."
+            title="Audit log viewer"
+            description="Searchable log of every manual override. Writes already happen — UI surfaces it."
           />
           <PendingCard
             title="Branch IP whitelists"
-            description="Soft IP whitelist per branch. Mismatched check-in is flagged as 'requires review', not blocked."
+            description="Edit per-branch whitelist. Server-side check is live; UI editor pending."
           />
           <PendingCard
             title="System settings"
-            description="Late grace minutes, half-day threshold, payroll denominators, redline threshold. Stored in settings table."
+            description="Late grace, half-day threshold, payroll denominators, redline threshold. Stored in settings table."
           />
         </div>
       </Section>
@@ -250,6 +357,77 @@ function Stat({
       <p className="mt-1 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
       {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
     </div>
+  );
+}
+
+function ActionCard({
+  label,
+  value,
+  href,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  href: string;
+  tone: "green" | "amber" | "yellow" | "indigo" | "gray" | "red";
+  hint?: string;
+}) {
+  const ring = {
+    green: "ring-green-200",
+    amber: "ring-amber-200",
+    yellow: "ring-yellow-200",
+    indigo: "ring-indigo-200",
+    gray: "ring-gray-200",
+    red: "ring-red-200",
+  }[tone];
+  const valueClass = {
+    green: "text-green-700",
+    amber: "text-amber-700",
+    yellow: "text-yellow-700",
+    indigo: "text-indigo-700",
+    gray: "text-gray-700",
+    red: "text-red-700",
+  }[tone];
+  return (
+    <Link
+      href={href}
+      className={`block overflow-hidden rounded-lg bg-white p-4 shadow ring-1 ${ring} transition hover:shadow-md`}
+    >
+      <p className="truncate text-xs font-medium uppercase tracking-wide text-gray-500">
+        {label}
+      </p>
+      <p className={`mt-1 text-2xl font-semibold tabular-nums ${valueClass}`}>
+        {value}
+      </p>
+      {hint && <p className="mt-1 text-[11px] text-gray-500">{hint}</p>}
+    </Link>
+  );
+}
+
+function QuickLink({
+  href,
+  title,
+  description,
+  live,
+}: {
+  href: string;
+  title: string;
+  description: string;
+  live?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-lg border border-indigo-200 bg-white p-4 shadow-sm transition hover:bg-indigo-50/40"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+        {live && <Chip label="live" tone="green" />}
+      </div>
+      <p className="mt-2 text-xs text-gray-500">{description}</p>
+      <p className="mt-3 text-xs text-indigo-600">Open →</p>
+    </Link>
   );
 }
 

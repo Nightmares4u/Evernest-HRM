@@ -388,6 +388,73 @@ export async function listLeaveRequestsForAdmin(
   });
 }
 
+// ---------- admin counters ----------
+
+export type AdminPendingCounts = {
+  pending_leave: number;
+  pending_task_approvals: number;
+  active_recurring: number;
+  // today's attendance coverage among non-exempt active employees
+  tracked_total: number;
+  checked_in_today: number;
+  redlined: number;
+};
+
+export async function getAdminPendingCounts(): Promise<AdminPendingCounts> {
+  const empty: AdminPendingCounts = {
+    pending_leave: 0,
+    pending_task_approvals: 0,
+    active_recurring: 0,
+    tracked_total: 0,
+    checked_in_today: 0,
+    redlined: 0,
+  };
+  if (!isSupabaseConfigured()) return empty;
+
+  const supabase = await createClient();
+  const today = todayPKT();
+
+  const [pendingLeave, pendingApprovals, activeRecurring, tracked, checkedIn, redlined] =
+    await Promise.all([
+      supabase
+        .from("leave_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending"),
+      supabase
+        .from("tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("requires_approval", true)
+        .eq("status", "in_progress"),
+      supabase
+        .from("recurring_tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true),
+      supabase
+        .from("employees")
+        .select("id", { count: "exact", head: true })
+        .eq("employment_status", "active")
+        .eq("attendance_exempt", false),
+      supabase
+        .from("attendance_records")
+        .select("id", { count: "exact", head: true })
+        .eq("date", today)
+        .not("check_in_at", "is", null),
+      supabase
+        .from("employee_overdue_tasks")
+        .select("employee_id", { count: "exact", head: true })
+        .eq("is_redlined", true),
+    ]);
+
+  return {
+    pending_leave: pendingLeave.count ?? 0,
+    pending_task_approvals: pendingApprovals.count ?? 0,
+    active_recurring: activeRecurring.count ?? 0,
+    tracked_total: tracked.count ?? 0,
+    checked_in_today: checkedIn.count ?? 0,
+    redlined: redlined.count ?? 0,
+  };
+}
+
 // ---------- taxonomy ----------
 
 export async function listBranches(): Promise<Branch[]> {

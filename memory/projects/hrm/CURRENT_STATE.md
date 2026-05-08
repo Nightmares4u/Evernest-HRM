@@ -2,152 +2,96 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 8 — leave (request + balance + admin queue).
+**Last updated**: Phase 11 — power-user overview, recurring tasks, IP whitelist + geolocation.
 
 ## Branch & commits
 
 - Working branch: **`dev`**.
 - `main` holds: Day-0 scaffold + planning docs (commit `d7e055a`).
-- `dev` ahead of `main`:
-  - `6168b8e` — feat: add initial HRM dashboard shell (Day 1, Gemini-authored, Claude-audited).
-  - `76e7b1e` — feat: prepare Supabase seed workflow (Phase 1 — admin client + seed script).
-  - `06c973e` — feat: HRM domain types + employee directory mock data (Phase 2).
-  - `6f19103` — fix: stabilize auth middleware and prepare real sign-in flow (Phase 3).
-  - `6e2d620` — feat: add attendance UI foundation (Phase 4).
-  - `3918d0e` — feat: add admin foundation overview (Phase 5).
-  - `0db1dca` — feat: wire HRM pages to real Supabase reads (Phase 6).
-  - `cc34f52` — feat: real check-in / check-out flow (Phase 7).
-  - (next) — Phase 8: leave (employee request + admin approve/reject + audit).
-- Repo: https://github.com/Nightmares4u/Evernest-HRM (private).
+- `dev` ahead of `main`. Latest commits (newest first):
+  - `61851c1` — feat: office IP whitelist + browser geolocation on check-in (Phase 10)
+  - `a84c7bd` — feat: recurring tasks — CRUD + manual today-generator (Phase 9)
+  - `3552ee7` — feat: tasks foundation — employee + admin views, assign/approve flow (Phase 8)
+  - `ee60fc2` — feat: leave request, balance, admin approve/reject + audit log
+  - `cc34f52` — feat: real check-in / check-out flow
+  - `0db1dca` — feat: wire HRM pages to real Supabase reads
+  - `2a67964` — chore: reset env example placeholders
+  - `3918d0e` — feat: add admin foundation overview (Phase 5)
+  - `6e2d620` — feat: add attendance UI foundation (Phase 4)
+  - `6f19103` — fix: stabilize auth middleware and prepare real sign-in flow (Phase 3)
+  - `06c973e` — feat: HRM domain types + employee directory mock data (Phase 2)
+  - `76e7b1e` — feat: prepare Supabase seed workflow (Phase 1)
+  - `6168b8e` — feat: initial HRM dashboard shell (Day 1)
+- Repo: https://github.com/Nightmares4u/Evernest-HRM (private). Live Supabase project provisioned, `0001_init.sql` applied, 13 users seeded.
 
 ## Build / typecheck
 
-- `npm run build`: green.
+- `npm run build`: green. 12 routes (1 static, 11 dynamic).
 - `npx tsc --noEmit`: green.
 
-## What exists (real, in-tree)
+## What's live (real Supabase wiring)
 
-### App code
-- `app/page.tsx` — redirect to `/login`.
-- `app/login/page.tsx` — dual-mode. With Supabase env: real form posting to `signIn` server action. Without env: "Continue (Mock)" Link to `/dashboard` + amber dev-mode banner. Renders error from `?error=` query param.
-- `app/login/actions.ts` — server actions `signIn` and `signOut`. Env-safe (degrade to mock behavior if Supabase isn't configured). Uses `redirect()` for both success and error paths.
-- `app/(dashboard)/layout.tsx` — sidebar + header. Header shows "mock mode" pill when env is missing. Logout is a form posting to `signOut`.
-- `app/(dashboard)/dashboard/page.tsx` — derives stat counts from `makeMockTodayAttendance()`. Two side panels: headcount/payroll, attendance snapshot. Both link into deeper pages.
-- `app/(dashboard)/employees/page.tsx` — directory table backed by mock data. Shows branch, department, role, shift, salary, remote days, exemption flags.
-- `app/(dashboard)/attendance/page.tsx` — Today panel: 5 summary cards (present/late/half-day/absent/pending), full row table with mode chip, expected/check-in/check-out times, worked minutes, status + needs-review chips, disabled Override button (lands Phase 5). Sunday banner. Footer note about exempt staff.
-- `app/(dashboard)/admin/page.tsx` — admin overview. Top stats (employees/payroll/exempt/remote-allowed), branch cards with default-shift + IP-whitelist, departments table, shifts table with grace/half-day thresholds, remote-roster table, and 6 dashed "planned" cards for upcoming controls (holidays, recurring tasks, payroll runs, audit log, IP whitelists, system settings). All buttons disabled — read-only foundations.
+### Routes
 
-### Supabase glue
-- `lib/supabase/client.ts` — browser client (anon key).
-- `lib/supabase/server.ts` — server-only. Exports:
-  - `createClient()` — request-cookie-bound anon client (RLS enforced).
-  - `createAdminClient()` — service-role client (RLS bypassed). Throws if env vars are missing.
-- `middleware.ts` — env-safe. Skips all auth checks when Supabase env is missing (dev/mock mode). With env: refreshes session, redirects unauthenticated users away from non-public paths to `/login`, redirects authenticated users away from `/login` to `/dashboard`. Public paths: `/login`, `/api/cron`.
+| Route | Audience | What it does |
+|---|---|---|
+| `/login` | public | Real Supabase email+password sign-in via server action. Falls back to "Continue (Mock)" if env missing. |
+| `/dashboard` | any signed-in | Personal landing. `MyAttendanceCard` shows today's status + Check-in / Check-out buttons. Stat cards aggregate today's attendance. |
+| `/attendance` | any signed-in | Today panel. Per-row table of every tracked employee's status, mode, times, worked, late minutes, needs-review chip. |
+| `/employees` | any signed-in | Directory table with branch / dept / role / shift / salary / remote days / exemptions. |
+| `/leave` | employees | Submit leave request, see balance + history. |
+| `/admin/leave` | super-admin | Approve / reject leave queue. Approval inserts on_leave attendance rows + decrements balance + audit-logs. |
+| `/tasks` | any signed-in | My tasks grouped today / awaiting approval / overdue / upcoming / recently done. Approval-required tasks have a "Submit for approval" form; others have "Mark done". |
+| `/admin/tasks` | super-admin | Assign-task form (any app_user as assignee, due_date, priority, requires_approval). Filters: open / pending approval / overdue / all. Per-row Approve / Reject for marketing-style tasks. |
+| `/admin/tasks/recurring` | super-admin | Recurring template CRUD: create (weekly day picker + priority + requires_approval), pause/resume, delete. "Generate today's tasks" button — idempotent. |
+| `/admin` | super-admin | **Power-user overview.** Action cards: pending leave, pending task approvals, today's check-in coverage (X/Y), active recurring count. Redlined section (only shown if ≥1 employee has 3+ overdue undone tasks). Headcount/payroll stats. Branch + department + shift + remote-roster tables. Quick-link grid to all admin sections + dashed cards for still-planned controls. |
 
-### Domain types + mock data
-- `lib/types/hrm.ts` — TypeScript types for every HRM entity (enums + tables + view + UI-helper composed types). Aligned with `0001_init.sql`.
-- `lib/mock/hrm.ts` — mock branches, departments, shifts, employees, and a `makeMockTodayAttendance()` helper. Used by UI surfaces while Supabase is unconfigured.
-- `lib/attendance/format.ts` — pure helpers: `attendanceChip(status)`, `formatTimePKT(iso)`, `formatWorkedMinutes(min)`, `weekdayPKT()`, `isSundayPKT()`, `todayPKT()`. All Asia/Karachi timezone aware.
-- `components/StatusChip.tsx` — `<StatusChip status={…} />` and generic `<Chip label tone />`. Tones span all attendance state colors.
+### Server actions (all audit-logged where they mutate state)
 
-### Scripts
-- `scripts/seed-users.ts` — one-shot user seeder.
-  - Reads `memory/projects/hrm/seed/users.csv`.
-  - Refuses to run if CSV or `.env.local` missing.
-  - Validates required columns.
-  - Two-pass FK resolution (creates everyone, then resolves `manager_email -> manager_id`).
-  - Creates `auth.users` + `app_users` + (for employees) `employees`.
-  - Idempotent — skips users whose email already exists.
-  - Run with: `npm run seed:users`.
+- `app/login/actions.ts`: `signIn`, `signOut`.
+- `app/(dashboard)/attendance/actions.ts`: `checkIn(formData)` — accepts browser-captured lat/lng/accuracy; matches request IP against `branches.ip_whitelist` (office mode only) and flags `requires_review` on mismatch. `checkOut()` — closes the day with worked minutes + half-day flag.
+- `app/(dashboard)/leave/actions.ts`: `submitLeaveRequest`, `approveLeaveRequest`, `rejectLeaveRequest`.
+- `app/(dashboard)/tasks/actions.ts`: `markTaskDone`, `submitForApproval`, `createTask`, `approveTask`, `rejectTask`.
+- `app/(dashboard)/admin/tasks/recurring/actions.ts`: `createRecurringTask`, `toggleRecurringActive`, `deleteRecurringTask`, `generateTasksForToday`.
+
+### Domain + helpers
+- `lib/types/hrm.ts` — typed mirror of every entity in `0001_init.sql`.
+- `lib/db/queries.ts` — server-side reads: employees, attendance (mine + today panel), leave (balance, my requests, admin queue), taxonomy (branches, departments, shifts), `getAdminPendingCounts()` (action-card numbers).
+- `lib/db/tasks.ts` — task reads: `listMyTasks` (grouped), `listTasksForAdmin` (filterable), `listAssignableUsers`, `listRecurringTasks`, `listRedlinedEmployees`.
+- `lib/auth/current-user.ts` — `getCurrentUser()` returns auth user + app_users row + employees row.
+- `lib/attendance/format.ts` — Asia/Karachi-aware time / date / weekday helpers + status chip mapping.
+- `lib/attendance/policy.ts` — pure rule helpers: `computeOnCheckIn`, `computeOnCheckOut`, `ipMatchesWhitelist`, `isoWeekdayPKT`, `buildPktTimestamp`.
+- `lib/leave/policy.ts` — working-day counting helpers for leave proration.
+- `lib/mock/hrm.ts` — used by every read function as a fallback when Supabase env is missing.
+
+### Components
+- `components/StatusChip.tsx` — `<StatusChip>` (attendance status) and `<Chip label tone>` (generic).
+- `components/MyAttendanceCard.tsx` — server component. Renders state for the current user's today record; embeds `<CheckInButton>` for the not-yet-checked-in path.
+- `components/CheckInButton.tsx` — client component. Captures browser geolocation (8s timeout, declined / unavailable yields null), then invokes `checkIn` server action with `FormData{ lat, lng, accuracy }`.
 
 ### Schema
-- `supabase/migrations/0001_init.sql` — full schema (enums, tables, RLS, seed for branches/departments/shifts/settings, `employee_overdue_tasks` view). 418 lines. **Not yet applied to a real Supabase project.**
+- `supabase/migrations/0001_init.sql` — applied. All tables, RLS, seed (3 branches, 6 departments, 4 shifts, default settings), `employee_overdue_tasks` view.
 
-### Planning docs
-- `memory/projects/hrm/HRM_MASTER_CONTEXT.md`
-- `memory/projects/hrm/PROJECT_CHARTER.md`
-- `memory/projects/hrm/MVP_SCOPE.md`
-- `memory/projects/hrm/DATA_MODEL.md`
-- `memory/projects/hrm/IMPLEMENTATION_PLAN.md`
-- `memory/projects/hrm/OPEN_QUESTIONS.md`
-- `memory/projects/hrm/CURRENT_STATE.md` (this file)
-- `memory/projects/hrm/seed/users.csv.example` — sanitized template (committed).
+### Seed
+- `scripts/seed-users.ts` — applied. 13 users now in `auth.users` + `app_users` (+ 12 in `employees`). Two-pass FK resolution for `manager_email`.
+- `memory/projects/hrm/seed/users.csv` — local only, gitignored, contains plaintext temp passwords. Pattern: `EN-2026-{firstname}`.
 
-## What is NOT real yet
+## Still pending (post-MVP backlog)
 
-- **Auth at runtime**: scaffolded. Real `signInWithPassword` flow in place but inert until `.env.local` exists. Dev navigation via "Continue (Mock)" still works.
-- **Dashboard / Today data**: derived from `makeMockTodayAttendance()`, not DB. Status fixtures hand-tuned to demonstrate every chip variant.
-- **Supabase project**: not provisioned. URL/keys not set.
-- **`.env.local`**: does not exist locally.
-- **Migration**: not yet applied.
-- **Seed**: not yet run.
-- **Cron jobs**: not yet implemented.
-- **Live employee data**: directory uses `MOCK_EMPLOYEES`, not DB.
-
-## What is safe to commit
-
-Explicit paths:
-- `app/**`
-- `lib/**`
-- `middleware.ts`
-- `scripts/**` (the script itself contains no credentials)
-- `supabase/migrations/*.sql`
-- `memory/projects/hrm/*.md`
-- `memory/projects/hrm/seed/users.csv.example`
-- `package.json`, `package-lock.json`, `tsconfig.json`, `next.config.ts`, `tailwind.config.ts`, `postcss.config.mjs`
-- `.gitignore`, `.env.local.example`, `README.md`
+- **Cron handlers** (`app/api/cron/*`) protected by `CRON_SECRET`:
+  - `nightly_attendance_close` — auto-mark absent + forgot-checkout (23:59 PKT).
+  - `monthly_leave_accrual` — +1 leave to non-exempt employees on 1st.
+  - `daily_recurring_generate` — replace the manual "Generate today's tasks" button (23:30 PKT).
+- **Override actions** on `/attendance` (Correct check-in/out, Mark day off, Override status, Add note). Each writes audit_logs.
+- **Holidays admin UI** (`/admin/holidays`).
+- **Branch IP whitelist editor** (server-side check is live; UI editor pending).
+- **Audit log viewer** (`/admin/audit`).
+- **Payroll runs + payslips** UI (`/admin/payroll/*`). Schema is in place (`payroll_runs`, `payslips`).
+- **Super-admin restriction at handler level**. Currently any signed-in user can hit `/admin/*` URLs; RLS on the underlying tables prevents writes by non-super-admins, but a clean redirect to `/dashboard?error=…` for non-admins would be polite. Add to middleware or admin layout.
+- **Task attachments** (Supabase Storage `task-proofs` bucket; metadata table is ready).
 
 ## What MUST NEVER be committed
 
 - `memory/projects/hrm/seed/users.csv` — plaintext passwords. **In `.gitignore`.**
 - `.env.local` — Supabase keys + cron secret. **In `.gitignore`.**
 - `node_modules/`, `.next/`, `tsconfig.tsbuildinfo`, `next-env.d.ts` — build artifacts. **In `.gitignore`.**
-
-## Next phases (in order)
-
-1. **Phase 1**: admin client + seed script + state refresh. ✅
-2. **Phase 2**: HRM domain types + mock employee directory. ✅
-3. **Phase 3**: Real login server action + middleware route protection (both env-safe). ✅
-4. **Phase 4**: Today attendance panel UI + status chips + dashboard wired to mock. ✅
-5. **Phase 5 (this commit)**: Admin foundations — branch/shift/department display + remote roster + planned-control placeholders. ✅
-
-## End-of-session checkpoint
-
-All 5 phases of the autonomous-run plan complete on `dev`. Five green
-checkpoints — `npm run build` and `npx tsc --noEmit` clean before each
-commit. No destructive actions wired anywhere. No env vars required to
-build / serve the shell.
-
-### What's next (Phase 6+ — not yet started)
-
-In priority order for when work resumes:
-
-1. **Yashal — out of band**: provision Supabase project, apply
-   `supabase/migrations/0001_init.sql`, populate `.env.local`, run
-   `npm run seed:users`. After this, the existing auth scaffolding
-   activates automatically and middleware starts enforcing.
-2. **Real check-in / check-out** server actions in
-   `app/(dashboard)/attendance/actions.ts`. Wire the disabled Override
-   button to admin server actions with `audit_logs` writes.
-3. **Leave** request form + admin queue (already typed in
-   `lib/types/hrm.ts`).
-4. **Tasks** module — list, assign UI, today/upcoming/overdue filters.
-   Then recurring tasks template CRUD + daily-generation cron.
-5. **Marketing approval flow** — `requires_approval` + super-admin
-   approve action that sets `approved_by`/`approved_at`/`status='done'`.
-   Plus the redline view (`employee_overdue_tasks`) surfaced in admin.
-6. **Payroll runs + payslips** — generate-for-month, adjustments
-   editor, disbursement entry, printable HTML payslip. Dual
-   `/30` + `/26` math already documented in `HRM_MASTER_CONTEXT.md` §7.
-7. **Cron handlers** under `app/api/cron/*` — nightly attendance close,
-   monthly leave accrual, daily recurring-task generation. Protected
-   by `CRON_SECRET` header.
-8. **Audit log UI**.
-9. **Branch-manager filtered admin** view.
-6. **(Yashal — out of band)**: Provision Supabase project. Apply `0001_init.sql`. Populate `.env.local`. Run `npm run seed:users`.
-
-## Decisions made autonomously this phase
-
-- Renamed npm script `seed` -> `seed:users` (more explicit; future seeds can follow `seed:<thing>` pattern).
-- `createAdminClient()` uses `@supabase/supabase-js` directly (not `@supabase/ssr`) since admin operations don't need cookie binding.
-- Middleware unchanged from Gemini's commit in this phase. Auth gate moves in Phase 3 with explicit env-missing safety.
