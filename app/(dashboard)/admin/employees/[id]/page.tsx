@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Chip, StatusChip } from "@/components/StatusChip";
+import { updateEmployeeSalary } from "@/app/(dashboard)/admin/employees/actions";
 import { overrideAttendanceRecord } from "@/app/(dashboard)/attendance/actions";
 import {
   dateRangeToTimestamps,
@@ -16,7 +17,13 @@ import {
   listAttendanceOverrideNotes,
   listEmployeeAttendanceRange,
 } from "@/lib/db/queries";
-import { listDoneTasks, listTasksForEmployeeAdmin } from "@/lib/db/tasks";
+import { listHolidays, type HolidayRowVM } from "@/lib/db/payroll";
+import { buildPayrollPreview, type PayrollPreview } from "@/lib/payroll/preview";
+import {
+  listDoneTasks,
+  listTasksInRange,
+  type TaskRowVM,
+} from "@/lib/db/tasks";
 import type { AttendanceRecord, AttendanceStatus } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -66,19 +73,6 @@ type AttendanceTotals = {
   workedMinutes: number;
 };
 
-type PayrollPreview = {
-  workingDays: number;
-  lateCount: number;
-  lateDeductionDays: number;
-  halfDayCount: number;
-  extraHalfDays: number;
-  halfDayDeductionDays: number;
-  absenceDays: number;
-  totalDeductionDays: number;
-  estimatedDeductionAmount: number;
-  estimatedPayableAmount: number;
-};
-
 export default async function EmployeeControlPage({
   params,
   searchParams,
@@ -106,28 +100,37 @@ export default async function EmployeeControlPage({
   const selectedDay = validDay(sp.day) ? sp.day! : null;
   const yearTimestampRange = dateRangeToTimestamps(startOfYear, endOfYear);
 
-  const [yearRecords, tasks, doneTasks, leaveBalance] = await Promise.all([
+  const [yearRecords, tasks, doneTasks, leaveBalance, holidays] = await Promise.all([
     listEmployeeAttendanceRange(id, startOfYear, endOfYear),
-    listTasksForEmployeeAdmin(employee.user_id),
+    listTasksInRange(startOfYear, endOfYear, employee.user_id),
     listDoneTasks(yearTimestampRange.since, yearTimestampRange.until, employee.user_id),
     getEmployeeLeaveBalanceThisMonth(id),
+    listHolidays(startOfYear, endOfYear),
   ]);
 
   const recordIds = yearRecords.map((r) => r.id);
   const notes = await listAttendanceOverrideNotes(recordIds);
   const notesByRecord = new Map(notes.map((n) => [n.target_id, n]));
   const recordsByDate = new Map(yearRecords.map((r) => [r.date, r]));
+  const relevantHolidays = holidays.filter((holiday) =>
+    holidayAppliesToEmployee(holiday, employee.branch_id, id)
+  );
+  const holidaysByDate = groupByDate(relevantHolidays, (holiday) => holiday.date);
+  const tasksByDate = groupByDate(tasks, (task) => task.due_date);
   const selectedRecord = selectedDay ? recordsByDate.get(selectedDay) ?? null : null;
+  const selectedHolidays = selectedDay ? holidaysByDate.get(selectedDay) ?? [] : [];
+  const selectedTasks = selectedDay ? tasksByDate.get(selectedDay) ?? [] : [];
   const yearTotals = summarize(yearRecords);
   const monthRecords = yearRecords.filter(
     (r) => r.date >= monthStart && r.date <= monthEnd
   );
-  const monthPreview = payrollPreview(
-    monthRecords,
-    employee.monthly_salary,
+  const monthPreview = buildPayrollPreview({
+    employee,
+    records: monthRecords,
+    holidays: relevantHolidays,
     monthStart,
-    monthEnd
-  );
+    monthEnd,
+  });
   const monthTotals = summarize(monthRecords);
   const taskOpen = tasks.filter((t) => t.status !== "done").length;
   const taskDone = doneTasks.length;
@@ -206,6 +209,8 @@ export default async function EmployeeControlPage({
             const start = `${year}-${pad2(m)}-01`;
             const end = endOfMonth(start);
             const totals = summarize(yearRecords.filter((r) => r.date >= start && r.date <= end));
+            const monthTasks = tasks.filter((t) => t.due_date >= start && t.due_date <= end);
+            const monthHolidays = relevantHolidays.filter((h) => h.date >= start && h.date <= end);
             return (
               <Link
                 key={name}
@@ -227,6 +232,8 @@ export default async function EmployeeControlPage({
                   <span>A {totals.absent}</span>
                   <span>Remote {totals.remote}</span>
                   <span>{Math.round(totals.workedMinutes / 60)}h</span>
+                  <span>Tasks {monthTasks.length}</span>
+                  <span>Hol {monthHolidays.length}</span>
                 </div>
               </Link>
             );
@@ -252,6 +259,8 @@ export default async function EmployeeControlPage({
             year={year}
             month={month}
             recordsByDate={recordsByDate}
+            holidaysByDate={holidaysByDate}
+            tasksByDate={tasksByDate}
             selectedDay={selectedDay}
           />
         </section>
@@ -263,6 +272,8 @@ export default async function EmployeeControlPage({
             employeeId={id}
             date={selectedDay}
             record={selectedRecord}
+            holidays={selectedHolidays}
+            tasks={selectedTasks}
             note={selectedRecord ? notesByRecord.get(selectedRecord.id) ?? null : null}
             year={year}
             month={month}
@@ -293,6 +304,41 @@ function ProfilePanel({
         <Info label="Leave balance" value={`${leaveBalance.toFixed(1)} day(s)`} />
         <Info label="Remote days" value={formatRemoteDays(employee.remote_default_days)} />
       </dl>
+      <form
+        action={updateEmployeeSalary}
+        className="mt-5 grid gap-3 border-t border-gray-100 pt-4 md:grid-cols-[12rem_minmax(0,1fr)_auto]"
+      >
+        <input type="hidden" name="employee_id" value={employee.id} />
+        <label className="block text-xs font-medium text-gray-700">
+          Monthly salary
+          <input
+            name="monthly_salary"
+            type="number"
+            min="0"
+            step="1"
+            defaultValue={employee.monthly_salary}
+            required
+            className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 shadow-sm"
+          />
+        </label>
+        <label className="block text-xs font-medium text-gray-700">
+          Salary change reason
+          <input
+            name="reason"
+            required
+            className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 shadow-sm"
+            placeholder="Promotion, increment, correction..."
+          />
+        </label>
+        <div className="flex items-end">
+          <button
+            type="submit"
+            className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+          >
+            Update salary
+          </button>
+        </div>
+      </form>
     </section>
   );
 }
@@ -302,12 +348,16 @@ function CalendarGrid({
   year,
   month,
   recordsByDate,
+  holidaysByDate,
+  tasksByDate,
   selectedDay,
 }: {
   employeeId: string;
   year: number;
   month: number;
   recordsByDate: Map<string, AttendanceRecord>;
+  holidaysByDate: Map<string, HolidayRowVM[]>;
+  tasksByDate: Map<string, TaskRowVM[]>;
   selectedDay: string | null;
 }) {
   const days = monthCalendarDays(year, month);
@@ -323,7 +373,9 @@ function CalendarGrid({
       <div className="grid grid-cols-7">
         {days.map((day) => {
           const record = day.inMonth ? recordsByDate.get(day.iso) ?? null : null;
-          const display = dayDisplay(day.iso, record, day.isSunday);
+          const holidays = day.inMonth ? holidaysByDate.get(day.iso) ?? [] : [];
+          const tasks = day.inMonth ? tasksByDate.get(day.iso) ?? [] : [];
+          const display = dayDisplay(record, holidays, day.isSunday);
           return (
             <Link
               key={day.iso}
@@ -335,11 +387,25 @@ function CalendarGrid({
               <div className="flex items-center justify-between gap-1">
                 <span className="text-xs font-semibold text-gray-700">{Number(day.iso.slice(8, 10))}</span>
                 {record?.requires_review && <Chip label="review" tone="yellow" />}
+                {holidays.length > 0 && <Chip label="holiday" tone="gray" />}
               </div>
               <div className="mt-2 space-y-1 text-xs">
                 <p className={`font-medium ${display.text}`}>{display.status}</p>
                 <p className="tabular-nums text-gray-600">{display.times}</p>
                 <p className="text-gray-600">{display.worked}</p>
+                {holidays.slice(0, 2).map((holiday) => (
+                  <p key={holiday.id} className="truncate text-purple-700">
+                    {holiday.name}
+                  </p>
+                ))}
+                {tasks.slice(0, 2).map((task) => (
+                  <p key={task.id} className="truncate text-indigo-700">
+                    {task.title}
+                  </p>
+                ))}
+                {tasks.length > 2 && (
+                  <p className="text-gray-500">+{tasks.length - 2} more tasks</p>
+                )}
               </div>
             </Link>
           );
@@ -353,6 +419,8 @@ function DayPanel({
   employeeId,
   date,
   record,
+  holidays,
+  tasks,
   note,
   year,
   month,
@@ -360,6 +428,8 @@ function DayPanel({
   employeeId: string;
   date: string | null;
   record: AttendanceRecord | null;
+  holidays: HolidayRowVM[];
+  tasks: TaskRowVM[];
   note: { reason: string | null; created_at: string; actor_name: string | null } | null;
   year: number;
   month: number;
@@ -391,6 +461,14 @@ function DayPanel({
         <Info label="Geolocation" value={record?.verification_status?.replaceAll("_", " ") ?? record?.geolocation?.status ?? "—"} />
         <Info label="Distance" value={distanceLabel(record)} />
         <Info label="Review reason" value={record?.review_reason?.replaceAll("_", " ") ?? "—"} />
+        <Info
+          label="Holidays"
+          value={holidays.length ? holidays.map((h) => h.name).join(", ") : "—"}
+        />
+        <Info
+          label="Tasks"
+          value={tasks.length ? tasks.map((t) => t.title).join(", ") : "—"}
+        />
         <Info
           label="Audit note"
           value={
@@ -484,16 +562,17 @@ function PayrollPreviewPanel({ preview, salary }: { preview: PayrollPreview; sal
       <h2 className="text-sm font-semibold text-gray-700">Payroll-ready preview</h2>
       <dl className="mt-3 space-y-2 text-sm">
         <Info label="Salary" value={PKR.format(salary)} />
-        <Info label="Working days" value={String(preview.workingDays)} />
+        <Info label="Scheduled working days" value={String(preview.scheduledWorkingDays)} />
+        <Info label="Daily deduction rate" value={PKR.format(preview.dailyDeductionRate)} />
         <Info label="Late count" value={String(preview.lateCount)} />
         <Info label="Late deduction days" value={String(preview.lateDeductionDays)} />
         <Info label="Half-day count" value={String(preview.halfDayCount)} />
         <Info label="Extra half-days beyond 2" value={String(preview.extraHalfDays)} />
         <Info label="Half-day deduction days" value={preview.halfDayDeductionDays.toFixed(1)} />
-        <Info label="Absence days" value={String(preview.absenceDays)} />
+        <Info label="Absence days" value={String(preview.absentDays)} />
         <Info label="Total deduction days" value={preview.totalDeductionDays.toFixed(1)} />
-        <Info label="Estimated deduction" value={PKR.format(preview.estimatedDeductionAmount)} />
-        <Info label="Estimated payable" value={PKR.format(preview.estimatedPayableAmount)} />
+        <Info label="Estimated deduction" value={PKR.format(preview.deductionAmount)} />
+        <Info label="Estimated payable" value={PKR.format(preview.estimatedPayable)} />
       </dl>
     </section>
   );
@@ -551,8 +630,21 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function dayDisplay(iso: string, record: AttendanceRecord | null, isSunday: boolean) {
+function dayDisplay(
+  record: AttendanceRecord | null,
+  holidays: HolidayRowVM[],
+  isSunday: boolean
+) {
   if (!record) {
+    if (holidays.length > 0) {
+      return {
+        status: "Paid holiday",
+        times: holidays.map((holiday) => holiday.name).join(", "),
+        worked: "Excluded from working days",
+        bg: "bg-purple-50/70",
+        text: "text-purple-700",
+      };
+    }
     return isSunday
       ? { status: "Day off", times: "—", worked: "Weekly off", bg: "bg-gray-50", text: "text-gray-700" }
       : { status: "Not marked", times: "No record", worked: "—", bg: "bg-white", text: "text-gray-500" };
@@ -564,6 +656,27 @@ function dayDisplay(iso: string, record: AttendanceRecord | null, isSunday: bool
     bg: statusBg(record.status),
     text: statusText(record.status),
   };
+}
+
+function holidayAppliesToEmployee(
+  holiday: HolidayRowVM,
+  branchId: string | null,
+  employeeId: string
+): boolean {
+  if (holiday.employee_id === employeeId) return true;
+  if (holiday.company_wide) return true;
+  return Boolean(branchId && holiday.branch_id === branchId);
+}
+
+function groupByDate<T>(items: T[], getDate: (item: T) => string): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const date = getDate(item);
+    const current = grouped.get(date) ?? [];
+    current.push(item);
+    grouped.set(date, current);
+  }
+  return grouped;
 }
 
 function statusBg(status: AttendanceStatus): string {
@@ -615,36 +728,6 @@ function summarize(records: AttendanceRecord[]): AttendanceTotals {
   );
 }
 
-function payrollPreview(
-  records: AttendanceRecord[],
-  salary: number,
-  monthStart: string,
-  monthEnd: string
-): PayrollPreview {
-  const lateCount = records.filter((r) => r.status === "late" || r.status === "remote_late").length;
-  const halfDayCount = records.filter((r) => r.status === "half_day" || r.status === "remote_half_day").length;
-  const absenceDays = records.filter((r) => r.status === "absent").length;
-  const lateDeductionDays = Math.floor(lateCount / 3);
-  const extraHalfDays = Math.max(0, halfDayCount - 2);
-  const halfDayDeductionDays = extraHalfDays * 0.5;
-  const totalDeductionDays = absenceDays + lateDeductionDays + halfDayDeductionDays;
-  const workingDays = countWorkingDays(monthStart, monthEnd);
-  const perDay = workingDays > 0 ? salary / workingDays : 0;
-  const estimatedDeductionAmount = Math.round(perDay * totalDeductionDays);
-  return {
-    workingDays,
-    lateCount,
-    lateDeductionDays,
-    halfDayCount,
-    extraHalfDays,
-    halfDayDeductionDays,
-    absenceDays,
-    totalDeductionDays,
-    estimatedDeductionAmount,
-    estimatedPayableAmount: Math.max(0, salary - estimatedDeductionAmount),
-  };
-}
-
 function monthCalendarDays(year: number, month: number) {
   const first = new Date(Date.UTC(year, month - 1, 1));
   const last = new Date(Date.UTC(year, month, 0));
@@ -668,16 +751,6 @@ function monthCalendarDays(year: number, month: number) {
   return days;
 }
 
-function countWorkingDays(startIso: string, endIso: string): number {
-  let count = 0;
-  const d = new Date(`${startIso}T00:00:00Z`);
-  const end = new Date(`${endIso}T00:00:00Z`);
-  while (d <= end) {
-    if (d.getUTCDay() !== 0) count += 1;
-    d.setUTCDate(d.getUTCDate() + 1);
-  }
-  return count;
-}
 
 function endOfMonth(startIso: string): string {
   const [y, m] = startIso.split("-").map((p) => Number.parseInt(p, 10));

@@ -1,17 +1,19 @@
 import Link from "next/link";
 import { signOut } from "@/app/login/actions";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/attendance", label: "Attendance" },
   { href: "/tasks", label: "Tasks" },
-  { href: "/tasks/history", label: "Tasks History" },
+  { href: "/tasks/history", label: "My Task History" },
   { href: "/leave", label: "Leave" },
   { href: "/employees", label: "Employees" },
   { href: "/admin", label: "Admin" },
 ] as const;
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -20,6 +22,17 @@ export default function DashboardLayout({
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
+  const me = await getCurrentUser();
+  const isSuperAdmin = me?.appUser.role === "super_admin";
+  const navItems = isSuperAdmin
+    ? [...NAV, { href: "/admin/tasks/history", label: "Company Task History" }]
+    : NAV;
+  const adminNavItems = isSuperAdmin
+    ? [
+        { href: "/admin/holidays", label: "Paid Holidays" },
+        { href: "/admin/payroll", label: "Payroll Preview" },
+      ]
+    : [];
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">
@@ -28,7 +41,16 @@ export default function DashboardLayout({
           <h1 className="text-xl font-bold text-gray-800">EN HRM</h1>
         </div>
         <nav className="mt-6 flex flex-col space-y-1 px-4">
-          {NAV.map((item) => (
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center rounded-md px-4 py-2 text-gray-700 hover:bg-gray-100"
+            >
+              {item.label}
+            </Link>
+          ))}
+          {adminNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}

@@ -49,7 +49,15 @@ export default async function EmployeesPage() {
             {total} active &middot; total monthly payroll {PKR.format(totalSalary)}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {isSuperAdmin && (
+            <Link
+              href="/admin/employees/new"
+              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            >
+              Add employee
+            </Link>
+          )}
           {Object.entries(byBranch).map(([code, count]) => (
             <span
               key={code}

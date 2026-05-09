@@ -129,6 +129,8 @@ export type Holiday = {
   branch_id: string | null;
   employee_id: string | null;
   is_paid: boolean;
+  company_wide: boolean;
+  notes: string | null;
   created_by: string | null;
   created_at: string;
 };

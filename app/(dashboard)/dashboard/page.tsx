@@ -157,6 +157,14 @@ export default async function DashboardPage({
                   Open admin schedule
                 </Link>
               )}
+              {isSuperAdmin && (
+                <Link
+                  href="/admin/tasks/history?range=this_month"
+                  className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+                >
+                  Company Task History
+                </Link>
+              )}
             </div>
           </div>
           <div className="mt-3">

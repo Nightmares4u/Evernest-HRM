@@ -118,11 +118,18 @@ export default async function AdminPage() {
             hint="Manage templates"
           />
           <ActionCard
-            label="Task history"
+            label="Company Task History"
             value="Open"
             href="/admin/tasks/history?range=this_month"
             tone="green"
             hint="Monthly completed stack"
+          />
+          <ActionCard
+            label="Add employee"
+            value="New"
+            href="/admin/employees/new"
+            tone="indigo"
+            hint="Create login + HR profile"
           />
         </div>
       </Section>
@@ -317,7 +324,7 @@ export default async function AdminPage() {
           />
           <QuickLink
             href="/admin/tasks/history?range=this_month"
-            title="Task history"
+            title="Company Task History"
             description="Review monthly completed tasks by employee."
             live
           />
@@ -327,13 +334,23 @@ export default async function AdminPage() {
             description="Templates that auto-generate task instances on scheduled days."
             live
           />
-          <PendingCard
-            title="Holidays & day-offs"
-            description="Add public holidays and per-employee day-offs. Affects attendance auto-marking."
+          <QuickLink
+            href="/admin/holidays"
+            title="Paid holidays"
+            description="Add/remove paid holidays that reduce monthly working days."
+            live
           />
-          <PendingCard
-            title="Payroll runs"
-            description="Monthly payslips with prorated /30 earnings and /26 deductions, adjustments, and disbursement entry."
+          <QuickLink
+            href="/admin/payroll"
+            title="Payroll preview"
+            description="Monthly deduction preview using working-day baseline."
+            live
+          />
+          <QuickLink
+            href="/admin/employees/new"
+            title="Add employee"
+            description="Create a Supabase login, HR profile, salary, schedule links, and leave balance."
+            live
           />
           <PendingCard
             title="Audit log viewer"

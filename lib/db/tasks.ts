@@ -1,7 +1,7 @@
 // Read-side queries for tasks (one-off and recurring).
 // Same pattern as lib/db/queries.ts: server-side, mock-fallback, throw on error.
 
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { todayPKT } from "@/lib/attendance/format";
 import { isSupabaseConfigured } from "@/lib/db/queries";
 import type {
@@ -17,6 +17,7 @@ export type TaskRowVM = Task & {
   assignee_email: string;
   assignee_role: UserRole;
   assigner_name: string;
+  branch_name: string | null;
   branch_code: string | null;
   department_name: string | null;
 };
@@ -42,7 +43,7 @@ const TASK_SELECT = `
   created_at, completed_at,
   assignee:app_users!tasks_assigned_to_fkey ( display_name, email, role ),
   assigner:app_users!tasks_assigned_by_fkey ( display_name ),
-  branches ( code ),
+  branches ( name, code ),
   departments ( name )
 `;
 
@@ -55,7 +56,7 @@ type TaskRowRaw = Task & {
     | { display_name: string }
     | { display_name: string }[]
     | null;
-  branches: { code: string } | { code: string }[] | null;
+  branches: { name: string; code: string } | { name: string; code: string }[] | null;
   departments: { name: string } | { name: string }[] | null;
 };
 
@@ -87,6 +88,7 @@ function rowToVM(row: TaskRowRaw): TaskRowVM {
     assignee_email: assignee?.email ?? "",
     assignee_role: assignee?.role ?? "employee",
     assigner_name: assigner?.display_name ?? "?",
+    branch_name: branch?.name ?? null,
     branch_code: branch?.code ?? null,
     department_name: dept?.name ?? null,
   };
@@ -117,6 +119,31 @@ export async function listDoneTasks(
 
   const { data, error } = await query;
   if (error) throw new Error(`listDoneTasks: ${error.message}`);
+  return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
+}
+
+/**
+ * Company-wide done tasks. Must only be called after the route/action verifies
+ * the current user is a super_admin because this uses the service-role client.
+ */
+export async function listCompanyDoneTasks(
+  sinceIso: string,
+  untilIso: string
+): Promise<TaskRowVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("status", "done")
+    .not("completed_at", "is", null)
+    .gte("completed_at", sinceIso)
+    .lte("completed_at", untilIso)
+    .order("completed_at", { ascending: false })
+    .limit(5000);
+
+  if (error) throw new Error(`listCompanyDoneTasks: ${error.message}`);
   return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
 }
 
