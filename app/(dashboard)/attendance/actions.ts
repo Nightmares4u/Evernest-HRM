@@ -10,7 +10,8 @@
 //
 // requires_review is set when:
 //   - office mode AND IP doesn't match the branch whitelist, OR
-//   - remote mode AND no geolocation captured (any non-"granted" status).
+//   - geolocation was denied/unavailable/not-supported/timed out, OR
+//   - remote mode AND no geolocation captured.
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -26,7 +27,7 @@ import {
   ipMatchesWhitelist,
   isoWeekdayPKT,
 } from "@/lib/attendance/policy";
-import type { AttendanceMode } from "@/lib/types/hrm";
+import type { AttendanceMode, AttendanceStatus } from "@/lib/types/hrm";
 
 async function getSuperAdminEmails(
   admin: ReturnType<typeof createAdminClient>
@@ -43,6 +44,14 @@ async function getSuperAdminEmails(
 
 function fail(msg: string): never {
   redirect(`/dashboard?error=${encodeURIComponent(msg)}`);
+}
+
+function attendanceFail(msg: string): never {
+  redirect(`/attendance?error=${encodeURIComponent(msg)}`);
+}
+
+function attendanceOk(msg: string): never {
+  redirect(`/attendance?ok=${encodeURIComponent(msg)}`);
 }
 
 type ShiftLite = {
@@ -103,6 +112,61 @@ type ParsedGeo = {
   coords: { lat: number; lng: number; accuracy: number } | null;
   status: string;
 };
+
+const LOCATION_REVIEW_STATUSES = new Set([
+  "denied",
+  "unavailable",
+  "not_supported",
+  "timeout",
+]);
+
+const OVERRIDE_STATUSES: AttendanceStatus[] = [
+  "present",
+  "late",
+  "half_day",
+  "absent",
+  "on_leave",
+  "day_off",
+  "remote_present",
+  "remote_late",
+  "remote_half_day",
+];
+
+function parseOverrideTime(
+  raw: FormDataEntryValue | null,
+  date: string
+): string | undefined {
+  const value = String(raw ?? "").trim();
+  if (!value) return undefined;
+  if (!/^\d{2}:\d{2}$/.test(value)) {
+    attendanceFail("Override time must use HH:MM format.");
+  }
+  return buildPktTimestamp(date, value);
+}
+
+function workedMinutesBetween(
+  checkInAt: string | null,
+  checkOutAt: string | null
+): number | null {
+  if (!checkInAt || !checkOutAt) return null;
+  const inMs = Date.parse(checkInAt);
+  const outMs = Date.parse(checkOutAt);
+  if (!Number.isFinite(inMs) || !Number.isFinite(outMs)) return null;
+  return Math.max(0, Math.floor((outMs - inMs) / 60_000));
+}
+
+function lateMinutesFrom(
+  expectedStart: string,
+  checkInAt: string | null
+): number {
+  if (!checkInAt) return 0;
+  const startMs = Date.parse(expectedStart);
+  const inMs = Date.parse(checkInAt);
+  if (!Number.isFinite(startMs) || !Number.isFinite(inMs) || inMs <= startMs) {
+    return 0;
+  }
+  return Math.floor((inMs - startMs) / 60_000);
+}
 
 function parseGeolocation(formData?: FormData): ParsedGeo {
   if (!formData) return { coords: null, status: "not_provided" };
@@ -174,20 +238,33 @@ export async function checkIn(formData?: FormData) {
 
   // Geolocation (browser-supplied + status).
   const geo = parseGeolocation(formData);
-  const geoJson = geo.coords
-    ? { ...geo.coords, status: geo.status }
-    : { status: geo.status };
 
   // requires_review logic:
   //   - office mode  -> require IP whitelist match (when whitelist is set)
+  //   - any mode     -> flag denied/unavailable/not-supported/timed-out location
   //   - remote mode  -> require geolocation captured
-  //   - either mode  -> if both are absent, definitely flag
   const ipOk =
     mode === "remote"
       ? true
       : ipMatchesWhitelist(ip, branch?.ip_whitelist ?? []);
+  const geoStatusNeedsReview = LOCATION_REVIEW_STATUSES.has(geo.status);
   const geoOk = mode === "remote" ? geo.status === "granted" : true;
-  const requiresReview = !ipOk || !geoOk;
+  const requiresReview = !ipOk || geoStatusNeedsReview || !geoOk;
+  const reviewSignals = [
+    !ipOk ? "ip_mismatch" : null,
+    geoStatusNeedsReview ? `location_${geo.status}` : null,
+    mode === "remote" && !geoOk ? "remote_location_missing" : null,
+  ].filter((v): v is string => Boolean(v));
+  const geoJson = geo.coords
+    ? {
+        ...geo.coords,
+        status: geo.status,
+        ...(reviewSignals.length ? { review_signal: reviewSignals.join(",") } : {}),
+      }
+    : {
+        status: geo.status,
+        ...(reviewSignals.length ? { review_signal: reviewSignals.join(",") } : {}),
+      };
 
   const { error } = await supabase.from("attendance_records").upsert(
     {
@@ -335,4 +412,110 @@ export async function checkOut() {
 
   revalidatePath("/dashboard");
   revalidatePath("/attendance");
+}
+
+export async function overrideAttendanceRecord(formData: FormData) {
+  const id = String(formData.get("id") ?? "").trim();
+  const statusRaw = String(formData.get("status") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const requiresReview = formData.get("requires_review") === "on";
+
+  if (!id) attendanceFail("Missing attendance record id.");
+  if (!OVERRIDE_STATUSES.includes(statusRaw as AttendanceStatus)) {
+    attendanceFail("Pick a valid corrected status.");
+  }
+  if (!reason) attendanceFail("Override reason is required.");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const admin = createAdminClient();
+  const { data: actor, error: actorErr } = await admin
+    .from("app_users")
+    .select("role, is_active")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (actorErr || !actor || actor.role !== "super_admin" || !actor.is_active) {
+    attendanceFail("Only super-admins can override attendance.");
+  }
+
+  const { data: record, error: fetchErr } = await admin
+    .from("attendance_records")
+    .select(
+      `
+      id, employee_id, date, expected_start, check_in_at, check_out_at,
+      worked_minutes, status, late_minutes, is_late, is_half_day, is_absent,
+      requires_review, updated_at
+      `
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchErr || !record) attendanceFail("Attendance record not found.");
+
+  const correctedStatus = statusRaw as AttendanceStatus;
+  const correctedCheckIn = parseOverrideTime(formData.get("check_in_time"), record.date);
+  const correctedCheckOut = parseOverrideTime(formData.get("check_out_time"), record.date);
+  const nextCheckIn = correctedCheckIn ?? record.check_in_at;
+  const nextCheckOut = correctedCheckOut ?? record.check_out_at;
+  const nextWorkedMinutes =
+    correctedCheckIn && correctedCheckOut
+      ? workedMinutesBetween(correctedCheckIn, correctedCheckOut)
+      : workedMinutesBetween(nextCheckIn, nextCheckOut) ?? record.worked_minutes;
+  const isLate = correctedStatus === "late" || correctedStatus === "remote_late";
+  const isHalfDay =
+    correctedStatus === "half_day" || correctedStatus === "remote_half_day";
+  const isAbsent = correctedStatus === "absent";
+  const lateMinutes = isLate ? lateMinutesFrom(record.expected_start, nextCheckIn) : 0;
+  const now = new Date().toISOString();
+
+  const oldValue = {
+    status: record.status,
+    check_in_at: record.check_in_at,
+    check_out_at: record.check_out_at,
+    worked_minutes: record.worked_minutes,
+    late_minutes: record.late_minutes,
+    is_late: record.is_late,
+    is_half_day: record.is_half_day,
+    is_absent: record.is_absent,
+    requires_review: record.requires_review,
+    updated_at: record.updated_at,
+  };
+  const newValue = {
+    status: correctedStatus,
+    check_in_at: nextCheckIn,
+    check_out_at: nextCheckOut,
+    worked_minutes: nextWorkedMinutes,
+    late_minutes: lateMinutes,
+    is_late: isLate,
+    is_half_day: isHalfDay,
+    is_absent: isAbsent,
+    requires_review: requiresReview,
+    updated_at: now,
+  };
+
+  const { error: updateErr } = await admin
+    .from("attendance_records")
+    .update(newValue)
+    .eq("id", id);
+  if (updateErr) attendanceFail(`Override failed: ${updateErr.message}`);
+
+  const { error: auditErr } = await admin.from("audit_logs").insert({
+    actor_id: user.id,
+    target_type: "attendance_record",
+    target_id: id,
+    action: "override_attendance",
+    old_value: oldValue,
+    new_value: newValue,
+    reason,
+  });
+  if (auditErr) {
+    attendanceFail(`Override saved, but audit log failed: ${auditErr.message}`);
+  }
+
+  revalidatePath("/attendance");
+  revalidatePath("/dashboard");
+  attendanceOk("Attendance override saved.");
 }

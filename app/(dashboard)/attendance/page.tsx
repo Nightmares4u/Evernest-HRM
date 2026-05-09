@@ -10,7 +10,9 @@ import {
   listEmployees,
   listTodayAttendance,
 } from "@/lib/db/queries";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import type { AttendanceStatus } from "@/lib/types/hrm";
+import { overrideAttendanceRecord } from "./actions";
 
 const PRESENT_STATES: AttendanceStatus[] = [
   "present",
@@ -19,24 +21,43 @@ const PRESENT_STATES: AttendanceStatus[] = [
 ];
 const LATE_STATES: AttendanceStatus[] = ["late", "remote_late"];
 const HALF_DAY_STATES: AttendanceStatus[] = ["half_day", "remote_half_day"];
-const PENDING_STATES: AttendanceStatus[] = [
-  "pending_review",
-  "remote_pending_review",
+const OVERRIDE_STATUSES: AttendanceStatus[] = [
+  "present",
+  "late",
+  "half_day",
+  "absent",
+  "on_leave",
+  "day_off",
+  "remote_present",
+  "remote_late",
+  "remote_half_day",
 ];
 
-export default async function AttendancePage() {
+type AttendanceGeo = {
+  status?: string;
+  review_signal?: string;
+} | null;
+
+export default async function AttendancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; ok?: string }>;
+}) {
+  const sp = await searchParams;
   const today = new Date();
   const live = isSupabaseConfigured();
-  const [records, employees] = await Promise.all([
+  const [records, employees, me] = await Promise.all([
     listTodayAttendance(),
     listEmployees(),
+    getCurrentUser(),
   ]);
+  const isSuperAdmin = me?.appUser.role === "super_admin";
 
   const presentCount = records.filter((r) => PRESENT_STATES.includes(r.status)).length;
   const lateCount = records.filter((r) => LATE_STATES.includes(r.status)).length;
   const halfDayCount = records.filter((r) => HALF_DAY_STATES.includes(r.status)).length;
   const absentCount = records.filter((r) => r.status === "absent").length;
-  const pendingCount = records.filter((r) => PENDING_STATES.includes(r.status)).length;
+  const pendingCount = records.filter((r) => r.requires_review).length;
 
   const trackedTotal = employees.filter((e) => !e.attendance_exempt).length;
   const exemptTotal = employees.filter((e) => e.attendance_exempt).length;
@@ -59,6 +80,16 @@ export default async function AttendancePage() {
       {!live && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
           Mock attendance (no Supabase env).
+        </div>
+      )}
+      {sp.error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {sp.error}
+        </div>
+      )}
+      {sp.ok && (
+        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+          {sp.ok}
         </div>
       )}
 
@@ -119,19 +150,25 @@ export default async function AttendancePage() {
                   <div className="flex flex-wrap gap-1">
                     <StatusChip status={r.status} />
                     {r.requires_review && (
-                      <Chip label="needs review" tone="yellow" />
+                      <Chip label="pending review" tone="yellow" />
                     )}
+                    <GeoStatusChip geo={r.geolocation} />
+                    <ReviewSignalChip geo={r.geolocation} />
                   </div>
                 </Td>
                 <Td className="text-right">
-                  <button
-                    type="button"
-                    disabled
-                    title="Override actions land in Phase 8"
-                    className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-400"
-                  >
-                    Override
-                  </button>
+                  {isSuperAdmin ? (
+                    <OverrideForm record={r} />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      title="Only super-admins can override attendance"
+                      className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-400"
+                    >
+                      Override
+                    </button>
+                  )}
                 </Td>
               </tr>
             ))}
@@ -155,6 +192,144 @@ export default async function AttendancePage() {
       )}
     </div>
   );
+}
+
+function timeInputPKT(iso: string | null): string {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Karachi",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+function statusLabel(status: AttendanceStatus): string {
+  return status.replaceAll("_", " ");
+}
+
+function OverrideForm({
+  record,
+}: {
+  record: Awaited<ReturnType<typeof listTodayAttendance>>[number];
+}) {
+  return (
+    <details className="group relative inline-block text-left">
+      <summary className="cursor-pointer list-none rounded-md border border-indigo-200 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+        Override
+      </summary>
+      <div className="mt-2 w-80 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-lg ring-1 ring-black/5">
+        <form action={overrideAttendanceRecord} className="space-y-3">
+          <input type="hidden" name="id" value={record.id} />
+          <div>
+            <label className="block text-xs font-medium text-gray-700">
+              Corrected status
+            </label>
+            <select
+              name="status"
+              defaultValue={
+                OVERRIDE_STATUSES.includes(record.status)
+                  ? record.status
+                  : "present"
+              }
+              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
+            >
+              {OVERRIDE_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700">
+                Check-in
+              </label>
+              <input
+                type="time"
+                name="check_in_time"
+                defaultValue={timeInputPKT(record.check_in_at)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700">
+                Check-out
+              </label>
+              <input
+                type="time"
+                name="check_out_time"
+                defaultValue={timeInputPKT(record.check_out_at)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+          <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+            <input
+              type="checkbox"
+              name="requires_review"
+              defaultChecked={record.requires_review}
+              className="rounded border-gray-300"
+            />
+            Requires review
+          </label>
+          <div>
+            <label className="block text-xs font-medium text-gray-700">
+              Reason
+            </label>
+            <textarea
+              name="reason"
+              rows={3}
+              required
+              className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+              placeholder="Why is this correction being made?"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <a
+              href="/attendance"
+              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
+            >
+              Cancel
+            </a>
+            <button
+              type="submit"
+              className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+            >
+              Save override
+            </button>
+          </div>
+        </form>
+      </div>
+    </details>
+  );
+}
+
+function GeoStatusChip({ geo }: { geo: AttendanceGeo }) {
+  const status = geo?.status;
+  if (status === "granted") return <Chip label="location verified" tone="green" />;
+  if (status === "denied") return <Chip label="location denied" tone="yellow" />;
+  if (status === "unavailable")
+    return <Chip label="location unavailable" tone="amber" />;
+  if (status === "timeout") return <Chip label="location timeout" tone="amber" />;
+  if (status === "not_supported")
+    return <Chip label="location unsupported" tone="gray" />;
+  if (status === "not_provided")
+    return <Chip label="no location proof" tone="gray" />;
+  if (status) return <Chip label={`location ${status}`} tone="gray" />;
+  return <Chip label="location unknown" tone="gray" />;
+}
+
+function ReviewSignalChip({ geo }: { geo: AttendanceGeo }) {
+  const signal = geo?.review_signal ?? "";
+  if (signal.includes("outside_geofence")) {
+    return <Chip label="outside geofence" tone="red" />;
+  }
+  if (signal.includes("ip_mismatch")) {
+    return <Chip label="office IP mismatch" tone="orange" />;
+  }
+  return null;
 }
 
 function SummaryCard({

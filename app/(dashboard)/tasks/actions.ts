@@ -12,7 +12,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { sendEmail, sendEmailSafely } from "@/lib/email/send";
 import { taskAssignedEmail } from "@/lib/email/templates";
-import type { TaskPriority } from "@/lib/types/hrm";
+import type { TaskPriority, UserRole } from "@/lib/types/hrm";
 
 function fail(path: string, msg: string): never {
   redirect(`${path}?error=${encodeURIComponent(msg)}`);
@@ -45,6 +45,20 @@ async function logAudit(
   });
 }
 
+const ADMIN_TASK_ROLES: UserRole[] = ["super_admin", "admin_hr"];
+
+function isTaskAdmin(role: UserRole | null | undefined): boolean {
+  return Boolean(role && ADMIN_TASK_ROLES.includes(role));
+}
+
+function revalidateTaskSurfaces() {
+  revalidatePath("/tasks");
+  revalidatePath("/tasks/history");
+  revalidatePath("/admin/tasks");
+  revalidatePath("/admin/tasks/history");
+  revalidatePath("/dashboard");
+}
+
 // ---------- employee actions ----------
 
 /**
@@ -61,15 +75,25 @@ export async function markTaskDone(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: task, error } = await supabase
-    .from("tasks")
-    .select("id, assigned_to, requires_approval, status")
-    .eq("id", id)
-    .maybeSingle();
+  const admin = createAdminClient();
+  const [{ data: task, error }, { data: appUser, error: userErr }] = await Promise.all([
+    admin
+      .from("tasks")
+      .select("id, assigned_to, requires_approval, status")
+      .eq("id", id)
+      .maybeSingle(),
+    admin
+      .from("app_users")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
+  if (userErr || !appUser?.is_active) fail("/tasks", "Could not verify your account.");
+  const canAdminComplete = isTaskAdmin(appUser.role as UserRole);
   if (error || !task) fail("/tasks", "Task not found.");
-  if (task.assigned_to !== user.id)
+  if (task.assigned_to !== user.id && !canAdminComplete)
     fail("/tasks", "You can't update someone else's task.");
-  if (task.requires_approval)
+  if (task.requires_approval && !canAdminComplete)
     fail(
       "/tasks",
       "This task requires approval. Use 'Submit for approval' instead."
@@ -77,21 +101,32 @@ export async function markTaskDone(formData: FormData) {
   if (task.status === "done") fail("/tasks", "Task is already done.");
 
   const now = new Date().toISOString();
-  const { error: updErr } = await supabase
+  const updatePayload: {
+    status: "done";
+    completed_at: string;
+    approved_by?: string;
+    approved_at?: string;
+  } = { status: "done", completed_at: now };
+  if (task.requires_approval && canAdminComplete) {
+    updatePayload.approved_by = user.id;
+    updatePayload.approved_at = now;
+  }
+
+  const { error: updErr } = await admin
     .from("tasks")
-    .update({ status: "done", completed_at: now })
+    .update(updatePayload)
     .eq("id", id);
   if (updErr) fail("/tasks", `Update failed: ${updErr.message}`);
 
-  await supabase.from("task_updates").insert({
+  const { error: updateErr } = await admin.from("task_updates").insert({
     task_id: id,
     user_id: user.id,
     note: null,
     status_update: "done",
   });
+  if (updateErr) fail("/tasks", `Task updated, but history note failed: ${updateErr.message}`);
 
-  revalidatePath("/tasks");
-  revalidatePath("/admin/tasks");
+  revalidateTaskSurfaces();
   ok("/tasks", "Task marked done.");
 }
 
@@ -110,7 +145,8 @@ export async function submitForApproval(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: task, error } = await supabase
+  const admin = createAdminClient();
+  const { data: task, error } = await admin
     .from("tasks")
     .select("id, assigned_to, requires_approval, status")
     .eq("id", id)
@@ -122,21 +158,21 @@ export async function submitForApproval(formData: FormData) {
     fail("/tasks", "This task does not need approval — mark it done directly.");
   if (task.status === "done") fail("/tasks", "Task is already done.");
 
-  const { error: updErr } = await supabase
+  const { error: updErr } = await admin
     .from("tasks")
     .update({ status: "in_progress" })
     .eq("id", id);
   if (updErr) fail("/tasks", `Update failed: ${updErr.message}`);
 
-  await supabase.from("task_updates").insert({
+  const { error: updateErr } = await admin.from("task_updates").insert({
     task_id: id,
     user_id: user.id,
     note,
     status_update: "in_progress",
   });
+  if (updateErr) fail("/tasks", `Task submitted, but history note failed: ${updateErr.message}`);
 
-  revalidatePath("/tasks");
-  revalidatePath("/admin/tasks");
+  revalidateTaskSurfaces();
   ok("/tasks", "Submitted for approval.");
 }
 
@@ -300,12 +336,14 @@ export async function approveTask(formData: FormData) {
     .eq("id", id);
   if (updErr) fail("/admin/tasks", `Approve failed: ${updErr.message}`);
 
-  await admin.from("task_updates").insert({
+  const { error: updateErr } = await admin.from("task_updates").insert({
     task_id: id,
     user_id: user.id,
     note,
     status_update: "done",
   });
+  if (updateErr)
+    fail("/admin/tasks", `Approved, but history note failed: ${updateErr.message}`);
 
   await logAudit(admin, {
     actor_id: user.id,
@@ -317,8 +355,7 @@ export async function approveTask(formData: FormData) {
     reason: note,
   });
 
-  revalidatePath("/tasks");
-  revalidatePath("/admin/tasks");
+  revalidateTaskSurfaces();
   ok("/admin/tasks", `Approved: ${task.title}`);
 }
 
@@ -351,12 +388,14 @@ export async function rejectTask(formData: FormData) {
     .eq("id", id);
   if (updErr) fail("/admin/tasks", `Reject failed: ${updErr.message}`);
 
-  await admin.from("task_updates").insert({
+  const { error: updateErr } = await admin.from("task_updates").insert({
     task_id: id,
     user_id: user.id,
     note,
     status_update: "to_do",
   });
+  if (updateErr)
+    fail("/admin/tasks", `Rejected, but history note failed: ${updateErr.message}`);
 
   await logAudit(admin, {
     actor_id: user.id,
@@ -368,7 +407,6 @@ export async function rejectTask(formData: FormData) {
     reason: note,
   });
 
-  revalidatePath("/tasks");
-  revalidatePath("/admin/tasks");
+  revalidateTaskSurfaces();
   ok("/admin/tasks", `Rejected back to to-do: ${task.title}`);
 }

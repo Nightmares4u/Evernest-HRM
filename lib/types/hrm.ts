@@ -148,7 +148,13 @@ export type AttendanceRecord = {
   mode: AttendanceMode;
   ip_address: string | null;
   user_agent: string | null;
-  geolocation: { lat: number; lng: number; accuracy?: number } | null;
+  geolocation: {
+    lat?: number;
+    lng?: number;
+    accuracy?: number;
+    status?: string;
+    review_signal?: string;
+  } | null;
   branch_id: string | null;
   requires_review: boolean;
   approved_by: string | null;

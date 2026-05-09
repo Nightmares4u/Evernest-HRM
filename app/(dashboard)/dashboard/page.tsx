@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Chip } from "@/components/StatusChip";
+import { Chip, StatusChip } from "@/components/StatusChip";
 import { MyAttendanceCard } from "@/components/MyAttendanceCard";
 import { QuickAssignTaskForm } from "@/components/QuickAssignTaskForm";
 import { TaskScheduleGrid } from "@/components/TaskScheduleGrid";
-import { todayPKT, weekdayPKT } from "@/lib/attendance/format";
+import { formatTimePKT, todayPKT, weekdayPKT } from "@/lib/attendance/format";
 import {
+  type AttendanceRowVM,
   isSupabaseConfigured,
   listEmployees,
   listTodayAttendance,
@@ -24,10 +25,6 @@ const PRESENT_STATES: AttendanceStatus[] = [
   "approved_manually",
 ];
 const LATE_STATES: AttendanceStatus[] = ["late", "remote_late"];
-const PENDING_STATES: AttendanceStatus[] = [
-  "pending_review",
-  "remote_pending_review",
-];
 
 const PKR = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -79,8 +76,8 @@ export default async function DashboardPage({
     .length;
   const lateToday = records.filter((r) => LATE_STATES.includes(r.status)).length;
   const absentToday = records.filter((r) => r.status === "absent").length;
-  const pendingToday = records.filter((r) => PENDING_STATES.includes(r.status))
-    .length;
+  const pendingReviewRecords = records.filter((r) => r.requires_review);
+  const pendingToday = pendingReviewRecords.length;
 
   const totalEmployees = employees.length;
   const totalPayroll = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
@@ -129,6 +126,10 @@ export default async function DashboardPage({
       <MyAttendanceCard me={me} />
 
       {isSuperAdmin && <QuickAssignTaskForm assignees={assignees} />}
+
+      {isSuperAdmin && (
+        <PendingAttendanceReviews records={pendingReviewRecords} />
+      )}
 
       {me && (
         <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
@@ -259,4 +260,75 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <div className="mt-3">{children}</div>
     </section>
   );
+}
+
+function PendingAttendanceReviews({
+  records,
+}: {
+  records: AttendanceRowVM[];
+}) {
+  return (
+    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-700">
+          Pending attendance reviews
+          <span className="ml-2 text-xs font-normal text-gray-500">
+            {records.length}
+          </span>
+        </h2>
+        <Link
+          href="/attendance"
+          className="text-xs text-indigo-600 hover:text-indigo-500"
+        >
+          Open Today panel →
+        </Link>
+      </div>
+      {records.length === 0 ? (
+        <p className="mt-3 rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+          No attendance records need review today.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {records.slice(0, 5).map((r) => (
+            <li
+              key={r.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-yellow-100 bg-yellow-50/40 px-3 py-2 text-sm"
+            >
+              <div>
+                <p className="font-medium text-gray-900">{r.employee_full_name}</p>
+                <p className="text-xs text-gray-500">
+                  {r.branch_code ?? "—"} · {r.mode} · checked in{" "}
+                  {formatTimePKT(r.check_in_at)}
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-1">
+                <StatusChip status={r.status} />
+                <Chip label="pending review" tone="yellow" />
+                <GeoStatusChip status={r.geolocation?.status} />
+              </div>
+            </li>
+          ))}
+          {records.length > 5 && (
+            <li className="text-xs text-gray-500">
+              +{records.length - 5} more in the Today panel.
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function GeoStatusChip({ status }: { status?: string }) {
+  if (status === "granted") return <Chip label="location verified" tone="green" />;
+  if (status === "denied") return <Chip label="location denied" tone="yellow" />;
+  if (status === "unavailable")
+    return <Chip label="location unavailable" tone="amber" />;
+  if (status === "timeout") return <Chip label="location timeout" tone="amber" />;
+  if (status === "not_supported")
+    return <Chip label="location unsupported" tone="gray" />;
+  if (status === "not_provided")
+    return <Chip label="no location proof" tone="gray" />;
+  if (status) return <Chip label={`location ${status}`} tone="gray" />;
+  return <Chip label="location unknown" tone="gray" />;
 }
