@@ -36,6 +36,11 @@ const OVERRIDE_STATUSES: AttendanceStatus[] = [
 type AttendanceGeo = {
   status?: string;
   review_signal?: string;
+  verification_status?: string;
+  distance_meters?: number;
+  check_out_status?: string;
+  check_out_verification_status?: string;
+  check_out_distance_meters?: number;
 } | null;
 
 export default async function AttendancePage({
@@ -152,8 +157,7 @@ export default async function AttendancePage({
                     {r.requires_review && (
                       <Chip label="pending review" tone="yellow" />
                     )}
-                    <GeoStatusChip geo={r.geolocation} />
-                    <ReviewSignalChip geo={r.geolocation} />
+                    <VerificationChips record={r} />
                   </div>
                 </Td>
                 <Td className="text-right">
@@ -306,30 +310,71 @@ function OverrideForm({
   );
 }
 
-function GeoStatusChip({ geo }: { geo: AttendanceGeo }) {
-  const status = geo?.status;
-  if (status === "granted") return <Chip label="location verified" tone="green" />;
-  if (status === "denied") return <Chip label="location denied" tone="yellow" />;
-  if (status === "unavailable")
+function VerificationChips({
+  record,
+}: {
+  record: Awaited<ReturnType<typeof listTodayAttendance>>[number];
+}) {
+  const status = record.verification_status ?? record.geolocation?.verification_status;
+  const browserStatus = record.geolocation?.status;
+  const distance =
+    record.check_in_distance_meters ?? record.geolocation?.distance_meters ?? null;
+  return (
+    <>
+      <VerificationStatusChip status={status} browserStatus={browserStatus} />
+      {distance != null && <Chip label={`${distance}m from office`} tone="gray" />}
+      {record.review_reason && (
+        <Chip label={reviewReasonLabel(record.review_reason)} tone="orange" />
+      )}
+      {record.check_out_distance_meters != null && (
+        <Chip label={`checkout ${record.check_out_distance_meters}m`} tone="gray" />
+      )}
+    </>
+  );
+}
+
+function VerificationStatusChip({
+  status,
+  browserStatus,
+}: {
+  status?: string | null;
+  browserStatus?: string;
+}) {
+  if (status === "location_verified") {
+    return <Chip label="location verified" tone="green" />;
+  }
+  if (status === "outside_geofence") {
+    return <Chip label="outside geofence" tone="red" />;
+  }
+  if (status === "remote_location_captured") {
+    return <Chip label="remote location captured" tone="indigo" />;
+  }
+  if (status === "remote_location_missing") {
+    return <Chip label="remote location missing" tone="yellow" />;
+  }
+  if (status === "office_geofence_not_configured") {
+    return <Chip label="geofence not configured" tone="gray" />;
+  }
+  if (status?.startsWith("location_")) {
+    return <Chip label={reviewReasonLabel(status)} tone="yellow" />;
+  }
+
+  const fallback = browserStatus;
+  if (fallback === "granted") return <Chip label="location captured" tone="green" />;
+  if (fallback === "denied") return <Chip label="location denied" tone="yellow" />;
+  if (fallback === "unavailable")
     return <Chip label="location unavailable" tone="amber" />;
-  if (status === "timeout") return <Chip label="location timeout" tone="amber" />;
-  if (status === "not_supported")
+  if (fallback === "timeout") return <Chip label="location timeout" tone="amber" />;
+  if (fallback === "not_supported")
     return <Chip label="location unsupported" tone="gray" />;
-  if (status === "not_provided")
+  if (fallback === "not_provided")
     return <Chip label="no location proof" tone="gray" />;
-  if (status) return <Chip label={`location ${status}`} tone="gray" />;
+  if (fallback) return <Chip label={`location ${fallback}`} tone="gray" />;
   return <Chip label="location unknown" tone="gray" />;
 }
 
-function ReviewSignalChip({ geo }: { geo: AttendanceGeo }) {
-  const signal = geo?.review_signal ?? "";
-  if (signal.includes("outside_geofence")) {
-    return <Chip label="outside geofence" tone="red" />;
-  }
-  if (signal.includes("ip_mismatch")) {
-    return <Chip label="office IP mismatch" tone="orange" />;
-  }
-  return null;
+function reviewReasonLabel(reason: string): string {
+  return reason.replaceAll("_", " ");
 }
 
 function SummaryCard({

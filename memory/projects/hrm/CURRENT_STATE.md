@@ -2,13 +2,14 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase 14 — geolocation flagging, done-task history, email notifications.
+**Last updated**: Phase A — geolocation-only attendance verification (200m office radius).
 
 ## Branch & commits
 
 - Working branch: **`dev`**.
 - `main` holds: Day-0 scaffold + planning docs (commit `d7e055a`).
 - `dev` ahead of `main`. Latest commits (newest first):
+  - `d3da196` — fix: repair task completion and attendance review visibility
   - `fbba24e` — feat: email notifications for task assignment and check-in/out (Resend) (Phase 14)
   - `e795131` — feat: done-tasks history (employee + admin, list + heatmap) (Phase 13b)
   - `d30e05d` — fix: surface geolocation denials and flag check-ins without location proof (Phase 13a)
@@ -36,8 +37,8 @@
 | Route | Audience | What it does |
 |---|---|---|
 | `/login` | public | Real Supabase email+password sign-in via server action. Falls back to "Continue (Mock)" if env missing. |
-| `/dashboard` | any signed-in | Personal landing. `MyAttendanceCard` shows today's status + Check-in / Check-out buttons. Stat cards aggregate today's attendance. |
-| `/attendance` | any signed-in | Today panel. Per-row table of every tracked employee's status, mode, times, worked, late minutes, needs-review chip. |
+| `/dashboard` | any signed-in | Personal landing. `MyAttendanceCard` shows today's status + geolocation-capturing Check-in / Check-out buttons. Stat cards aggregate today's attendance. Super-admins see pending attendance reviews. |
+| `/attendance` | any signed-in | Today panel. Per-row table of every tracked employee's status, mode, times, worked, late minutes, geofence verification chips, review reason, and super-admin override form. |
 | `/employees` | any signed-in | Directory table with branch / dept / role / shift / salary / remote days / exemptions. |
 | `/leave` | employees | Submit leave request, see balance + history. |
 | `/admin/leave` | super-admin | Approve / reject leave queue. Approval inserts on_leave attendance rows + decrements balance + audit-logs. |
@@ -51,29 +52,31 @@
 ### Server actions (all audit-logged where they mutate state)
 
 - `app/login/actions.ts`: `signIn`, `signOut`.
-- `app/(dashboard)/attendance/actions.ts`: `checkIn(formData)` — accepts browser-captured lat/lng/accuracy; matches request IP against `branches.ip_whitelist` (office mode only) and flags `requires_review` on mismatch. `checkOut()` — closes the day with worked minutes + half-day flag.
+- `app/(dashboard)/attendance/actions.ts`: `checkIn(formData)` — accepts browser-captured lat/lng/accuracy/status, calculates server-side distance from assigned branch office coordinates, stores first-class check-in coordinates/distance/verification status/review reason, and flags `requires_review` if outside the 200m office radius or location is denied/unavailable/timeout. `checkOut(formData)` captures browser location once at checkout, stores first-class checkout coordinates/distance, closes the day with worked minutes + half-day flag, and preserves any existing review flag. `overrideAttendanceRecord` lets active super-admins manually correct an existing row and writes `audit_logs`.
 - `app/(dashboard)/leave/actions.ts`: `submitLeaveRequest`, `approveLeaveRequest`, `rejectLeaveRequest`.
 - `app/(dashboard)/tasks/actions.ts`: `markTaskDone`, `submitForApproval`, `createTask`, `approveTask`, `rejectTask`.
 - `app/(dashboard)/admin/tasks/recurring/actions.ts`: `createRecurringTask`, `toggleRecurringActive`, `deleteRecurringTask`, `generateTasksForToday`.
 
 ### Domain + helpers
-- `lib/types/hrm.ts` — typed mirror of every entity in `0001_init.sql`.
+- `lib/types/hrm.ts` — typed mirror of the applied schema, including Phase A branch office geofence fields and attendance verification columns.
 - `lib/db/queries.ts` — server-side reads: employees, attendance (mine + today panel), leave (balance, my requests, admin queue), taxonomy (branches, departments, shifts), `getAdminPendingCounts()` (action-card numbers).
 - `lib/db/tasks.ts` — task reads: `listMyTasks` (grouped), `listTasksForAdmin` (filterable), `listAssignableUsers`, `listRecurringTasks`, `listRedlinedEmployees`, `listTasksInRange` (schedule grid), `listDoneTasks` (history pages).
 - `lib/email/send.ts` + `lib/email/templates.ts` — Resend wrapper (`isEmailConfigured()` gate, `sendEmailSafely()` wrapper that never breaks server actions) and inline-styled HTML templates for `taskAssignedEmail`, `checkInEmail`, `checkOutEmail`.
 - `lib/auth/current-user.ts` — `getCurrentUser()` returns auth user + app_users row + employees row.
 - `lib/attendance/format.ts` — Asia/Karachi-aware time / date / weekday helpers + status chip mapping.
-- `lib/attendance/policy.ts` — pure rule helpers: `computeOnCheckIn`, `computeOnCheckOut`, `ipMatchesWhitelist`, `isoWeekdayPKT`, `buildPktTimestamp`.
+- `lib/attendance/policy.ts` — pure rule helpers: `computeOnCheckIn`, `computeOnCheckOut`, `isoWeekdayPKT`, `buildPktTimestamp`.
 - `lib/leave/policy.ts` — working-day counting helpers for leave proration.
 - `lib/mock/hrm.ts` — used by every read function as a fallback when Supabase env is missing.
 
 ### Components
 - `components/StatusChip.tsx` — `<StatusChip>` (attendance status) and `<Chip label tone>` (generic).
-- `components/MyAttendanceCard.tsx` — server component. Renders state for the current user's today record; embeds `<CheckInButton>` for the not-yet-checked-in path.
-- `components/CheckInButton.tsx` — client component. Captures browser geolocation (8s timeout, declined / unavailable yields null), then invokes `checkIn` server action with `FormData{ lat, lng, accuracy }`.
+- `components/MyAttendanceCard.tsx` — server component. Renders state for the current user's today record; embeds `<CheckInButton>` and `<CheckOutButton>`.
+- `components/CheckInButton.tsx` — client component. Captures browser geolocation once per action (8s timeout, declined / unavailable yields a status), then invokes the relevant server action with `FormData{ lat, lng, accuracy, geolocation_status }`.
 
 ### Schema
 - `supabase/migrations/0001_init.sql` — applied. All tables, RLS, seed (3 branches, 6 departments, 4 shifts, default settings), `employee_overdue_tasks` view.
+- `supabase/migrations/0002_task_due_time.sql` — applied. Adds task / recurring-task due-time support.
+- `supabase/migrations/0003_geolocation_attendance_verification.sql` — applied. Adds branch office latitude/longitude/radius and attendance check-in/out coordinate, distance, verification status, and review reason columns. Seeds Karachi + Lahore office coordinates at 200m radius.
 
 ### Seed
 - `scripts/seed-users.ts` — applied. 13 users now in `auth.users` + `app_users` (+ 12 in `employees`). Two-pass FK resolution for `manager_email`.
@@ -86,9 +89,7 @@
   - `nightly_attendance_close` — auto-mark absent + forgot-checkout (23:59 PKT).
   - `monthly_leave_accrual` — +1 leave to non-exempt employees on 1st.
   - `daily_recurring_generate` — replace the manual "Generate today's tasks" button (23:30 PKT).
-- **Override actions** on `/attendance` (Correct check-in/out, Mark day off, Override status, Add note). Each writes audit_logs.
 - **Holidays admin UI** (`/admin/holidays`).
-- **Branch IP whitelist editor** (server-side check is live; UI editor pending).
 - **Audit log viewer** (`/admin/audit`).
 - **Payroll runs + payslips** UI (`/admin/payroll/*`). Schema is in place (`payroll_runs`, `payslips`).
 - **Super-admin restriction at handler level**. Currently any signed-in user can hit `/admin/*` URLs; RLS on the underlying tables prevents writes by non-super-admins, but a clean redirect to `/dashboard?error=…` for non-admins would be polite. Add to middleware or admin layout.

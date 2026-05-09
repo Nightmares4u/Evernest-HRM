@@ -64,21 +64,6 @@ export function computeOnCheckIn(args: {
   return { isLate, lateMinutes, status };
 }
 
-/**
- * Soft IP-whitelist check. The branch's whitelist is a free-form text[] of
- * IPv4/IPv6 strings. Empty whitelist = soft mode = always pass. Mismatch
- * surfaces as requires_review = true on the attendance row, never as a hard
- * block. CIDR support is intentionally deferred — exact match only for now.
- */
-export function ipMatchesWhitelist(
-  ip: string | null,
-  whitelist: string[] | null | undefined
-): boolean {
-  if (!whitelist || whitelist.length === 0) return true;
-  if (!ip) return false;
-  return whitelist.includes(ip);
-}
-
 export type CheckOutResult = {
   workedMinutes: number;
   isHalfDay: boolean;

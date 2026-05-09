@@ -1,14 +1,13 @@
 "use client";
 
-// Client-side check-in trigger.
+// Client-side attendance trigger.
 // Captures the browser's geolocation (or its denial reason) before invoking
 // the server action with the coords + a status string. The server is the
-// source of truth for IP / time. Geolocation is supplementary, but we surface
-// the result clearly so the user knows it was processed and the server can
-// flag check-ins that lack location proof.
+// source of truth for time and branch geofence verification. Location is only
+// requested at check-in/check-out; there is no background tracking.
 
 import { useState, useTransition } from "react";
-import { checkIn } from "@/app/(dashboard)/attendance/actions";
+import { checkIn, checkOut } from "@/app/(dashboard)/attendance/actions";
 
 type GeoStatus =
   | "granted"
@@ -61,24 +60,34 @@ const STATUS_COPY: Record<
   granted: { label: "Location captured ✓", tone: "green" },
   denied: {
     label:
-      "Location denied (macOS Location Services off, or browser permission blocked) — check-in will be flagged for review.",
+      "Location denied (macOS Location Services off, or browser permission blocked) — attendance will be flagged for review.",
     tone: "amber",
   },
   unavailable: {
-    label: "Location unavailable — check-in will be flagged.",
+    label: "Location unavailable — attendance will be flagged.",
     tone: "amber",
   },
   timeout: {
-    label: "Location timed out — check-in will be flagged.",
+    label: "Location timed out — attendance will be flagged.",
     tone: "amber",
   },
   not_supported: {
-    label: "Browser doesn't support location — check-in will be flagged.",
+    label: "Browser doesn't support location — attendance will be flagged.",
     tone: "gray",
   },
 };
 
-export function CheckInButton() {
+function AttendanceLocationButton({
+  idleLabel,
+  locatingLabel,
+  submittingLabel,
+  action,
+}: {
+  idleLabel: string;
+  locatingLabel: string;
+  submittingLabel: string;
+  action: (formData: FormData) => Promise<void>;
+}) {
   const [isPending, startTransition] = useTransition();
   const [stage, setStage] = useState<"idle" | "locating" | "submitting">(
     "idle"
@@ -106,7 +115,7 @@ export function CheckInButton() {
         fd.set("accuracy", String(result.coords.accuracy));
       }
       fd.set("geolocation_status", result.status);
-      await checkIn(fd);
+      await action(fd);
       // server action redirects on success; reaching here means we stayed on /dashboard
       setStage("idle");
     });
@@ -114,10 +123,10 @@ export function CheckInButton() {
 
   const buttonLabel =
     stage === "locating"
-      ? "Requesting location…"
+      ? locatingLabel
       : stage === "submitting"
-        ? "Checking in…"
-        : "Check in now";
+        ? submittingLabel
+        : idleLabel;
 
   return (
     <div className="space-y-2">
@@ -143,10 +152,31 @@ export function CheckInButton() {
         {buttonLabel}
       </button>
       <p className="text-[11px] text-gray-500">
-        Office IP is matched server-side regardless. Geolocation is recorded
-        when granted; denied/unavailable check-ins are flagged for super-admin
-        review.
+        Browser location is checked once for this action. If it is unavailable
+        or outside the office radius, the action is still saved and flagged.
       </p>
     </div>
+  );
+}
+
+export function CheckInButton() {
+  return (
+    <AttendanceLocationButton
+      idleLabel="Check in now"
+      locatingLabel="Requesting location…"
+      submittingLabel="Checking in…"
+      action={checkIn}
+    />
+  );
+}
+
+export function CheckOutButton() {
+  return (
+    <AttendanceLocationButton
+      idleLabel="Check out"
+      locatingLabel="Requesting location…"
+      submittingLabel="Checking out…"
+      action={checkOut}
+    />
   );
 }

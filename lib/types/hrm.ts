@@ -75,6 +75,9 @@ export type Branch = {
   code: string;
   default_shift_id: string | null;
   ip_whitelist: string[];
+  office_latitude: number | null;
+  office_longitude: number | null;
+  office_radius_meters: number;
   created_at: string;
 };
 
@@ -154,7 +157,24 @@ export type AttendanceRecord = {
     accuracy?: number;
     status?: string;
     review_signal?: string;
+    distance_meters?: number;
+    verification_status?: string;
+    check_out_status?: string;
+    check_out_lat?: number;
+    check_out_lng?: number;
+    check_out_accuracy?: number;
+    check_out_distance_meters?: number;
+    check_out_verification_status?: string;
+    check_out_review_signal?: string;
   } | null;
+  check_in_latitude: number | null;
+  check_in_longitude: number | null;
+  check_out_latitude: number | null;
+  check_out_longitude: number | null;
+  check_in_distance_meters: number | null;
+  check_out_distance_meters: number | null;
+  verification_status: string | null;
+  review_reason: string | null;
   branch_id: string | null;
   requires_review: boolean;
   approved_by: string | null;

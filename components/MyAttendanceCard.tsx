@@ -1,5 +1,4 @@
-import { checkOut } from "@/app/(dashboard)/attendance/actions";
-import { CheckInButton } from "@/components/CheckInButton";
+import { CheckInButton, CheckOutButton } from "@/components/CheckInButton";
 import { StatusChip, Chip } from "@/components/StatusChip";
 import {
   formatTimePKT,
@@ -76,14 +75,7 @@ export async function MyAttendanceCard({ me }: { me: CurrentUser | null }) {
                 />
               </dd>
             </dl>
-            <form action={checkOut}>
-              <button
-                type="submit"
-                className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
-              >
-                Check out
-              </button>
-            </form>
+            <CheckOutButton />
           </div>
         )}
 

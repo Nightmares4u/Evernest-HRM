@@ -9,11 +9,10 @@
 // record so super-admins can see when a check-in had no location proof.
 //
 // requires_review is set when:
-//   - office mode AND IP doesn't match the branch whitelist, OR
-//   - geolocation was denied/unavailable/not-supported/timed out, OR
-//   - remote mode AND no geolocation captured.
+//   - office mode AND browser location is outside the assigned branch radius, OR
+//   - browser geolocation was denied/unavailable/not-supported/timed out, OR
+//   - remote mode AND no browser location was captured.
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -24,7 +23,6 @@ import {
   buildPktTimestamp,
   computeOnCheckIn,
   computeOnCheckOut,
-  ipMatchesWhitelist,
   isoWeekdayPKT,
 } from "@/lib/attendance/policy";
 import type { AttendanceMode, AttendanceStatus } from "@/lib/types/hrm";
@@ -64,7 +62,9 @@ type ShiftLite = {
 
 type BranchLite = {
   id: string;
-  ip_whitelist: string[] | null;
+  office_latitude: number | null;
+  office_longitude: number | null;
+  office_radius_meters: number | null;
 };
 
 type EmployeeLite = {
@@ -90,7 +90,7 @@ async function loadMyEmployee() {
       `
       id, branch_id, attendance_exempt, remote_allowed, remote_default_days,
       shifts ( id, start_time, end_time, late_grace_minutes, half_day_threshold_minutes ),
-      branches ( id, ip_whitelist )
+      branches ( id, office_latitude, office_longitude, office_radius_meters )
       `
     )
     .eq("user_id", user.id)
@@ -168,6 +168,87 @@ function lateMinutesFrom(
   return Math.floor((inMs - startMs) / 60_000);
 }
 
+function distanceMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+): number {
+  const earthRadiusM = 6_371_000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return Math.round(earthRadiusM * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+}
+
+function evaluateLocationVerification(args: {
+  mode: AttendanceMode;
+  branch: BranchLite | null;
+  geo: ParsedGeo;
+}): {
+  distance: number | null;
+  verificationStatus: string;
+  requiresReview: boolean;
+  reviewReason: string | null;
+  reviewSignals: string[];
+} {
+  const geoStatusNeedsReview = LOCATION_REVIEW_STATUSES.has(args.geo.status);
+  if (!args.geo.coords) {
+    const status =
+      args.geo.status === "not_provided"
+        ? args.mode === "remote"
+          ? "remote_location_missing"
+          : "location_not_provided"
+        : `location_${args.geo.status}`;
+    return {
+      distance: null,
+      verificationStatus: status,
+      requiresReview: true,
+      reviewReason: status,
+      reviewSignals: [status],
+    };
+  }
+
+  if (args.mode === "remote") {
+    return {
+      distance: null,
+      verificationStatus: "remote_location_captured",
+      requiresReview: false,
+      reviewReason: null,
+      reviewSignals: [],
+    };
+  }
+
+  const officeLat = args.branch?.office_latitude;
+  const officeLng = args.branch?.office_longitude;
+  if (officeLat == null || officeLng == null) {
+    return {
+      distance: null,
+      verificationStatus: "office_geofence_not_configured",
+      requiresReview: false,
+      reviewReason: null,
+      reviewSignals: [],
+    };
+  }
+
+  const distance = distanceMeters(args.geo.coords, {
+    lat: officeLat,
+    lng: officeLng,
+  });
+  const radius = args.branch?.office_radius_meters ?? 200;
+  const outside = distance > radius;
+  return {
+    distance,
+    verificationStatus: outside ? "outside_geofence" : "location_verified",
+    requiresReview: outside || geoStatusNeedsReview,
+    reviewReason: outside ? "outside_geofence" : null,
+    reviewSignals: outside ? ["outside_geofence"] : [],
+  };
+}
+
 function parseGeolocation(formData?: FormData): ParsedGeo {
   if (!formData) return { coords: null, status: "not_provided" };
   const status = String(
@@ -228,42 +309,27 @@ export async function checkIn(formData?: FormData) {
     mode,
   });
 
-  // IP capture (server-side; can't be spoofed by the client).
-  const headerStore = await headers();
-  const ip =
-    headerStore.get("x-forwarded-for")?.split(",")[0].trim() ||
-    headerStore.get("x-real-ip") ||
-    null;
-  const userAgent = headerStore.get("user-agent") || null;
-
   // Geolocation (browser-supplied + status).
   const geo = parseGeolocation(formData);
-
-  // requires_review logic:
-  //   - office mode  -> require IP whitelist match (when whitelist is set)
-  //   - any mode     -> flag denied/unavailable/not-supported/timed-out location
-  //   - remote mode  -> require geolocation captured
-  const ipOk =
-    mode === "remote"
-      ? true
-      : ipMatchesWhitelist(ip, branch?.ip_whitelist ?? []);
-  const geoStatusNeedsReview = LOCATION_REVIEW_STATUSES.has(geo.status);
-  const geoOk = mode === "remote" ? geo.status === "granted" : true;
-  const requiresReview = !ipOk || geoStatusNeedsReview || !geoOk;
-  const reviewSignals = [
-    !ipOk ? "ip_mismatch" : null,
-    geoStatusNeedsReview ? `location_${geo.status}` : null,
-    mode === "remote" && !geoOk ? "remote_location_missing" : null,
-  ].filter((v): v is string => Boolean(v));
+  const verification = evaluateLocationVerification({ mode, branch, geo });
   const geoJson = geo.coords
     ? {
         ...geo.coords,
         status: geo.status,
-        ...(reviewSignals.length ? { review_signal: reviewSignals.join(",") } : {}),
+        ...(verification.distance != null
+          ? { distance_meters: verification.distance }
+          : {}),
+        verification_status: verification.verificationStatus,
+        ...(verification.reviewSignals.length
+          ? { review_signal: verification.reviewSignals.join(",") }
+          : {}),
       }
     : {
         status: geo.status,
-        ...(reviewSignals.length ? { review_signal: reviewSignals.join(",") } : {}),
+        verification_status: verification.verificationStatus,
+        ...(verification.reviewSignals.length
+          ? { review_signal: verification.reviewSignals.join(",") }
+          : {}),
       };
 
   const { error } = await supabase.from("attendance_records").upsert(
@@ -280,11 +346,14 @@ export async function checkIn(formData?: FormData) {
       is_half_day: false,
       is_absent: false,
       mode,
-      ip_address: ip,
-      user_agent: userAgent,
       geolocation: geoJson,
+      check_in_latitude: geo.coords?.lat ?? null,
+      check_in_longitude: geo.coords?.lng ?? null,
+      check_in_distance_meters: verification.distance,
+      verification_status: verification.verificationStatus,
+      review_reason: verification.reviewReason,
       branch_id: employee.branch_id,
-      requires_review: requiresReview,
+      requires_review: verification.requiresReview,
     },
     { onConflict: "employee_id,date" }
   );
@@ -318,9 +387,9 @@ export async function checkIn(formData?: FormData) {
       mode,
       is_late: isLate,
       late_minutes: lateMinutes,
-      requires_review: requiresReview,
+      requires_review: verification.requiresReview,
       geo_status: geo.status,
-      ip,
+      ip: null,
       branch_code:
         (branchRes.data as { code?: string } | null)?.code ?? null,
     });
@@ -336,13 +405,13 @@ export async function checkIn(formData?: FormData) {
   revalidatePath("/attendance");
 }
 
-export async function checkOut() {
-  const { supabase, employee, shift } = await loadMyEmployee();
+export async function checkOut(formData?: FormData) {
+  const { supabase, employee, shift, branch } = await loadMyEmployee();
   const today = todayPKT();
 
   const { data: existing, error: fetchErr } = await supabase
     .from("attendance_records")
-    .select("id, check_in_at, is_late, mode")
+    .select("id, check_in_at, is_late, mode, geolocation, requires_review, review_reason")
     .eq("employee_id", employee.id)
     .eq("date", today)
     .maybeSingle();
@@ -361,6 +430,35 @@ export async function checkOut() {
     isLate: existing.is_late,
   });
 
+  const geo = parseGeolocation(formData);
+  const verification = evaluateLocationVerification({
+    mode: existing.mode,
+    branch,
+    geo,
+  });
+  const existingGeo =
+    existing.geolocation && typeof existing.geolocation === "object"
+      ? (existing.geolocation as Record<string, unknown>)
+      : {};
+  const geoJson = {
+    ...existingGeo,
+    check_out_status: geo.status,
+    check_out_verification_status: verification.verificationStatus,
+    ...(geo.coords
+      ? {
+          check_out_lat: geo.coords.lat,
+          check_out_lng: geo.coords.lng,
+          check_out_accuracy: geo.coords.accuracy,
+        }
+      : {}),
+    ...(verification.distance != null
+      ? { check_out_distance_meters: verification.distance }
+      : {}),
+    ...(verification.reviewSignals.length
+      ? { check_out_review_signal: verification.reviewSignals.join(",") }
+      : {}),
+  };
+
   const { error } = await supabase
     .from("attendance_records")
     .update({
@@ -368,6 +466,13 @@ export async function checkOut() {
       worked_minutes: result.workedMinutes,
       is_half_day: result.isHalfDay,
       status: result.status,
+      geolocation: geoJson,
+      check_out_latitude: geo.coords?.lat ?? null,
+      check_out_longitude: geo.coords?.lng ?? null,
+      check_out_distance_meters: verification.distance,
+      verification_status: verification.verificationStatus,
+      review_reason: verification.reviewReason ?? existing.review_reason,
+      requires_review: existing.requires_review || verification.requiresReview,
     })
     .eq("id", existing.id);
 

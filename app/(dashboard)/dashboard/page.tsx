@@ -304,7 +304,10 @@ function PendingAttendanceReviews({
               <div className="flex flex-wrap justify-end gap-1">
                 <StatusChip status={r.status} />
                 <Chip label="pending review" tone="yellow" />
-                <GeoStatusChip status={r.geolocation?.status} />
+                <GeoStatusChip
+                  status={r.verification_status}
+                  browserStatus={r.geolocation?.status}
+                />
               </div>
             </li>
           ))}
@@ -319,16 +322,44 @@ function PendingAttendanceReviews({
   );
 }
 
-function GeoStatusChip({ status }: { status?: string }) {
-  if (status === "granted") return <Chip label="location verified" tone="green" />;
-  if (status === "denied") return <Chip label="location denied" tone="yellow" />;
-  if (status === "unavailable")
+function GeoStatusChip({
+  status,
+  browserStatus,
+}: {
+  status?: string | null;
+  browserStatus?: string;
+}) {
+  if (status === "location_verified") {
+    return <Chip label="location verified" tone="green" />;
+  }
+  if (status === "outside_geofence") {
+    return <Chip label="outside geofence" tone="red" />;
+  }
+  if (status === "remote_location_captured") {
+    return <Chip label="remote location captured" tone="indigo" />;
+  }
+  if (status === "remote_location_missing") {
+    return <Chip label="remote location missing" tone="yellow" />;
+  }
+  if (status === "office_geofence_not_configured") {
+    return <Chip label="geofence not configured" tone="gray" />;
+  }
+  if (status?.startsWith("location_")) {
+    return <Chip label={status.replaceAll("_", " ")} tone="yellow" />;
+  }
+
+  if (browserStatus === "granted")
+    return <Chip label="location captured" tone="green" />;
+  if (browserStatus === "denied")
+    return <Chip label="location denied" tone="yellow" />;
+  if (browserStatus === "unavailable")
     return <Chip label="location unavailable" tone="amber" />;
-  if (status === "timeout") return <Chip label="location timeout" tone="amber" />;
-  if (status === "not_supported")
+  if (browserStatus === "timeout")
+    return <Chip label="location timeout" tone="amber" />;
+  if (browserStatus === "not_supported")
     return <Chip label="location unsupported" tone="gray" />;
-  if (status === "not_provided")
+  if (browserStatus === "not_provided")
     return <Chip label="no location proof" tone="gray" />;
-  if (status) return <Chip label={`location ${status}`} tone="gray" />;
+  if (browserStatus) return <Chip label={`location ${browserStatus}`} tone="gray" />;
   return <Chip label="location unknown" tone="gray" />;
 }
