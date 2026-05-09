@@ -52,6 +52,23 @@ function attendanceOk(msg: string): never {
   redirect(`/attendance?ok=${encodeURIComponent(msg)}`);
 }
 
+function overrideFail(formData: FormData, msg: string): never {
+  const redirectTo = safeOverrideRedirect(formData);
+  redirect(`${redirectTo}?error=${encodeURIComponent(msg)}`);
+}
+
+function overrideOk(formData: FormData, msg: string): never {
+  const redirectTo = safeOverrideRedirect(formData);
+  redirect(`${redirectTo}?ok=${encodeURIComponent(msg)}`);
+}
+
+function safeOverrideRedirect(formData: FormData): string {
+  const raw = String(formData.get("redirect_to") ?? "/attendance").trim();
+  if (raw === "/attendance") return raw;
+  if (/^\/admin\/employees\/[0-9a-fA-F-]{36}(\?.*)?$/.test(raw)) return raw;
+  return "/attendance";
+}
+
 type ShiftLite = {
   id: string;
   start_time: string;
@@ -142,6 +159,11 @@ function parseOverrideTime(
     attendanceFail("Override time must use HH:MM format.");
   }
   return buildPktTimestamp(date, value);
+}
+
+function modeForOverrideStatus(status: AttendanceStatus): AttendanceMode {
+  if (status.startsWith("remote_")) return "remote";
+  return "manual";
 }
 
 function workedMinutesBetween(
@@ -521,13 +543,20 @@ export async function checkOut(formData?: FormData) {
 
 export async function overrideAttendanceRecord(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
+  const employeeId = String(formData.get("employee_id") ?? "").trim();
+  const date = String(formData.get("date") ?? "").trim();
   const statusRaw = String(formData.get("status") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
   const requiresReview = formData.get("requires_review") === "on";
 
-  if (!id) attendanceFail("Missing attendance record id.");
+  if (!id && (!employeeId || !date)) {
+    overrideFail(formData, "Missing attendance record or employee/date.");
+  }
+  if (!id && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    overrideFail(formData, "Manual attendance date must be YYYY-MM-DD.");
+  }
   if (!OVERRIDE_STATUSES.includes(statusRaw as AttendanceStatus)) {
-    attendanceFail("Pick a valid corrected status.");
+    overrideFail(formData, "Pick a valid corrected status.");
   }
   if (!reason) attendanceFail("Override reason is required.");
 
@@ -544,23 +573,79 @@ export async function overrideAttendanceRecord(formData: FormData) {
     .eq("id", user.id)
     .maybeSingle();
   if (actorErr || !actor || actor.role !== "super_admin" || !actor.is_active) {
-    attendanceFail("Only super-admins can override attendance.");
+    overrideFail(formData, "Only super-admins can override attendance.");
   }
 
-  const { data: record, error: fetchErr } = await admin
-    .from("attendance_records")
-    .select(
-      `
-      id, employee_id, date, expected_start, check_in_at, check_out_at,
-      worked_minutes, status, late_minutes, is_late, is_half_day, is_absent,
-      requires_review, updated_at
-      `
-    )
-    .eq("id", id)
-    .maybeSingle();
-  if (fetchErr || !record) attendanceFail("Attendance record not found.");
-
   const correctedStatus = statusRaw as AttendanceStatus;
+  const recordSelect = `
+    id, employee_id, date, expected_start, expected_end, shift_id, branch_id, mode,
+    check_in_at, check_out_at, worked_minutes, status, late_minutes,
+    is_late, is_half_day, is_absent, requires_review, updated_at
+  `;
+  const fetchExisting = id
+    ? await admin
+        .from("attendance_records")
+        .select(recordSelect)
+        .eq("id", id)
+        .maybeSingle()
+    : await admin
+        .from("attendance_records")
+        .select(recordSelect)
+        .eq("employee_id", employeeId)
+        .eq("date", date)
+        .maybeSingle();
+
+  if (fetchExisting.error) {
+    overrideFail(formData, `Could not load attendance record: ${fetchExisting.error.message}`);
+  }
+
+  let record = fetchExisting.data;
+  if (!record) {
+    const { data: employee, error: empErr } = await admin
+      .from("employees")
+      .select(
+        `
+        id, branch_id, shift_id,
+        shifts ( id, start_time, end_time )
+        `
+      )
+      .eq("id", employeeId)
+      .maybeSingle();
+    if (empErr || !employee) overrideFail(formData, "Employee not found.");
+
+    const shiftValue = employee.shifts;
+    const shift = Array.isArray(shiftValue) ? shiftValue[0] : shiftValue;
+    if (!shift) overrideFail(formData, "Employee has no shift for manual attendance.");
+
+    const rowDate = date;
+    const now = new Date().toISOString();
+    const { data: inserted, error: insertErr } = await admin
+      .from("attendance_records")
+      .insert({
+        employee_id: employee.id,
+        date: rowDate,
+        shift_id: employee.shift_id,
+        expected_start: buildPktTimestamp(rowDate, shift.start_time),
+        expected_end: buildPktTimestamp(rowDate, shift.end_time),
+        status: correctedStatus,
+        mode: modeForOverrideStatus(correctedStatus),
+        branch_id: employee.branch_id,
+        requires_review: requiresReview,
+        is_absent: correctedStatus === "absent",
+        is_late: correctedStatus === "late" || correctedStatus === "remote_late",
+        is_half_day:
+          correctedStatus === "half_day" || correctedStatus === "remote_half_day",
+        updated_at: now,
+      })
+      .select(recordSelect)
+      .single();
+    if (insertErr || !inserted) {
+      overrideFail(formData, `Could not create attendance record: ${insertErr?.message ?? "unknown"}`);
+    }
+    record = inserted;
+  }
+  if (!record) overrideFail(formData, "Attendance record not found.");
+
   const correctedCheckIn = parseOverrideTime(formData.get("check_in_time"), record.date);
   const correctedCheckOut = parseOverrideTime(formData.get("check_out_time"), record.date);
   const nextCheckIn = correctedCheckIn ?? record.check_in_at;
@@ -590,6 +675,7 @@ export async function overrideAttendanceRecord(formData: FormData) {
   };
   const newValue = {
     status: correctedStatus,
+    mode: modeForOverrideStatus(correctedStatus),
     check_in_at: nextCheckIn,
     check_out_at: nextCheckOut,
     worked_minutes: nextWorkedMinutes,
@@ -604,8 +690,8 @@ export async function overrideAttendanceRecord(formData: FormData) {
   const { error: updateErr } = await admin
     .from("attendance_records")
     .update(newValue)
-    .eq("id", id);
-  if (updateErr) attendanceFail(`Override failed: ${updateErr.message}`);
+    .eq("id", record.id);
+  if (updateErr) overrideFail(formData, `Override failed: ${updateErr.message}`);
 
   const { error: auditErr } = await admin.from("audit_logs").insert({
     actor_id: user.id,
@@ -617,10 +703,12 @@ export async function overrideAttendanceRecord(formData: FormData) {
     reason,
   });
   if (auditErr) {
-    attendanceFail(`Override saved, but audit log failed: ${auditErr.message}`);
+    overrideFail(formData, `Override saved, but audit log failed: ${auditErr.message}`);
   }
 
   revalidatePath("/attendance");
   revalidatePath("/dashboard");
-  attendanceOk("Attendance override saved.");
+  revalidatePath("/employees");
+  revalidatePath(`/admin/employees/${record.employee_id}`);
+  overrideOk(formData, "Attendance override saved.");
 }

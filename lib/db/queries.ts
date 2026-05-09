@@ -31,6 +31,19 @@ export type AttendanceRowVM = AttendanceRecord & {
   branch_code: string | null;
 };
 
+export type EmployeeProfileVM = EmployeeWithJoins & {
+  user_id: string;
+  manager_name: string | null;
+  manager_email: string | null;
+};
+
+export type AttendanceAuditNote = {
+  target_id: string;
+  reason: string | null;
+  created_at: string;
+  actor_name: string | null;
+};
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -139,6 +152,109 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
   });
 }
 
+export async function getEmployeeProfile(
+  employeeId: string
+): Promise<EmployeeProfileVM | null> {
+  if (!isSupabaseConfigured()) {
+    const emp = MOCK_EMPLOYEES.find((e) => e.id === employeeId);
+    return emp ? { ...emp, manager_name: null, manager_email: null } : null;
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select(
+      `
+      id, user_id, full_name, phone,
+      branch_id, department_id, manager_id, shift_id,
+      monthly_salary, role_description, employment_status,
+      attendance_exempt, payroll_exempt, remote_allowed, remote_default_days,
+      hire_date, termination_date, created_at, updated_at,
+      app_users:user_id ( email, role ),
+      branches ( name, code ),
+      departments ( name ),
+      shifts ( name ),
+      manager:manager_id ( full_name, app_users:user_id ( email ) )
+      `
+    )
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  if (error) throw new Error(`getEmployeeProfile: ${error.message}`);
+  if (!data) return null;
+
+  type Row = {
+    id: string;
+    user_id: string;
+    full_name: string;
+    phone: string | null;
+    branch_id: string | null;
+    department_id: string | null;
+    manager_id: string | null;
+    shift_id: string | null;
+    monthly_salary: number | string;
+    role_description: string | null;
+    employment_status: EmployeeWithJoins["employment_status"];
+    attendance_exempt: boolean;
+    payroll_exempt: boolean;
+    remote_allowed: boolean;
+    remote_default_days: number[] | null;
+    hire_date: string;
+    termination_date: string | null;
+    created_at: string;
+    updated_at: string;
+    app_users:
+      | { email: string; role: EmployeeWithJoins["user_role"] }
+      | { email: string; role: EmployeeWithJoins["user_role"] }[]
+      | null;
+    branches: { name: string; code: string } | { name: string; code: string }[] | null;
+    departments: { name: string } | { name: string }[] | null;
+    shifts: { name: string } | { name: string }[] | null;
+    manager:
+      | { full_name: string; app_users: { email: string } | { email: string }[] | null }
+      | { full_name: string; app_users: { email: string } | { email: string }[] | null }[]
+      | null;
+  };
+
+  const row = data as unknown as Row;
+  const appUser = pickOne(row.app_users);
+  const branch = pickOne(row.branches);
+  const dept = pickOne(row.departments);
+  const shift = pickOne(row.shifts);
+  const manager = pickOne(row.manager);
+  const managerUser = manager ? pickOne(manager.app_users) : null;
+
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    full_name: row.full_name,
+    phone: row.phone,
+    branch_id: row.branch_id,
+    department_id: row.department_id,
+    manager_id: row.manager_id,
+    shift_id: row.shift_id,
+    monthly_salary: toNum(row.monthly_salary),
+    role_description: row.role_description,
+    employment_status: row.employment_status,
+    attendance_exempt: row.attendance_exempt,
+    payroll_exempt: row.payroll_exempt,
+    remote_allowed: row.remote_allowed,
+    remote_default_days: row.remote_default_days ?? [],
+    hire_date: row.hire_date,
+    termination_date: row.termination_date,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    branch_name: branch?.name ?? null,
+    branch_code: branch?.code ?? null,
+    department_name: dept?.name ?? null,
+    shift_name: shift?.name ?? null,
+    email: appUser?.email ?? "",
+    user_role: appUser?.role ?? "employee",
+    manager_name: manager?.full_name ?? null,
+    manager_email: managerUser?.email ?? null,
+  };
+}
+
 // ---------- attendance: my own ----------
 
 export type MyTodayAttendance = AttendanceRecord & {
@@ -225,6 +341,65 @@ export async function listTodayAttendance(
   });
 }
 
+export async function listEmployeeAttendanceRange(
+  employeeId: string,
+  startDate: string,
+  endDate: string
+): Promise<AttendanceRecord[]> {
+  if (!isSupabaseConfigured()) {
+    return makeMockTodayAttendance().filter((r) => r.employee_id === employeeId);
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .select("*")
+    .eq("employee_id", employeeId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+  if (error) throw new Error(`listEmployeeAttendanceRange: ${error.message}`);
+  return (data ?? []) as AttendanceRecord[];
+}
+
+export async function listAttendanceOverrideNotes(
+  recordIds: string[]
+): Promise<AttendanceAuditNote[]> {
+  if (!isSupabaseConfigured() || recordIds.length === 0) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select(
+      `
+      target_id, reason, created_at,
+      app_users:actor_id ( display_name )
+      `
+    )
+    .eq("target_type", "attendance_record")
+    .eq("action", "override_attendance")
+    .in("target_id", recordIds)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`listAttendanceOverrideNotes: ${error.message}`);
+
+  type Row = {
+    target_id: string;
+    reason: string | null;
+    created_at: string;
+    app_users:
+      | { display_name: string }
+      | { display_name: string }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((r) => ({
+    target_id: r.target_id,
+    reason: r.reason,
+    created_at: r.created_at,
+    actor_name: pickOne(r.app_users)?.display_name ?? null,
+  }));
+}
+
 // ---------- leave ----------
 
 export type LeaveBalanceVM = {
@@ -274,6 +449,33 @@ export async function getMyLeaveBalanceThisMonth(): Promise<LeaveBalanceVM | nul
       balance: 0,
     };
   }
+  return {
+    year: data.year,
+    month: data.month,
+    accrued: toNum(data.accrued),
+    used: toNum(data.used),
+    carry_forward_in: toNum(data.carry_forward_in),
+    balance: toNum(data.balance),
+  };
+}
+
+export async function getEmployeeLeaveBalanceThisMonth(
+  employeeId: string
+): Promise<LeaveBalanceVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const today = todayPKT();
+  const [y, m] = today.split("-").map((p) => Number.parseInt(p, 10));
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("leave_balances")
+    .select("year, month, accrued, used, carry_forward_in, balance")
+    .eq("employee_id", employeeId)
+    .eq("year", y)
+    .eq("month", m)
+    .maybeSingle();
+  if (error) throw new Error(`getEmployeeLeaveBalanceThisMonth: ${error.message}`);
+  if (!data) return null;
   return {
     year: data.year,
     month: data.month,

@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { listEmployees, isSupabaseConfigured } from "@/lib/db/queries";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import type { EmployeeWithJoins } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -26,8 +28,9 @@ function exemptionBadges(e: EmployeeWithJoins): string[] {
 }
 
 export default async function EmployeesPage() {
-  const employees = await listEmployees();
+  const [employees, me] = await Promise.all([listEmployees(), getCurrentUser()]);
   const live = isSupabaseConfigured();
+  const isSuperAdmin = me?.appUser.role === "super_admin";
 
   const total = employees.length;
   const totalSalary = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
@@ -83,7 +86,18 @@ export default async function EmployeesPage() {
             {employees.map((e) => (
               <tr key={e.id} className="hover:bg-gray-50">
                 <Td>
-                  <div className="font-medium text-gray-900">{e.full_name}</div>
+                  <div className="font-medium text-gray-900">
+                    {isSuperAdmin ? (
+                      <Link
+                        href={`/admin/employees/${e.id}`}
+                        className="text-indigo-700 hover:text-indigo-500"
+                      >
+                        {e.full_name}
+                      </Link>
+                    ) : (
+                      e.full_name
+                    )}
+                  </div>
                   <div className="text-xs text-gray-500">{e.email}</div>
                 </Td>
                 <Td>{e.branch_code ?? "—"}</Td>

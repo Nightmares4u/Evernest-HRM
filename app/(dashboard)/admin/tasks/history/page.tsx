@@ -13,6 +13,14 @@ import { isSupabaseConfigured } from "@/lib/db/queries";
 import { listDoneTasks, type TaskRowVM } from "@/lib/db/tasks";
 
 type Range = "this_week" | "last_week" | "this_month" | "last_month" | "last_8_weeks" | "all";
+type HistoryView = "list" | "grid";
+type EmployeeStack = {
+  id: string;
+  name: string;
+  email: string;
+  branchCode: string | null;
+  tasks: TaskRowVM[];
+};
 
 const RANGES: Array<{ key: Range; label: string }> = [
   { key: "this_week", label: "This week" },
@@ -23,58 +31,130 @@ const RANGES: Array<{ key: Range; label: string }> = [
   { key: "all", label: "All time" },
 ];
 
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
 function addDays(iso: string, n: number): string {
   const [y, m, d] = iso.split("-").map((p) => Number.parseInt(p, 10));
   const dt = new Date(Date.UTC(y, m - 1, d + n));
   return dt.toISOString().slice(0, 10);
 }
 
-function resolveRange(range: Range, today: string): { startIso: string; endIso: string } {
-  if (range === "this_week") return { startIso: startOfWeek(today), endIso: today };
+function isMonthKey(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}$/.test(value)) return false;
+  const month = Number.parseInt(value.slice(5, 7), 10);
+  return month >= 1 && month <= 12;
+}
+
+function monthLabel(monthKey: string): string {
+  const year = monthKey.slice(0, 4);
+  const monthIndex = Number.parseInt(monthKey.slice(5, 7), 10) - 1;
+  return `${MONTHS[monthIndex]} ${year}`;
+}
+
+function resolveWindow(
+  range: Range,
+  today: string,
+  selectedMonth: string | null
+): { startIso: string; endIso: string; label: string } {
+  if (selectedMonth) {
+    const startIso = `${selectedMonth}-01`;
+    const endIso = selectedMonth === today.slice(0, 7) ? today : endOfMonth(startIso);
+    return { startIso, endIso, label: monthLabel(selectedMonth) };
+  }
+
+  if (range === "this_week") {
+    return { startIso: startOfWeek(today), endIso: today, label: "This week" };
+  }
   if (range === "last_week") {
     const thisMon = startOfWeek(today);
-    return { startIso: addDays(thisMon, -7), endIso: addDays(thisMon, -1) };
+    return { startIso: addDays(thisMon, -7), endIso: addDays(thisMon, -1), label: "Last week" };
   }
-  if (range === "this_month") return { startIso: startOfMonth(today), endIso: today };
+  if (range === "this_month") {
+    return { startIso: startOfMonth(today), endIso: today, label: "This month" };
+  }
   if (range === "last_month") {
     const [y, m] = today.split("-").map((p) => Number.parseInt(p, 10));
     const prevY = m === 1 ? y - 1 : y;
     const prevM = m === 1 ? 12 : m - 1;
     const startIso = `${prevY}-${String(prevM).padStart(2, "0")}-01`;
-    return { startIso, endIso: endOfMonth(startIso) };
+    return { startIso, endIso: endOfMonth(startIso), label: "Last month" };
   }
   if (range === "last_8_weeks") {
     const thisMon = startOfWeek(today);
-    return { startIso: addDays(thisMon, -7 * 7), endIso: today };
+    return { startIso: addDays(thisMon, -7 * 7), endIso: today, label: "Last 8 weeks" };
   }
-  return { startIso: "1970-01-01", endIso: today };
+  return { startIso: "1970-01-01", endIso: today, label: "All time" };
+}
+
+function historyHref({
+  view,
+  range,
+  month,
+}: {
+  view: HistoryView;
+  range?: Range;
+  month?: string | null;
+}) {
+  const params = new URLSearchParams({ view });
+  if (month) params.set("month", month);
+  else params.set("range", range ?? "this_month");
+  return `/admin/tasks/history?${params.toString()}`;
+}
+
+function groupByEmployee(tasks: TaskRowVM[]): EmployeeStack[] {
+  const groups = new Map<string, EmployeeStack>();
+  for (const task of tasks) {
+    const current = groups.get(task.assigned_to);
+    if (current) {
+      current.tasks.push(task);
+      continue;
+    }
+
+    groups.set(task.assigned_to, {
+      id: task.assigned_to,
+      name: task.assignee_name,
+      email: task.assignee_email,
+      branchCode: task.branch_code,
+      tasks: [task],
+    });
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    const countDiff = b.tasks.length - a.tasks.length;
+    if (countDiff !== 0) return countDiff;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 export default async function AdminTasksHistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; view?: string }>;
+  searchParams: Promise<{ range?: string; view?: string; month?: string }>;
 }) {
   const sp = await searchParams;
-  const range = (RANGES.find((r) => r.key === sp.range)?.key) ?? "this_week";
-  const view = sp.view === "grid" ? "grid" : "list";
+  const selectedMonth = isMonthKey(sp.month) ? sp.month : null;
+  const range = (RANGES.find((r) => r.key === sp.range)?.key) ?? "this_month";
+  const view: HistoryView = sp.view === "grid" ? "grid" : "list";
   const live = isSupabaseConfigured();
   const today = todayPKT();
-  const { startIso, endIso } = resolveRange(range, today);
+  const { startIso, endIso, label } = resolveWindow(range, today, selectedMonth);
   const { since, until } = dateRangeToTimestamps(startIso, endIso);
   const tasks = await listDoneTasks(since, until);
-
-  // Top-3 performers in this range
-  const byAssignee = new Map<string, { name: string; count: number }>();
-  for (const t of tasks) {
-    const cur = byAssignee.get(t.assigned_to);
-    if (cur) cur.count += 1;
-    else
-      byAssignee.set(t.assigned_to, { name: t.assignee_name, count: 1 });
-  }
-  const top = Array.from(byAssignee.values())
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
+  const employeeStacks = groupByEmployee(tasks);
+  const top = employeeStacks.slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -82,7 +162,7 @@ export default async function AdminTasksHistoryPage({
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Tasks history</h1>
           <p className="text-sm text-gray-500">
-            Done tasks across the team. Switch back to{" "}
+            Done tasks across the team for {label.toLowerCase()}. Switch back to{" "}
             <Link href="/admin/tasks" className="text-indigo-600 hover:text-indigo-500">
               active tasks
             </Link>
@@ -90,7 +170,7 @@ export default async function AdminTasksHistoryPage({
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <ViewTabs current={view} range={range} />
+          <ViewTabs current={view} range={range} month={selectedMonth} />
           <RangeTabs current={range} view={view} />
         </div>
       </header>
@@ -101,13 +181,15 @@ export default async function AdminTasksHistoryPage({
         </div>
       )}
 
+      <MonthSelector today={today} selectedMonth={selectedMonth} view={view} />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Total done" value={tasks.length} />
         {top.map((t, i) => (
           <Stat
-            key={i}
+            key={t.id}
             label={`#${i + 1} ${t.name.split(" ")[0]}`}
-            value={t.count}
+            value={t.tasks.length}
             sublabel={t.name}
           />
         ))}
@@ -119,37 +201,30 @@ export default async function AdminTasksHistoryPage({
       {view === "grid" ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-gray-700">
-            Heatmap — last 8 weeks
+            Heatmap — {label}
           </h2>
           <p className="text-xs text-gray-500">
             Cells count tasks completed by each assignee per week. Cell colour
             scales with volume.
           </p>
-          <DoneTasksHeatmap tasks={tasks} endDate={today} weeks={8} />
+          <DoneTasksHeatmap tasks={tasks} endDate={endIso} weeks={8} />
         </section>
       ) : (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">
-            Tasks {tasks.length === 0 ? "" : `(${tasks.length})`}
-          </h2>
-          {tasks.length === 0 ? (
-            <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
-              No tasks completed in this range.
-            </p>
-          ) : (
-            <ol className="space-y-2">
-              {tasks.map((t) => (
-                <DoneRow key={t.id} t={t} />
-              ))}
-            </ol>
-          )}
-        </section>
+        <DoneTaskStack groups={employeeStacks} total={tasks.length} label={label} />
       )}
     </div>
   );
 }
 
-function ViewTabs({ current, range }: { current: "list" | "grid"; range: Range }) {
+function ViewTabs({
+  current,
+  range,
+  month,
+}: {
+  current: HistoryView;
+  range: Range;
+  month: string | null;
+}) {
   const cls = (active: boolean) =>
     `rounded-md px-3 py-1 text-xs ring-1 ring-inset ${
       active
@@ -159,22 +234,22 @@ function ViewTabs({ current, range }: { current: "list" | "grid"; range: Range }
   return (
     <nav className="flex gap-2">
       <Link
-        href={`/admin/tasks/history?view=list&range=${range}`}
+        href={historyHref({ view: "list", range, month })}
         className={cls(current === "list")}
       >
         List
       </Link>
       <Link
-        href={`/admin/tasks/history?view=grid&range=${range}`}
+        href={historyHref({ view: "grid", range, month })}
         className={cls(current === "grid")}
       >
-        Grid
+        Heatmap
       </Link>
     </nav>
   );
 }
 
-function RangeTabs({ current, view }: { current: Range; view: "list" | "grid" }) {
+function RangeTabs({ current, view }: { current: Range; view: HistoryView }) {
   return (
     <nav className="flex flex-wrap gap-2 text-xs">
       {RANGES.map((r) => (
@@ -191,6 +266,138 @@ function RangeTabs({ current, view }: { current: Range; view: "list" | "grid" })
         </Link>
       ))}
     </nav>
+  );
+}
+
+function MonthSelector({
+  today,
+  selectedMonth,
+  view,
+}: {
+  today: string;
+  selectedMonth: string | null;
+  view: HistoryView;
+}) {
+  const year = Number.parseInt((selectedMonth ?? today).slice(0, 4), 10);
+  const currentMonth = today.slice(0, 7);
+
+  return (
+    <section className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700">Monthly done-task stack</h2>
+          <p className="text-xs text-gray-500">
+            Pick a month to review completed task volume employee by employee.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <Link
+            href={historyHref({ view, month: `${year - 1}-12` })}
+            className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+          >
+            {year - 1}
+          </Link>
+          <span className="font-semibold text-gray-700">{year}</span>
+          <Link
+            href={historyHref({ view, month: `${year + 1}-01` })}
+            className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+          >
+            {year + 1}
+          </Link>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6 lg:grid-cols-12">
+        {MONTHS.map((month, index) => {
+          const monthKey = `${year}-${String(index + 1).padStart(2, "0")}`;
+          const active = selectedMonth === monthKey || (!selectedMonth && monthKey === currentMonth);
+          return (
+            <Link
+              key={monthKey}
+              href={historyHref({ view, month: monthKey })}
+              className={`rounded-md px-3 py-2 text-center ring-1 ring-inset ${
+                active
+                  ? "bg-green-50 font-semibold text-green-700 ring-green-200"
+                  : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {month}
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DoneTaskStack({
+  groups,
+  total,
+  label,
+}: {
+  groups: EmployeeStack[];
+  total: number;
+  label: string;
+}) {
+  if (groups.length === 0) {
+    return (
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-gray-700">Completed task list</h2>
+        <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+          No tasks completed in this range.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">
+          Completed task list grouped by employee ({total})
+        </h2>
+        <p className="text-xs text-gray-500">
+          Employee-wise stack for {label.toLowerCase()}.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group) => (
+          <div
+            key={group.id}
+            className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-gray-900">{group.name}</p>
+                <p className="truncate text-xs text-gray-500">{group.email || "No email"}</p>
+              </div>
+              <Chip label={`${group.tasks.length} done`} tone="green" />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {group.branchCode && <Chip label={group.branchCode} tone="gray" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {groups.map((group) => (
+          <section key={group.id} className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-gray-800">{group.name}</h3>
+              <span className="text-xs tabular-nums text-gray-500">
+                {group.tasks.length} completed
+              </span>
+            </div>
+            <ol className="space-y-2">
+              {group.tasks.map((t) => (
+                <DoneRow key={t.id} t={t} />
+              ))}
+            </ol>
+          </section>
+        ))}
+      </div>
+    </section>
   );
 }
 

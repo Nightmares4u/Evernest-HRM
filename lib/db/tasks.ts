@@ -236,6 +236,23 @@ export async function listTasksForAdmin(
   return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
 }
 
+export async function listTasksForEmployeeAdmin(
+  userId: string,
+  limit = 200
+): Promise<TaskRowVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("assigned_to", userId)
+    .order("due_date", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listTasksForEmployeeAdmin: ${error.message}`);
+  return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
+}
+
 export async function listAssignableUsers(): Promise<AssignableUser[]> {
   if (!isSupabaseConfigured()) return [];
 

@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Phase A — geolocation-only attendance verification (200m office radius).
+**Last updated**: Employee Attendance Control Center.
 
 ## Branch & commits
 
@@ -39,7 +39,7 @@
 | `/login` | public | Real Supabase email+password sign-in via server action. Falls back to "Continue (Mock)" if env missing. |
 | `/dashboard` | any signed-in | Personal landing. `MyAttendanceCard` shows today's status + geolocation-capturing Check-in / Check-out buttons. Stat cards aggregate today's attendance. Super-admins see pending attendance reviews. |
 | `/attendance` | any signed-in | Today panel. Per-row table of every tracked employee's status, mode, times, worked, late minutes, geofence verification chips, review reason, and super-admin override form. |
-| `/employees` | any signed-in | Directory table with branch / dept / role / shift / salary / remote days / exemptions. |
+| `/employees` | any signed-in | Directory table with branch / dept / role / shift / salary / remote days / exemptions. Super-admins can click an employee name to open the control center. |
 | `/leave` | employees | Submit leave request, see balance + history. |
 | `/admin/leave` | super-admin | Approve / reject leave queue. Approval inserts on_leave attendance rows + decrements balance + audit-logs. |
 | `/tasks` | any signed-in | My tasks grouped today / awaiting approval / overdue / upcoming / recently done. Approval-required tasks have a "Submit for approval" form; others have "Mark done". |
@@ -47,20 +47,21 @@
 | `/admin/tasks/recurring` | super-admin | Recurring template CRUD: create (weekly day picker + priority + requires_approval + due_time), pause/resume, delete. "Generate today's tasks" button — idempotent. |
 | `/tasks/history` | any signed-in | Personal done-task history with This week / Last week / This month / Last month / All time filters + 3 stat cards. Chronological list. |
 | `/admin/tasks/history` | super-admin | Company done-task history. Same range filters + Last 8 weeks. List / Grid view tabs. Grid is a heatmap: rows=assignees, cols=last 8 weeks, cells colour-scaled by count. Top-3 performers shown as stat cards. |
+| `/admin/employees/[id]` | super-admin | Employee Attendance Control Center. Profile header, yearly totals, Jan-Dec cards, month calendar with status / check-in-out / worked hours in every day cell, day detail panel, day-level override/create record form, task summary, and payroll-ready deduction preview. |
 | `/admin` | super-admin | **Power-user overview.** Action cards: pending leave, pending task approvals, today's check-in coverage (X/Y), active recurring count. Redlined section (only shown if ≥1 employee has 3+ overdue undone tasks). Headcount/payroll stats. Branch + department + shift + remote-roster tables. Quick-link grid to all admin sections + dashed cards for still-planned controls. |
 
 ### Server actions (all audit-logged where they mutate state)
 
 - `app/login/actions.ts`: `signIn`, `signOut`.
-- `app/(dashboard)/attendance/actions.ts`: `checkIn(formData)` — accepts browser-captured lat/lng/accuracy/status, calculates server-side distance from assigned branch office coordinates, stores first-class check-in coordinates/distance/verification status/review reason, and flags `requires_review` if outside the 200m office radius or location is denied/unavailable/timeout. `checkOut(formData)` captures browser location once at checkout, stores first-class checkout coordinates/distance, closes the day with worked minutes + half-day flag, and preserves any existing review flag. `overrideAttendanceRecord` lets active super-admins manually correct an existing row and writes `audit_logs`.
+- `app/(dashboard)/attendance/actions.ts`: `checkIn(formData)` — accepts browser-captured lat/lng/accuracy/status, calculates server-side distance from assigned branch office coordinates, stores first-class check-in coordinates/distance/verification status/review reason, and flags `requires_review` if outside the 200m office radius or location is denied/unavailable/timeout. `checkOut(formData)` captures browser location once at checkout, stores first-class checkout coordinates/distance, closes the day with worked minutes + half-day flag, and preserves any existing review flag. `overrideAttendanceRecord` lets active super-admins manually correct an existing row or create a manual row for an employee/date with no record; every change writes `audit_logs`.
 - `app/(dashboard)/leave/actions.ts`: `submitLeaveRequest`, `approveLeaveRequest`, `rejectLeaveRequest`.
 - `app/(dashboard)/tasks/actions.ts`: `markTaskDone`, `submitForApproval`, `createTask`, `approveTask`, `rejectTask`.
 - `app/(dashboard)/admin/tasks/recurring/actions.ts`: `createRecurringTask`, `toggleRecurringActive`, `deleteRecurringTask`, `generateTasksForToday`.
 
 ### Domain + helpers
 - `lib/types/hrm.ts` — typed mirror of the applied schema, including Phase A branch office geofence fields and attendance verification columns.
-- `lib/db/queries.ts` — server-side reads: employees, attendance (mine + today panel), leave (balance, my requests, admin queue), taxonomy (branches, departments, shifts), `getAdminPendingCounts()` (action-card numbers).
-- `lib/db/tasks.ts` — task reads: `listMyTasks` (grouped), `listTasksForAdmin` (filterable), `listAssignableUsers`, `listRecurringTasks`, `listRedlinedEmployees`, `listTasksInRange` (schedule grid), `listDoneTasks` (history pages).
+- `lib/db/queries.ts` — server-side reads: employees, employee profile, employee attendance ranges, attendance override notes, leave (balance, my requests, admin queue), taxonomy (branches, departments, shifts), `getAdminPendingCounts()` (action-card numbers).
+- `lib/db/tasks.ts` — task reads: `listMyTasks` (grouped), `listTasksForAdmin` (filterable), `listTasksForEmployeeAdmin`, `listAssignableUsers`, `listRecurringTasks`, `listRedlinedEmployees`, `listTasksInRange` (schedule grid), `listDoneTasks` (history pages).
 - `lib/email/send.ts` + `lib/email/templates.ts` — Resend wrapper (`isEmailConfigured()` gate, `sendEmailSafely()` wrapper that never breaks server actions) and inline-styled HTML templates for `taskAssignedEmail`, `checkInEmail`, `checkOutEmail`.
 - `lib/auth/current-user.ts` — `getCurrentUser()` returns auth user + app_users row + employees row.
 - `lib/attendance/format.ts` — Asia/Karachi-aware time / date / weekday helpers + status chip mapping.
@@ -91,7 +92,7 @@
   - `daily_recurring_generate` — replace the manual "Generate today's tasks" button (23:30 PKT).
 - **Holidays admin UI** (`/admin/holidays`).
 - **Audit log viewer** (`/admin/audit`).
-- **Payroll runs + payslips** UI (`/admin/payroll/*`). Schema is in place (`payroll_runs`, `payslips`).
+- **Payroll runs + payslips** UI (`/admin/payroll/*`). Schema is in place (`payroll_runs`, `payslips`). Employee pages only show payroll-ready preview; they do not generate payslips or mark salary paid.
 - **Super-admin restriction at handler level**. Currently any signed-in user can hit `/admin/*` URLs; RLS on the underlying tables prevents writes by non-super-admins, but a clean redirect to `/dashboard?error=…` for non-admins would be polite. Add to middleware or admin layout.
 - **Task attachments** (Supabase Storage `task-proofs` bucket; metadata table is ready).
 

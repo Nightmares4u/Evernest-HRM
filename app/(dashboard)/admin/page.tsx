@@ -71,7 +71,7 @@ export default async function AdminPage() {
       )}
 
       <Section title="Action items">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <ActionCard
             label="Pending leave"
             value={counts.pending_leave}
@@ -116,6 +116,13 @@ export default async function AdminPage() {
             href="/admin/tasks/recurring"
             tone={counts.active_recurring > 0 ? "indigo" : "gray"}
             hint="Manage templates"
+          />
+          <ActionCard
+            label="Task history"
+            value="Open"
+            href="/admin/tasks/history?range=this_month"
+            tone="green"
+            hint="Monthly completed stack"
           />
         </div>
       </Section>
@@ -306,6 +313,12 @@ export default async function AdminPage() {
             href="/admin/tasks"
             title="Tasks admin"
             description="Assign tasks. Approve marketing submissions."
+            live
+          />
+          <QuickLink
+            href="/admin/tasks/history?range=this_month"
+            title="Task history"
+            description="Review monthly completed tasks by employee."
             live
           />
           <QuickLink
