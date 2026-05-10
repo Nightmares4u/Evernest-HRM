@@ -1,42 +1,74 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { type NextRequest, NextResponse } from "next/server";
 
+// Paths that don't require authentication. Cron handlers protect themselves
+// via CRON_SECRET, so they're listed here too.
 const PUBLIC_PATHS = ["/login", "/api/cron"];
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return req.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            res.cookies.set(name, value, options);
-          });
-        },
-      },
-    }
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
   );
+}
+
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next({ request: { headers: req.headers } });
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // DEV/MOCK MODE: when Supabase env vars are missing, skip every auth check.
+  // Local dev without .env.local can still navigate the shell. Real auth +
+  // redirects activate the moment env vars are populated.
+  // TODO(post-MVP): make .env.local mandatory and remove this branch.
+  if (!url || !anonKey) {
+    return res;
+  }
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return req.cookies.getAll();
+      },
+      setAll(
+        cookiesToSet: {
+          name: string;
+          value: string;
+          options: CookieOptions;
+        }[]
+      ) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          req.cookies.set(name, value);
+          res.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = req.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-
-  if (!user && !isPublic) {
+  // Unauthenticated users can only see public paths.
+  if (!user && !isPublic(req.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  // Authenticated users hitting /login go straight to /dashboard.
+  if (user && req.nextUrl.pathname === "/login") {
+    return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
   return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.svg).*)"],
+  // Run on real page navigations; skip static assets, image optimisation
+  // pipeline, internal RSC payloads, and any path that looks like a static
+  // file (anything with a dot in the last segment). Without these
+  // exclusions, every prefetch / hot-reload asset triggers a Supabase
+  // auth.getUser() round-trip and the dev server crawls.
+  matcher: [
+    "/((?!_next/static|_next/image|_next/data|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|css|js|map)).*)",
+  ],
 };
