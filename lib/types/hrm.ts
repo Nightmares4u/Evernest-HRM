@@ -30,7 +30,7 @@ export type AttendanceStatus =
   | "pending_review"
   | "approved_manually";
 
-export type AttendanceMode = "office" | "remote" | "manual";
+export type AttendanceMode = "office" | "remote" | "manual" | "system";
 
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 

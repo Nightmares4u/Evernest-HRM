@@ -145,8 +145,30 @@
 | Marketing daily proof requirement onerous                          | OPEN_QUESTIONS — if too heavy, switch marketing to less granular proof (per-week instead of per-task).                |
 | Yashal/Sir Raza assignment to each other                           | `tasks.assigned_to` references `app_users.id`, not `employees.id`. Verified Day 9.                                    |
 | Redline missed because cron doesn't fire                           | Redline is computed live via `employee_overdue_tasks` view, not cron-cached. Always current.                          |
-| Recurring task generator runs late / not at all                    | Cron protected by `CRON_SECRET`. Add idempotency: skip if tomorrow's task already exists for a given recurring template. |
-| Cron times wrong (Vercel runs UTC)                                 | Schedule explicit UTC: nightly `59 18`, recurring `30 18`, monthly accrual `1 19 28-31` + last-day handler check.     |
+| Recurring task generator runs late / not at all                    | Cron route is protected by `CRON_SECRET` and idempotent: skip if the target date's task already exists for a recurring template + assignee. |
+| Cron times wrong (Vercel runs UTC)                                 | Document PKT-to-UTC conversion before enabling hosted schedules: close attendance around `59 18 * * *` UTC, recurring around `0 3 * * *` UTC, monthly accrual around `0 1 1 * *` UTC. |
+
+---
+
+## Cron maintenance routes
+
+Implemented as manually testable Next.js route handlers. Hosted scheduler configuration is intentionally deferred.
+
+```bash
+curl -X POST "http://localhost:3000/api/cron/close-attendance-day?date=2026-05-09" \
+  -H "Authorization: Bearer $CRON_SECRET"
+
+curl -X POST "http://localhost:3000/api/cron/accrue-monthly-leave?year=2026&month=5" \
+  -H "Authorization: Bearer $CRON_SECRET"
+
+curl -X POST "http://localhost:3000/api/cron/generate-recurring-tasks?date=2026-05-09" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+Recommended hosted schedules later:
+- Close attendance day: daily after office close, around 23:59 PKT (`59 18 * * *` UTC) or 00:30 PKT next day (`30 19 * * *` UTC previous-date handling defaults to yesterday).
+- Monthly leave accrual: first day of month early morning, e.g. 06:00 PKT (`0 1 1 * *` UTC).
+- Recurring task generation: every morning before office opens, e.g. 08:00 PKT (`0 3 * * *` UTC).
 
 ---
 

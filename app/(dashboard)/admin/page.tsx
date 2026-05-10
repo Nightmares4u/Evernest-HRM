@@ -352,6 +352,12 @@ export default async function AdminPage() {
             description="Create a Supabase login, HR profile, salary, schedule links, and leave balance."
             live
           />
+          <QuickLink
+            href="/admin/cron"
+            title="Scheduled maintenance"
+            description="Manual test commands for attendance close, leave accrual, and recurring task cron routes."
+            live
+          />
           <PendingCard
             title="Audit log viewer"
             description="Searchable log of every manual override. Writes already happen — UI surfaces it."

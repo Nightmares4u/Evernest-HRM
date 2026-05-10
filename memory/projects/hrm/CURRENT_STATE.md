@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Employee Attendance Control Center.
+**Last updated**: Cron scheduled maintenance routes.
 
 ## Branch & commits
 
@@ -48,7 +48,18 @@
 | `/tasks/history` | any signed-in | Personal done-task history with This week / Last week / This month / Last month / All time filters + 3 stat cards. Chronological list. |
 | `/admin/tasks/history` | super-admin | Company done-task history. Same range filters + Last 8 weeks. List / Grid view tabs. Grid is a heatmap: rows=assignees, cols=last 8 weeks, cells colour-scaled by count. Top-3 performers shown as stat cards. |
 | `/admin/employees/[id]` | super-admin | Employee Attendance Control Center. Profile header, yearly totals, Jan-Dec cards, month calendar with status / check-in-out / worked hours in every day cell, day detail panel, day-level override/create record form, task summary, and payroll-ready deduction preview. |
+| `/admin/cron` | super-admin | Manual test reference for cron endpoints. Shows placeholder-safe curl commands using `$CRON_SECRET`. |
 | `/admin` | super-admin | **Power-user overview.** Action cards: pending leave, pending task approvals, today's check-in coverage (X/Y), active recurring count. Redlined section (only shown if ≥1 employee has 3+ overdue undone tasks). Headcount/payroll stats. Branch + department + shift + remote-roster tables. Quick-link grid to all admin sections + dashed cards for still-planned controls. |
+
+### Cron route handlers
+
+All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-secret: $CRON_SECRET`. The actual secret must never be logged or committed.
+
+| Route | Purpose | Idempotency |
+|---|---|---|
+| `POST /api/cron/close-attendance-day?date=YYYY-MM-DD` | Creates `status='absent'`, `mode='system'` attendance rows for active, non-exempt employees who should have worked and have no record. Defaults to yesterday in PKT. Skips Sundays, paid holidays, approved leave, exempt employees, and existing rows. | Checks existing `attendance_records(employee_id,date)` before insert and relies on the existing unique constraint as a final guard. |
+| `POST /api/cron/accrue-monthly-leave?year=YYYY&month=M` | Creates or tops up monthly `leave_balances` with +1 accrued day and previous-month carry-forward. Defaults to current PKT month. | Uses the existing `UNIQUE(employee_id, year, month)` and treats rows with `accrued >= 1` as already processed. |
+| `POST /api/cron/generate-recurring-tasks?date=YYYY-MM-DD` | Generates task instances from active recurring templates due on the target date. Defaults to today in PKT. | Checks for an existing task with the same `recurring_task_id`, `assigned_to`, and `due_date` before insert. |
 
 ### Server actions (all audit-logged where they mutate state)
 
@@ -78,6 +89,7 @@
 - `supabase/migrations/0001_init.sql` — applied. All tables, RLS, seed (3 branches, 6 departments, 4 shifts, default settings), `employee_overdue_tasks` view.
 - `supabase/migrations/0002_task_due_time.sql` — applied. Adds task / recurring-task due-time support.
 - `supabase/migrations/0003_geolocation_attendance_verification.sql` — applied. Adds branch office latitude/longitude/radius and attendance check-in/out coordinate, distance, verification status, and review reason columns. Seeds Karachi + Lahore office coordinates at 200m radius.
+- `supabase/migrations/0005_attendance_system_mode.sql` — pending/apply next. Adds `attendance_mode = 'system'` for cron-created attendance rows.
 
 ### Seed
 - `scripts/seed-users.ts` — applied. 13 users now in `auth.users` + `app_users` (+ 12 in `employees`). Two-pass FK resolution for `manager_email`.
@@ -86,11 +98,10 @@
 ## Still pending (post-MVP backlog)
 
 - **Email config in `.env.local`**: set `RESEND_API_KEY`, optionally `EMAIL_FROM` (with a verified domain) and `NEXT_PUBLIC_APP_URL`. Without these, email sends are no-op'd and logged.
-- **Cron handlers** (`app/api/cron/*`) protected by `CRON_SECRET`:
-  - `nightly_attendance_close` — auto-mark absent + forgot-checkout (23:59 PKT).
-  - `monthly_leave_accrual` — +1 leave to non-exempt employees on 1st.
-  - `daily_recurring_generate` — replace the manual "Generate today's tasks" button (23:30 PKT).
-- **Holidays admin UI** (`/admin/holidays`).
+- **Configure hosted cron schedules** once deployed:
+  - close attendance day — daily around 23:59 PKT / 18:59 UTC, or 00:30 PKT next day / 19:30 UTC previous day.
+  - monthly leave accrual — first day of each month early morning PKT, e.g. 06:00 PKT / 01:00 UTC.
+  - recurring task generation — every morning before office opens, e.g. 08:00 PKT / 03:00 UTC.
 - **Audit log viewer** (`/admin/audit`).
 - **Payroll runs + payslips** UI (`/admin/payroll/*`). Schema is in place (`payroll_runs`, `payslips`). Employee pages only show payroll-ready preview; they do not generate payslips or mark salary paid.
 - **Super-admin restriction at handler level**. Currently any signed-in user can hit `/admin/*` URLs; RLS on the underlying tables prevents writes by non-super-admins, but a clean redirect to `/dashboard?error=…` for non-admins would be polite. Add to middleware or admin layout.
