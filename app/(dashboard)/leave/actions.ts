@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { requireSuperAdmin } from "@/lib/auth/require-role";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { countWorkingDays, eachWorkingDay } from "@/lib/leave/policy";
 
@@ -90,12 +91,10 @@ export async function approveLeaveRequest(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!id) fail("/admin/leave", "Missing request id.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireSuperAdmin("/admin/leave");
+  const user = { id: me.authUserId };
 
+  const supabase = await createClient();
   const { data: req, error: fetchErr } = await supabase
     .from("leave_requests")
     .select("id, employee_id, start_date, end_date, days_count, status")
@@ -212,11 +211,8 @@ export async function rejectLeaveRequest(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!id) fail("/admin/leave", "Missing request id.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireSuperAdmin("/admin/leave");
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data: req, error: fetchErr } = await admin

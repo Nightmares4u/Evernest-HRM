@@ -9,6 +9,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { requireTaskAdmin } from "@/lib/auth/require-role";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { sendEmail, sendEmailSafely } from "@/lib/email/send";
 import { taskAssignedEmail } from "@/lib/email/templates";
@@ -217,11 +218,8 @@ export async function createTask(formData: FormData) {
   if (!assigned_to) fail(redirectTo, "Pick an assignee.");
   if (!due_date) fail(redirectTo, "Due date is required.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireTaskAdmin(redirectTo);
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -306,11 +304,8 @@ export async function approveTask(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!id) fail("/admin/tasks", "Missing task id.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireTaskAdmin("/admin/tasks");
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data: task, error: fetchErr } = await admin
@@ -367,11 +362,8 @@ export async function rejectTask(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!id) fail("/admin/tasks", "Missing task id.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireTaskAdmin("/admin/tasks");
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data: task, error: fetchErr } = await admin

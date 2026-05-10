@@ -11,7 +11,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { requireSuperAdmin } from "@/lib/auth/require-role";
+import { createAdminClient } from "@/lib/supabase/server";
 import { todayPKT } from "@/lib/attendance/format";
 import { isoWeekdayPKT } from "@/lib/attendance/policy";
 import type { TaskPriority, RecurrenceType } from "@/lib/types/hrm";
@@ -89,11 +90,8 @@ export async function createRecurringTask(formData: FormData) {
     fail("Pick at least one recurrence day.");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireSuperAdmin(PATH);
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -138,11 +136,8 @@ export async function toggleRecurringActive(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) fail("Missing id.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireSuperAdmin(PATH);
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data: row, error: fetchErr } = await admin
@@ -176,11 +171,8 @@ export async function deleteRecurringTask(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) fail("Missing id.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireSuperAdmin(PATH);
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const { data: row, error: fetchErr } = await admin
@@ -223,11 +215,8 @@ export async function deleteRecurringTask(formData: FormData) {
  * already exist for (recurring_task_id, assigned_to, due_date=today).
  */
 export async function generateTasksForToday() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await requireSuperAdmin(PATH);
+  const user = { id: me.authUserId };
 
   const admin = createAdminClient();
   const today = todayPKT();

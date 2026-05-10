@@ -39,6 +39,15 @@ function templateRunsOnDate(template: RecurringTemplate, date: string): boolean 
 }
 
 export async function POST(request: Request) {
+  return handle(request);
+}
+
+// Vercel scheduled cron triggers send GET. Same handler, same auth check.
+export async function GET(request: Request) {
+  return handle(request);
+}
+
+async function handle(request: Request) {
   const unauthorized = authorizeCronRequest(request);
   if (unauthorized) return unauthorized;
 
