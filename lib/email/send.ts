@@ -33,6 +33,12 @@ export function isValidEmail(value: string | null | undefined): value is string 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+export function maskEmail(value: string): string {
+  const [local, domain] = value.trim().toLowerCase().split("@");
+  if (!local || !domain) return "(invalid email)";
+  return `${local[0] ?? "*"}***@${domain}`;
+}
+
 export function normalizeRecipients(to: string | string[]): string[] {
   const recipients = Array.isArray(to) ? to : [to];
   return recipients.map((email) => email.trim().toLowerCase()).filter(isValidEmail);
@@ -51,7 +57,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<void> {
   if (!apiKey) {
     // Dev/CI mode: log instead of failing so server actions stay green.
     console.log(
-      `[email] RESEND_API_KEY missing — skipping send (to=${to.join(",")}, subj=${args.subject})`
+      `[email] RESEND_API_KEY missing — skipping send (to=${to.map(maskEmail).join(",")}, subj=${args.subject})`
     );
     return;
   }
