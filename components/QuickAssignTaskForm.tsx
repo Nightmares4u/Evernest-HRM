@@ -18,7 +18,7 @@ export function QuickAssignTaskForm({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-700">Assign a task</h2>
         <span className="text-[11px] uppercase tracking-wide text-gray-400">
-          super-admin
+          manager
         </span>
       </div>
 

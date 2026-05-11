@@ -9,7 +9,14 @@
 //   - join results that PostgREST may surface as either object or array are
 //     normalised to a single object.
 
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  actorFromCurrentUser,
+  canSeeEmployee,
+  isBranchManagerOrAboveRole,
+  isGlobalAdminRole,
+} from "@/lib/auth/permissions";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import {
   MOCK_BRANCHES,
   MOCK_DEPARTMENTS,
@@ -70,13 +77,18 @@ function toNum(v: unknown, fallback = 0): number {
 export async function listEmployees(): Promise<EmployeeWithJoins[]> {
   if (!isSupabaseConfigured()) return MOCK_EMPLOYEES;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const me = await getCurrentUser();
+  if (!me) return [];
+
+  const actor = actorFromCurrentUser(me);
+  const supabase = createAdminClient();
+  let query = supabase
     .from("employees")
     .select(
       `
-      id, user_id, full_name, phone,
+      id, user_id, full_name, phone, contact_email,
       branch_id, department_id, manager_id, shift_id,
+      custom_shift_enabled, custom_shift_start, custom_shift_end,
       monthly_salary, role_description, employment_status,
       attendance_exempt, payroll_exempt, remote_allowed, remote_default_days,
       hire_date, termination_date, created_at, updated_at,
@@ -89,6 +101,17 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
     .eq("employment_status", "active")
     .order("full_name");
 
+  if (!isGlobalAdminRole(actor.role)) {
+    if (isBranchManagerOrAboveRole(actor.role)) {
+      if (!actor.branch_id) return [];
+      query = query.eq("branch_id", actor.branch_id);
+    } else {
+      query = query.eq("user_id", actor.id);
+    }
+  }
+
+  const { data, error } = await query;
+
   if (error) throw new Error(`listEmployees: ${error.message}`);
 
   type Row = {
@@ -96,10 +119,14 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
     user_id: string;
     full_name: string;
     phone: string | null;
+    contact_email: string | null;
     branch_id: string | null;
     department_id: string | null;
     manager_id: string | null;
     shift_id: string | null;
+    custom_shift_enabled: boolean;
+    custom_shift_start: string | null;
+    custom_shift_end: string | null;
     monthly_salary: number | string;
     role_description: string | null;
     employment_status: EmployeeWithJoins["employment_status"];
@@ -127,10 +154,14 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
       user_id: row.user_id,
       full_name: row.full_name,
       phone: row.phone,
+      contact_email: row.contact_email,
       branch_id: row.branch_id,
       department_id: row.department_id,
       manager_id: row.manager_id,
       shift_id: row.shift_id,
+      custom_shift_enabled: row.custom_shift_enabled,
+      custom_shift_start: row.custom_shift_start,
+      custom_shift_end: row.custom_shift_end,
       monthly_salary: toNum(row.monthly_salary),
       role_description: row.role_description,
       employment_status: row.employment_status,
@@ -160,13 +191,17 @@ export async function getEmployeeProfile(
     return emp ? { ...emp, manager_name: null, manager_email: null } : null;
   }
 
-  const supabase = await createClient();
+  const me = await getCurrentUser();
+  if (!me) return null;
+
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("employees")
     .select(
       `
-      id, user_id, full_name, phone,
+      id, user_id, full_name, phone, contact_email,
       branch_id, department_id, manager_id, shift_id,
+      custom_shift_enabled, custom_shift_start, custom_shift_end,
       monthly_salary, role_description, employment_status,
       attendance_exempt, payroll_exempt, remote_allowed, remote_default_days,
       hire_date, termination_date, created_at, updated_at,
@@ -188,10 +223,14 @@ export async function getEmployeeProfile(
     user_id: string;
     full_name: string;
     phone: string | null;
+    contact_email: string | null;
     branch_id: string | null;
     department_id: string | null;
     manager_id: string | null;
     shift_id: string | null;
+    custom_shift_enabled: boolean;
+    custom_shift_start: string | null;
+    custom_shift_end: string | null;
     monthly_salary: number | string;
     role_description: string | null;
     employment_status: EmployeeWithJoins["employment_status"];
@@ -223,16 +262,33 @@ export async function getEmployeeProfile(
   const shift = pickOne(row.shifts);
   const manager = pickOne(row.manager);
   const managerUser = manager ? pickOne(manager.app_users) : null;
+  const userRole = appUser?.role ?? "employee";
+
+  const actor = actorFromCurrentUser(me);
+  if (
+    !canSeeEmployee(actor, {
+      id: row.id,
+      user_id: row.user_id,
+      branch_id: row.branch_id,
+      user_role: userRole,
+    })
+  ) {
+    return null;
+  }
 
   return {
     id: row.id,
     user_id: row.user_id,
     full_name: row.full_name,
     phone: row.phone,
+    contact_email: row.contact_email,
     branch_id: row.branch_id,
     department_id: row.department_id,
     manager_id: row.manager_id,
     shift_id: row.shift_id,
+    custom_shift_enabled: row.custom_shift_enabled,
+    custom_shift_start: row.custom_shift_start,
+    custom_shift_end: row.custom_shift_end,
     monthly_salary: toNum(row.monthly_salary),
     role_description: row.role_description,
     employment_status: row.employment_status,
@@ -249,7 +305,7 @@ export async function getEmployeeProfile(
     department_name: dept?.name ?? null,
     shift_name: shift?.name ?? null,
     email: appUser?.email ?? "",
-    user_role: appUser?.role ?? "employee",
+    user_role: userRole,
     manager_name: manager?.full_name ?? null,
     manager_email: managerUser?.email ?? null,
   };
@@ -303,14 +359,17 @@ export async function listTodayAttendance(
   if (!isSupabaseConfigured()) return makeMockTodayAttendance();
 
   const targetDate = date ?? todayPKT();
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("attendance_records")
     .select(
       `
       *,
-      employees!inner ( full_name, branches ( code ) )
+      employees!inner ( id, user_id, branch_id, full_name, app_users:user_id ( role ), branches ( code ) )
       `
     )
     .eq("date", targetDate);
@@ -320,25 +379,45 @@ export async function listTodayAttendance(
   type Row = AttendanceRecord & {
     employees:
       | {
+          id: string;
+          user_id: string;
+          branch_id: string | null;
           full_name: string;
+          app_users: { role: EmployeeWithJoins["user_role"] } | { role: EmployeeWithJoins["user_role"] }[] | null;
           branches: { code: string } | { code: string }[] | null;
         }
       | {
+          id: string;
+          user_id: string;
+          branch_id: string | null;
           full_name: string;
+          app_users: { role: EmployeeWithJoins["user_role"] } | { role: EmployeeWithJoins["user_role"] }[] | null;
           branches: { code: string } | { code: string }[] | null;
         }[]
       | null;
   };
 
-  return ((data ?? []) as Row[]).map((row) => {
-    const emp = pickOne(row.employees);
-    const branch = emp ? pickOne(emp.branches) : null;
-    return {
-      ...row,
-      employee_full_name: emp?.full_name ?? "?",
-      branch_code: branch?.code ?? null,
-    };
-  });
+  return ((data ?? []) as Row[])
+    .filter((row) => {
+      const emp = pickOne(row.employees);
+      const appUser = emp ? pickOne(emp.app_users) : null;
+      if (!emp) return false;
+      return canSeeEmployee(actor, {
+        id: emp.id,
+        user_id: emp.user_id,
+        branch_id: emp.branch_id,
+        user_role: appUser?.role ?? "employee",
+      });
+    })
+    .map((row) => {
+      const emp = pickOne(row.employees);
+      const branch = emp ? pickOne(emp.branches) : null;
+      return {
+        ...row,
+        employee_full_name: emp?.full_name ?? "?",
+        branch_code: branch?.code ?? null,
+      };
+    });
 }
 
 export async function listEmployeeAttendanceRange(
@@ -350,7 +429,10 @@ export async function listEmployeeAttendanceRange(
     return makeMockTodayAttendance().filter((r) => r.employee_id === employeeId);
   }
 
-  const supabase = await createClient();
+  const profile = await getEmployeeProfile(employeeId);
+  if (!profile) return [];
+
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("attendance_records")
     .select("*")
@@ -464,9 +546,12 @@ export async function getEmployeeLeaveBalanceThisMonth(
 ): Promise<LeaveBalanceVM | null> {
   if (!isSupabaseConfigured()) return null;
 
+  const profile = await getEmployeeProfile(employeeId);
+  if (!profile) return null;
+
   const today = todayPKT();
   const [y, m] = today.split("-").map((p) => Number.parseInt(p, 10));
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("leave_balances")
     .select("year, month, accrued, used, carry_forward_in, balance")
@@ -539,14 +624,19 @@ export async function listLeaveRequestsForAdmin(
 ): Promise<LeaveRequestAdminRow[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
+  if (!isBranchManagerOrAboveRole(actor.role)) return [];
+
+  const supabase = createAdminClient();
   let query = supabase
     .from("leave_requests")
     .select(
       `
       id, start_date, end_date, days_count, reason, status,
       review_note, reviewed_at, created_at, employee_id,
-      employees!inner ( full_name, branches ( code ) )
+      employees!inner ( id, user_id, branch_id, full_name, app_users:user_id ( role ), branches ( code ) )
       `
     )
     .order("created_at", { ascending: false })
@@ -560,34 +650,60 @@ export async function listLeaveRequestsForAdmin(
     employee_id: string;
     employees:
       | {
+          id: string;
+          user_id: string;
+          branch_id: string | null;
           full_name: string;
+          app_users:
+            | { role: EmployeeWithJoins["user_role"] }
+            | { role: EmployeeWithJoins["user_role"] }[]
+            | null;
           branches: { code: string } | { code: string }[] | null;
         }
       | {
+          id: string;
+          user_id: string;
+          branch_id: string | null;
           full_name: string;
+          app_users:
+            | { role: EmployeeWithJoins["user_role"] }
+            | { role: EmployeeWithJoins["user_role"] }[]
+            | null;
           branches: { code: string } | { code: string }[] | null;
         }[]
       | null;
   };
 
-  return ((data ?? []) as Row[]).map((r) => {
-    const emp = pickOne(r.employees);
-    const branch = emp ? pickOne(emp.branches) : null;
-    return {
-      id: r.id,
-      employee_id: r.employee_id,
-      start_date: r.start_date,
-      end_date: r.end_date,
-      days_count: toNum(r.days_count),
-      reason: r.reason,
-      status: r.status,
-      review_note: r.review_note,
-      reviewed_at: r.reviewed_at,
-      created_at: r.created_at,
-      employee_full_name: emp?.full_name ?? "?",
-      branch_code: branch?.code ?? null,
-    } satisfies LeaveRequestAdminRow;
-  });
+  return ((data ?? []) as Row[])
+    .filter((r) => {
+      const emp = pickOne(r.employees);
+      const appUser = emp ? pickOne(emp.app_users) : null;
+      if (!emp) return false;
+      return canSeeEmployee(actor, {
+        id: emp.id,
+        user_id: emp.user_id,
+        branch_id: emp.branch_id,
+        user_role: appUser?.role ?? "employee",
+      });
+    })
+    .map((r) => {
+      const emp = pickOne(r.employees);
+      const branch = emp ? pickOne(emp.branches) : null;
+      return {
+        id: r.id,
+        employee_id: r.employee_id,
+        start_date: r.start_date,
+        end_date: r.end_date,
+        days_count: toNum(r.days_count),
+        reason: r.reason,
+        status: r.status,
+        review_note: r.review_note,
+        reviewed_at: r.reviewed_at,
+        created_at: r.created_at,
+        employee_full_name: emp?.full_name ?? "?",
+        branch_code: branch?.code ?? null,
+      } satisfies LeaveRequestAdminRow;
+    });
 }
 
 // ---------- admin counters ----------
@@ -613,8 +729,60 @@ export async function getAdminPendingCounts(): Promise<AdminPendingCounts> {
   };
   if (!isSupabaseConfigured()) return empty;
 
-  const supabase = await createClient();
+  const me = await getCurrentUser();
+  if (!me) return empty;
+  const actor = actorFromCurrentUser(me);
+  if (!isBranchManagerOrAboveRole(actor.role)) return empty;
+
+  const supabase = createAdminClient();
   const today = todayPKT();
+
+  if (!isGlobalAdminRole(actor.role)) {
+    const employees = await listEmployees();
+    const employeeIds = employees.map((employee) => employee.id);
+    const userIds = employees.map((employee) => employee.user_id);
+    if (employeeIds.length === 0) return empty;
+
+    const [pendingLeave, pendingApprovals, activeRecurring, checkedIn, redlined] =
+      await Promise.all([
+        supabase
+          .from("leave_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+          .in("employee_id", employeeIds),
+        supabase
+          .from("tasks")
+          .select("id", { count: "exact", head: true })
+          .eq("requires_approval", true)
+          .eq("status", "in_progress")
+          .in("assigned_to", userIds),
+        supabase
+          .from("recurring_tasks")
+          .select("id", { count: "exact", head: true })
+          .eq("active", true)
+          .in("assigned_to", userIds),
+        supabase
+          .from("attendance_records")
+          .select("id", { count: "exact", head: true })
+          .eq("date", today)
+          .not("check_in_at", "is", null)
+          .in("employee_id", employeeIds),
+        supabase
+          .from("employee_overdue_tasks")
+          .select("employee_id", { count: "exact", head: true })
+          .eq("is_redlined", true)
+          .in("employee_id", employeeIds),
+      ]);
+
+    return {
+      pending_leave: pendingLeave.count ?? 0,
+      pending_task_approvals: pendingApprovals.count ?? 0,
+      active_recurring: activeRecurring.count ?? 0,
+      tracked_total: employees.filter((employee) => !employee.attendance_exempt).length,
+      checked_in_today: checkedIn.count ?? 0,
+      redlined: redlined.count ?? 0,
+    };
+  }
 
   const [pendingLeave, pendingApprovals, activeRecurring, tracked, checkedIn, redlined] =
     await Promise.all([

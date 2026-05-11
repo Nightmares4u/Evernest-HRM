@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listEmployees, isSupabaseConfigured } from "@/lib/db/queries";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import type { EmployeeWithJoins } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -31,9 +32,12 @@ export default async function EmployeesPage() {
   const [employees, me] = await Promise.all([listEmployees(), getCurrentUser()]);
   const live = isSupabaseConfigured();
   const isSuperAdmin = me?.appUser.role === "super_admin";
+  const canManage = me ? isBranchManagerOrAboveRole(me.appUser.role) : false;
 
   const total = employees.length;
-  const totalSalary = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
+  const totalSalary = isSuperAdmin
+    ? employees.reduce((sum, e) => sum + e.monthly_salary, 0)
+    : 0;
   const byBranch = employees.reduce<Record<string, number>>((acc, e) => {
     const k = e.branch_code ?? "—";
     acc[k] = (acc[k] ?? 0) + 1;
@@ -46,7 +50,8 @@ export default async function EmployeesPage() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Employees</h1>
           <p className="text-sm text-gray-500">
-            {total} active &middot; total monthly payroll {PKR.format(totalSalary)}
+            {total} active
+            {isSuperAdmin && <> &middot; total monthly payroll {PKR.format(totalSalary)}</>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -85,7 +90,7 @@ export default async function EmployeesPage() {
               <Th>Department</Th>
               <Th>Role</Th>
               <Th>Shift</Th>
-              <Th className="text-right">Salary (PKR)</Th>
+              {isSuperAdmin && <Th className="text-right">Salary (PKR)</Th>}
               <Th>Remote days</Th>
               <Th>Flags</Th>
             </tr>
@@ -95,7 +100,7 @@ export default async function EmployeesPage() {
               <tr key={e.id} className="hover:bg-gray-50">
                 <Td>
                   <div className="font-medium text-gray-900">
-                    {isSuperAdmin ? (
+                    {canManage ? (
                       <Link
                         href={`/admin/employees/${e.id}`}
                         className="text-indigo-700 hover:text-indigo-500"
@@ -115,9 +120,11 @@ export default async function EmployeesPage() {
                   <div className="text-xs text-gray-500">{e.user_role}</div>
                 </Td>
                 <Td>{e.shift_name ?? "—"}</Td>
-                <Td className="text-right tabular-nums">
-                  {PKR.format(e.monthly_salary)}
-                </Td>
+                {isSuperAdmin && (
+                  <Td className="text-right tabular-nums">
+                    {PKR.format(e.monthly_salary)}
+                  </Td>
+                )}
                 <Td className="text-xs">{formatRemoteDays(e.remote_default_days)}</Td>
                 <Td>
                   <div className="flex flex-wrap gap-1">
@@ -135,7 +142,7 @@ export default async function EmployeesPage() {
             ))}
             {employees.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-500">
+                <td colSpan={isSuperAdmin ? 8 : 7} className="px-4 py-6 text-center text-sm text-gray-500">
                   No employees visible to your account.
                 </td>
               </tr>

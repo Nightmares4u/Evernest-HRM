@@ -11,7 +11,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireSuperAdmin } from "@/lib/auth/require-role";
+import { requireTaskAdmin } from "@/lib/auth/require-role";
+import { actorFromCurrentUser, canAssignTask } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { todayPKT } from "@/lib/attendance/format";
 import { isoWeekdayPKT } from "@/lib/attendance/policy";
@@ -61,6 +62,35 @@ function normaliseDueTime(raw: string): string | null {
   return null;
 }
 
+async function requireCanManageRecurringAssignee(
+  admin: ReturnType<typeof createAdminClient>,
+  actor: ReturnType<typeof actorFromCurrentUser>,
+  assignedTo: string
+) {
+  const { data: assigneeEmployee } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("user_id", assignedTo)
+    .maybeSingle();
+  const assigneeAppUser = assigneeEmployee
+    ? Array.isArray(assigneeEmployee.app_users)
+      ? assigneeEmployee.app_users[0]
+      : assigneeEmployee.app_users
+    : null;
+  const allowed = canAssignTask(
+    actor,
+    assigneeEmployee
+      ? {
+          id: assigneeEmployee.id,
+          user_id: assigneeEmployee.user_id,
+          branch_id: assigneeEmployee.branch_id,
+          user_role: assigneeAppUser?.role ?? "employee",
+        }
+      : null
+  );
+  if (!allowed) fail("You do not have permission to manage this recurring task.");
+}
+
 export async function createRecurringTask(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
@@ -90,10 +120,37 @@ export async function createRecurringTask(formData: FormData) {
     fail("Pick at least one recurrence day.");
   }
 
-  const me = await requireSuperAdmin(PATH);
+  const me = await requireTaskAdmin(PATH);
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
+  const { data: assigneeEmployee } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("user_id", assigned_to)
+    .maybeSingle();
+  const assigneeAppUser = assigneeEmployee
+    ? Array.isArray(assigneeEmployee.app_users)
+      ? assigneeEmployee.app_users[0]
+      : assigneeEmployee.app_users
+    : null;
+  if (
+    !canAssignTask(
+      actor,
+      assigneeEmployee
+        ? {
+            id: assigneeEmployee.id,
+            user_id: assigneeEmployee.user_id,
+            branch_id: assigneeEmployee.branch_id,
+            user_role: assigneeAppUser?.role ?? "employee",
+          }
+        : null
+    )
+  ) {
+    fail("You do not have permission to assign recurring tasks to this user.");
+  }
+
   const { data, error } = await admin
     .from("recurring_tasks")
     .insert({
@@ -136,16 +193,18 @@ export async function toggleRecurringActive(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) fail("Missing id.");
 
-  const me = await requireSuperAdmin(PATH);
+  const me = await requireTaskAdmin(PATH);
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
   const { data: row, error: fetchErr } = await admin
     .from("recurring_tasks")
-    .select("id, active, title")
+    .select("id, active, title, assigned_to")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr || !row) fail("Recurring task not found.");
+  await requireCanManageRecurringAssignee(admin, actor, row.assigned_to);
 
   const next = !row.active;
   const { error } = await admin
@@ -171,16 +230,18 @@ export async function deleteRecurringTask(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) fail("Missing id.");
 
-  const me = await requireSuperAdmin(PATH);
+  const me = await requireTaskAdmin(PATH);
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
   const { data: row, error: fetchErr } = await admin
     .from("recurring_tasks")
-    .select("id, title")
+    .select("id, title, assigned_to")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr || !row) fail("Recurring task not found.");
+  await requireCanManageRecurringAssignee(admin, actor, row.assigned_to);
 
   // Detach generated tasks (recurring_task_id -> null) before deleting the
   // template, so historic task rows survive even if we remove the template.
@@ -215,8 +276,9 @@ export async function deleteRecurringTask(formData: FormData) {
  * already exist for (recurring_task_id, assigned_to, due_date=today).
  */
 export async function generateTasksForToday() {
-  const me = await requireSuperAdmin(PATH);
+  const me = await requireTaskAdmin(PATH);
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
   const today = todayPKT();
@@ -237,6 +299,12 @@ export async function generateTasksForToday() {
       t.recurrence_type === "daily" ||
       (Array.isArray(t.recurrence_days) && t.recurrence_days.includes(isoDay));
     if (!matchesToday) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await requireCanManageRecurringAssignee(admin, actor, t.assigned_to);
+    } catch {
       skipped += 1;
       continue;
     }

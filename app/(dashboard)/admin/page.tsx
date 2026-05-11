@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import {
   getAdminPendingCounts,
@@ -9,6 +10,8 @@ import {
   listShifts,
 } from "@/lib/db/queries";
 import { listRedlinedEmployees } from "@/lib/db/tasks";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
 const PKR = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -27,6 +30,12 @@ function formatDays(days: number[]): string {
 }
 
 export default async function AdminPage() {
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  if (!isBranchManagerOrAboveRole(me.appUser.role)) {
+    redirect("/dashboard?error=Manager access required");
+  }
+  const isSuperAdmin = me.appUser.role === "super_admin";
   const live = isSupabaseConfigured();
   const [employees, branches, departments, shifts, counts, redlined] =
     await Promise.all([
@@ -39,7 +48,7 @@ export default async function AdminPage() {
     ]);
 
   const totalEmployees = employees.length;
-  const totalPayroll = employees.reduce((s, e) => s + e.monthly_salary, 0);
+  const totalPayroll = isSuperAdmin ? employees.reduce((s, e) => s + e.monthly_salary, 0) : 0;
   const exemptCount = employees.filter((e) => e.attendance_exempt).length;
   const remoteAllowed = employees.filter((e) => e.remote_allowed).length;
 
@@ -118,19 +127,21 @@ export default async function AdminPage() {
             hint="Manage templates"
           />
           <ActionCard
-            label="Company Task History"
+            label={isSuperAdmin ? "Company Task History" : "Task History"}
             value="Open"
-            href="/admin/tasks/history?range=this_month"
+            href={isSuperAdmin ? "/admin/tasks/history?range=this_month" : "/admin/tasks"}
             tone="green"
             hint="Monthly completed stack"
           />
-          <ActionCard
-            label="Add employee"
-            value="New"
-            href="/admin/employees/new"
-            tone="indigo"
-            hint="Create login + HR profile"
-          />
+          {isSuperAdmin && (
+            <ActionCard
+              label="Add employee"
+              value="New"
+              href="/admin/employees/new"
+              tone="indigo"
+              hint="Create login + HR profile"
+            />
+          )}
         </div>
       </Section>
 
@@ -169,10 +180,10 @@ export default async function AdminPage() {
         </Section>
       )}
 
-      <Section title="Headcount & payroll">
+      <Section title={isSuperAdmin ? "Headcount & payroll" : "Headcount"}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Employees" value={totalEmployees} />
-          <Stat label="Monthly payroll" value={PKR.format(totalPayroll)} />
+          {isSuperAdmin && <Stat label="Monthly payroll" value={PKR.format(totalPayroll)} />}
           <Stat
             label="Attendance-exempt"
             value={exemptCount}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Chip, StatusChip } from "@/components/StatusChip";
-import { updateEmployeeSalary } from "@/app/(dashboard)/admin/employees/actions";
+import { updateEmployee } from "@/app/(dashboard)/admin/employees/actions";
 import { overrideAttendanceRecord } from "@/app/(dashboard)/attendance/actions";
 import {
   dateRangeToTimestamps,
@@ -14,9 +14,14 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   getEmployeeProfile,
   getEmployeeLeaveBalanceThisMonth,
+  listBranches,
+  listDepartments,
   listAttendanceOverrideNotes,
   listEmployeeAttendanceRange,
+  listEmployees,
+  listShifts,
 } from "@/lib/db/queries";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import { listHolidays, type HolidayRowVM } from "@/lib/db/payroll";
 import { buildPayrollPreview, type PayrollPreview } from "@/lib/payroll/preview";
 import {
@@ -24,7 +29,7 @@ import {
   listTasksInRange,
   type TaskRowVM,
 } from "@/lib/db/tasks";
-import type { AttendanceRecord, AttendanceStatus } from "@/lib/types/hrm";
+import type { AttendanceRecord, AttendanceStatus, EmploymentStatus, UserRole } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -58,6 +63,17 @@ const OVERRIDE_STATUSES: AttendanceStatus[] = [
   "remote_late",
   "remote_half_day",
 ];
+const USER_ROLES: { value: UserRole; label: string }[] = [
+  { value: "team_member", label: "Team member" },
+  { value: "employee", label: "Employee (legacy)" },
+  { value: "assistant_manager", label: "Assistant manager" },
+  { value: "branch_manager", label: "Branch manager" },
+  { value: "admin_hr", label: "Admin HR" },
+  { value: "super_admin", label: "Super admin" },
+];
+const EMPLOYMENT_STATUSES: EmploymentStatus[] = ["active", "inactive", "terminated"];
+const INPUT_CLASS =
+  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
 type Search = { year?: string; month?: string; day?: string; error?: string; ok?: string };
 
@@ -83,10 +99,13 @@ export default async function EmployeeControlPage({
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const me = await getCurrentUser();
   if (!me) redirect("/login");
-  if (me.appUser.role !== "super_admin") redirect("/dashboard?error=Admin access required");
+  if (!isBranchManagerOrAboveRole(me.appUser.role)) {
+    redirect("/dashboard?error=Admin access required");
+  }
 
   const employee = await getEmployeeProfile(id);
   if (!employee) notFound();
+  const isSuperAdmin = me.appUser.role === "super_admin";
 
   const today = todayPKT();
   const currentYear = Number.parseInt(today.slice(0, 4), 10);
@@ -100,12 +119,26 @@ export default async function EmployeeControlPage({
   const selectedDay = validDay(sp.day) ? sp.day! : null;
   const yearTimestampRange = dateRangeToTimestamps(startOfYear, endOfYear);
 
-  const [yearRecords, tasks, doneTasks, leaveBalance, holidays] = await Promise.all([
+  const [
+    yearRecords,
+    tasks,
+    doneTasks,
+    leaveBalance,
+    holidays,
+    branches,
+    departments,
+    shifts,
+    employees,
+  ] = await Promise.all([
     listEmployeeAttendanceRange(id, startOfYear, endOfYear),
     listTasksInRange(startOfYear, endOfYear, employee.user_id),
     listDoneTasks(yearTimestampRange.since, yearTimestampRange.until, employee.user_id),
     getEmployeeLeaveBalanceThisMonth(id),
     listHolidays(startOfYear, endOfYear),
+    listBranches(),
+    listDepartments(),
+    listShifts(),
+    listEmployees(),
   ]);
 
   const recordIds = yearRecords.map((r) => r.id);
@@ -169,7 +202,15 @@ export default async function EmployeeControlPage({
         </div>
       )}
 
-      <ProfilePanel employee={employee} leaveBalance={leaveBalance?.balance ?? 0} />
+      <ProfilePanel
+        employee={employee}
+        leaveBalance={leaveBalance?.balance ?? 0}
+        canEdit={isSuperAdmin}
+        branches={branches}
+        departments={departments}
+        shifts={shifts}
+        employees={employees.filter((candidate) => candidate.id !== employee.id)}
+      />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Present" value={yearTotals.present} tone="green" />
@@ -287,58 +328,153 @@ export default async function EmployeeControlPage({
 function ProfilePanel({
   employee,
   leaveBalance,
+  canEdit,
+  branches,
+  departments,
+  shifts,
+  employees,
 }: {
   employee: Awaited<ReturnType<typeof getEmployeeProfile>>;
   leaveBalance: number;
+  canEdit: boolean;
+  branches: Awaited<ReturnType<typeof listBranches>>;
+  departments: Awaited<ReturnType<typeof listDepartments>>;
+  shifts: Awaited<ReturnType<typeof listShifts>>;
+  employees: Awaited<ReturnType<typeof listEmployees>>;
 }) {
   if (!employee) return null;
   return (
     <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
       <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <Info label="Login email" value={employee.email} />
+        <Info label="Contact email" value={employee.contact_email ?? "—"} />
         <Info label="Branch" value={employee.branch_name ?? "—"} />
         <Info label="Department/category" value={employee.department_name ?? "—"} />
         <Info label="Role" value={employee.role_description ?? employee.user_role} />
         <Info label="Salary" value={PKR.format(employee.monthly_salary)} />
-        <Info label="Shift" value={employee.shift_name ?? "—"} />
+        <Info label="Baseline shift" value={employee.shift_name ?? "—"} />
+        <Info
+          label="Custom shift"
+          value={
+            employee.custom_shift_enabled && employee.custom_shift_start && employee.custom_shift_end
+              ? `${employee.custom_shift_start.slice(0, 5)}-${employee.custom_shift_end.slice(0, 5)}`
+              : "—"
+          }
+        />
         <Info label="Manager" value={employee.manager_name ?? "—"} />
         <Info label="Leave balance" value={`${leaveBalance.toFixed(1)} day(s)`} />
         <Info label="Remote days" value={formatRemoteDays(employee.remote_default_days)} />
       </dl>
-      <form
-        action={updateEmployeeSalary}
-        className="mt-5 grid gap-3 border-t border-gray-100 pt-4 md:grid-cols-[12rem_minmax(0,1fr)_auto]"
-      >
+
+      {canEdit && (
+        <form action={updateEmployee} className="mt-5 border-t border-gray-100 pt-4">
         <input type="hidden" name="employee_id" value={employee.id} />
-        <label className="block text-xs font-medium text-gray-700">
-          Monthly salary
-          <input
-            name="monthly_salary"
-            type="number"
-            min="0"
-            step="1"
-            defaultValue={employee.monthly_salary}
-            required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 shadow-sm"
-          />
-        </label>
-        <label className="block text-xs font-medium text-gray-700">
-          Salary change reason
-          <input
-            name="reason"
-            required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 shadow-sm"
-            placeholder="Promotion, increment, correction..."
-          />
-        </label>
-        <div className="flex items-end">
-          <button
-            type="submit"
-            className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-          >
-            Update salary
-          </button>
-        </div>
-      </form>
+          <h2 className="text-sm font-semibold text-gray-700">Edit employee</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Login/system email stays unchanged. Contact email is used for notifications.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Field label="Full name">
+              <input name="full_name" required defaultValue={employee.full_name} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Contact email">
+              <input name="contact_email" type="email" defaultValue={employee.contact_email ?? ""} className={INPUT_CLASS} placeholder="Optional notification inbox" />
+            </Field>
+            <Field label="Phone">
+              <input name="phone" defaultValue={employee.phone ?? ""} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Monthly salary">
+              <input name="monthly_salary" type="number" min="0" step="1" required defaultValue={employee.monthly_salary} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Branch">
+              <select name="branch_id" required defaultValue={employee.branch_id ?? ""} className={INPUT_CLASS}>
+                <option value="">Choose branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} ({branch.code})</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Department/category">
+              <select name="department_id" required defaultValue={employee.department_id ?? ""} className={INPUT_CLASS}>
+                <option value="">Choose department/category</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>{department.name}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Role">
+              <select name="role" required defaultValue={employee.user_role} className={INPUT_CLASS}>
+                {USER_ROLES.map((role) => (
+                  <option key={role.value} value={role.value}>{role.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Manager">
+              <select name="manager_id" defaultValue={employee.manager_id ?? ""} className={INPUT_CLASS}>
+                <option value="">No manager</option>
+                {employees.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.full_name} · {candidate.email}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Role / job title">
+              <input name="role_description" defaultValue={employee.role_description ?? ""} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Employment status">
+              <select name="employment_status" required defaultValue={employee.employment_status} className={INPUT_CLASS}>
+                {EMPLOYMENT_STATUSES.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Baseline shift">
+              <select name="shift_id" required defaultValue={employee.shift_id ?? ""} className={INPUT_CLASS}>
+                <option value="">Choose shift</option>
+                {shifts.map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.name} ({shift.start_time.slice(0, 5)}-{shift.end_time.slice(0, 5)})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Custom shift start">
+              <input name="custom_shift_start" type="time" defaultValue={employee.custom_shift_start?.slice(0, 5) ?? ""} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Custom shift end">
+              <input name="custom_shift_end" type="time" defaultValue={employee.custom_shift_end?.slice(0, 5) ?? ""} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Update reason">
+              <input name="reason" required className={INPUT_CLASS} placeholder="Role change, profile correction, shift update..." />
+            </Field>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Checkbox name="attendance_exempt" label="Attendance exempt" checked={employee.attendance_exempt} />
+            <Checkbox name="remote_allowed" label="Remote allowed" checked={employee.remote_allowed} />
+            <Checkbox name="custom_shift_enabled" label="Use custom shift override" checked={employee.custom_shift_enabled} />
+          </div>
+          <div className="mt-4">
+            <p className="text-xs font-medium text-gray-700">Scheduled remote days</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {WEEKDAYS.map((day, index) => {
+                const value = index + 1;
+                return (
+                  <label key={day} className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                    <input type="checkbox" name="remote_default_days" value={value} defaultChecked={employee.remote_default_days.includes(value)} className="rounded border-gray-300" />
+                    {day}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button type="submit" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+              Save employee
+            </button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
@@ -627,6 +763,37 @@ function Info({ label, value }: { label: string; value: string }) {
       <dt className="text-gray-500">{label}</dt>
       <dd className="text-right font-medium text-gray-900">{value}</dd>
     </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block text-xs font-medium text-gray-700">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function Checkbox({
+  name,
+  label,
+  checked,
+}: {
+  name: string;
+  label: string;
+  checked: boolean;
+}) {
+  return (
+    <label className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+      <input
+        type="checkbox"
+        name={name}
+        defaultChecked={checked}
+        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+      />
+      {label}
+    </label>
   );
 }
 

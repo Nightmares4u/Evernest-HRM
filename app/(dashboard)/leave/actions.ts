@@ -2,7 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireSuperAdmin } from "@/lib/auth/require-role";
+import { requireTaskAdmin } from "@/lib/auth/require-role";
+import { actorFromCurrentUser, canApproveLeave } from "@/lib/auth/permissions";
+import { resolveEmployeeShift } from "@/lib/attendance/shifts";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { countWorkingDays, eachWorkingDay } from "@/lib/leave/policy";
 
@@ -91,11 +93,12 @@ export async function approveLeaveRequest(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!id) fail("/admin/leave", "Missing request id.");
 
-  const me = await requireSuperAdmin("/admin/leave");
+  const me = await requireTaskAdmin("/admin/leave");
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
-  const supabase = await createClient();
-  const { data: req, error: fetchErr } = await supabase
+  const admin = createAdminClient();
+  const { data: req, error: fetchErr } = await admin
     .from("leave_requests")
     .select("id, employee_id, start_date, end_date, days_count, status")
     .eq("id", id)
@@ -106,7 +109,25 @@ export async function approveLeaveRequest(formData: FormData) {
   // Use admin client for the cross-table mutation so all writes succeed even
   // if the user's RLS would normally block some of them. The actor identity
   // (auth.uid()) is captured explicitly in audit_logs.
-  const admin = createAdminClient();
+  const { data: targetEmployee, error: targetError } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("id", req.employee_id)
+    .maybeSingle();
+  if (targetError || !targetEmployee) fail("/admin/leave", "Employee not found.");
+  const targetAppUser = Array.isArray(targetEmployee.app_users)
+    ? targetEmployee.app_users[0]
+    : targetEmployee.app_users;
+  if (
+    !canApproveLeave(actor, {
+      id: targetEmployee.id,
+      user_id: targetEmployee.user_id,
+      branch_id: targetEmployee.branch_id,
+      user_role: targetAppUser?.role ?? "employee",
+    })
+  ) {
+    fail("/admin/leave", "You do not have permission to approve this leave request.");
+  }
 
   const { error: updateErr } = await admin
     .from("leave_requests")
@@ -125,14 +146,30 @@ export async function approveLeaveRequest(formData: FormData) {
   const { data: empMeta } = await admin
     .from("employees")
     .select(
-      "branch_id, shifts ( id, start_time, end_time )"
+      `
+      branch_id, custom_shift_enabled, custom_shift_start, custom_shift_end,
+      shifts ( id, start_time, end_time, late_grace_minutes, half_day_threshold_minutes )
+      `
     )
     .eq("id", req.employee_id)
     .single();
 
-  type ShiftSlim = { id: string; start_time: string; end_time: string };
+  type ShiftSlim = {
+    id: string;
+    start_time: string;
+    end_time: string;
+    late_grace_minutes: number;
+    half_day_threshold_minutes: number;
+  };
   const shift = (empMeta as unknown as { shifts: ShiftSlim | ShiftSlim[] | null } | null)?.shifts;
-  const s = Array.isArray(shift) ? shift[0] : shift;
+  const s = resolveEmployeeShift({
+    employee: (empMeta as {
+      custom_shift_enabled?: boolean | null;
+      custom_shift_start?: string | null;
+      custom_shift_end?: string | null;
+    } | null) ?? {},
+    shift: (Array.isArray(shift) ? shift[0] : shift) ?? null,
+  });
   const start = s?.start_time ?? "09:00:00";
   const endT = s?.end_time ?? "18:00:00";
 
@@ -211,17 +248,38 @@ export async function rejectLeaveRequest(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!id) fail("/admin/leave", "Missing request id.");
 
-  const me = await requireSuperAdmin("/admin/leave");
+  const me = await requireTaskAdmin("/admin/leave");
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
   const { data: req, error: fetchErr } = await admin
     .from("leave_requests")
-    .select("id, status")
+    .select("id, employee_id, status")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr || !req) fail("/admin/leave", "Request not found.");
   if (req.status !== "pending") fail("/admin/leave", `Request is already ${req.status}.`);
+
+  const { data: targetEmployee, error: targetError } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("id", req.employee_id)
+    .maybeSingle();
+  if (targetError || !targetEmployee) fail("/admin/leave", "Employee not found.");
+  const targetAppUser = Array.isArray(targetEmployee.app_users)
+    ? targetEmployee.app_users[0]
+    : targetEmployee.app_users;
+  if (
+    !canApproveLeave(actor, {
+      id: targetEmployee.id,
+      user_id: targetEmployee.user_id,
+      branch_id: targetEmployee.branch_id,
+      user_role: targetAppUser?.role ?? "employee",
+    })
+  ) {
+    fail("/admin/leave", "You do not have permission to reject this leave request.");
+  }
 
   const { error } = await admin
     .from("leave_requests")

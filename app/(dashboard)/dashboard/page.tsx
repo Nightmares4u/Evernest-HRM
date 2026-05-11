@@ -17,6 +17,7 @@ import {
   type TaskRowVM,
 } from "@/lib/db/tasks";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import type { AttendanceStatus } from "@/lib/types/hrm";
 
 const PRESENT_STATES: AttendanceStatus[] = [
@@ -52,6 +53,7 @@ export default async function DashboardPage({
 
   const me = await getCurrentUser();
   const isSuperAdmin = me?.appUser.role === "super_admin";
+  const canManage = me ? isBranchManagerOrAboveRole(me.appUser.role) : false;
 
   const [records, employees, myUpcomingTasks, allUpcomingTasks, assignees] =
     await Promise.all([
@@ -64,10 +66,10 @@ export default async function DashboardPage({
             me.authUserId
           )
         : Promise.resolve<TaskRowVM[]>([]),
-      isSuperAdmin
+      canManage
         ? listTasksInRange(todayIso, addDays(todayIso, SCHEDULE_DAYS - 1))
         : Promise.resolve<TaskRowVM[]>([]),
-      isSuperAdmin
+      canManage
         ? listAssignableUsers()
         : Promise.resolve<AssignableUser[]>([]),
     ]);
@@ -83,7 +85,7 @@ export default async function DashboardPage({
   const totalPayroll = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
 
   // schedule grid for the dashboard: super-admin sees company-wide, everyone else sees their own
-  const scheduleTasks = isSuperAdmin ? allUpcomingTasks : myUpcomingTasks;
+  const scheduleTasks = canManage ? allUpcomingTasks : myUpcomingTasks;
   const myTaskCount = myUpcomingTasks.length;
 
   return (
@@ -125,9 +127,9 @@ export default async function DashboardPage({
 
       <MyAttendanceCard me={me} />
 
-      {isSuperAdmin && <QuickAssignTaskForm assignees={assignees} />}
+      {canManage && <QuickAssignTaskForm assignees={assignees} />}
 
-      {isSuperAdmin && (
+      {canManage && (
         <PendingAttendanceReviews records={pendingReviewRecords} />
       )}
 
@@ -135,8 +137,8 @@ export default async function DashboardPage({
         <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-gray-700">
-              {isSuperAdmin
-                ? `Company schedule — next ${SCHEDULE_DAYS} days`
+              {canManage
+                ? `${isSuperAdmin ? "Company" : "Branch"} schedule — next ${SCHEDULE_DAYS} days`
                 : `My schedule — next ${SCHEDULE_DAYS} days`}
               <span className="ml-2 text-xs font-normal text-gray-500">
                 {scheduleTasks.length} task{scheduleTasks.length === 1 ? "" : "s"}
@@ -149,7 +151,7 @@ export default async function DashboardPage({
               >
                 My tasks
               </Link>
-              {isSuperAdmin && (
+              {canManage && (
                 <Link
                   href="/admin/tasks?view=schedule"
                   className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
@@ -170,8 +172,8 @@ export default async function DashboardPage({
           <div className="mt-3">
             {scheduleTasks.length === 0 ? (
               <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
-                {isSuperAdmin
-                  ? "No tasks across the team in the next 7 days."
+                {canManage
+                  ? "No tasks across your scope in the next 7 days."
                   : `No tasks assigned to you in the next ${SCHEDULE_DAYS} days.`}
               </p>
             ) : (
@@ -179,7 +181,7 @@ export default async function DashboardPage({
                 tasks={scheduleTasks}
                 startDate={todayIso}
                 days={SCHEDULE_DAYS}
-                showAssignee={isSuperAdmin}
+                showAssignee={canManage}
               />
             )}
           </div>
@@ -194,14 +196,18 @@ export default async function DashboardPage({
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Panel title="Headcount & payroll">
+        <Panel title={isSuperAdmin ? "Headcount & payroll" : "Headcount"}>
           <dl className="grid grid-cols-2 gap-y-2 text-sm">
             <dt className="text-gray-500">Total employees</dt>
             <dd className="text-right font-medium text-gray-900">{totalEmployees}</dd>
-            <dt className="text-gray-500">Monthly payroll</dt>
-            <dd className="text-right font-medium tabular-nums text-gray-900">
-              {PKR.format(totalPayroll)}
-            </dd>
+            {isSuperAdmin && (
+              <>
+                <dt className="text-gray-500">Monthly payroll</dt>
+                <dd className="text-right font-medium tabular-nums text-gray-900">
+                  {PKR.format(totalPayroll)}
+                </dd>
+              </>
+            )}
             <dt className="text-gray-500">Branches</dt>
             <dd className="text-right font-medium text-gray-900">3 (KHI, LHE, RMT)</dd>
             <dt className="text-gray-500">Departments</dt>

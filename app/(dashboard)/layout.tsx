@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/login/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -24,15 +25,19 @@ export default async function DashboardLayout({
   );
   const me = await getCurrentUser();
   const isSuperAdmin = me?.appUser.role === "super_admin";
+  const canManage = me ? isBranchManagerOrAboveRole(me.appUser.role) : false;
+  const baseNav = canManage ? NAV : NAV.filter((item) => item.href !== "/admin");
   const navItems = isSuperAdmin
-    ? [...NAV, { href: "/admin/tasks/history", label: "Company Task History" }]
-    : NAV;
+    ? [...baseNav, { href: "/admin/tasks/history", label: "Company Task History" }]
+    : baseNav;
   const adminNavItems = isSuperAdmin
     ? [
         { href: "/admin/holidays", label: "Paid Holidays" },
         { href: "/admin/payroll", label: "Payroll Preview" },
       ]
-    : [];
+    : canManage
+      ? [{ href: "/admin/leave", label: "Leave Admin" }, { href: "/admin/tasks", label: "Task Admin" }]
+      : [];
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">

@@ -49,8 +49,10 @@ export type UserRole =
   | "super_admin"
   | "admin_hr"
   | "branch_manager"
+  | "assistant_manager"
   | "manager"
-  | "employee";
+  | "employee"
+  | "team_member";
 
 export type RecurrenceType = "weekly" | "monthly" | "daily";
 
@@ -102,10 +104,14 @@ export type Employee = {
   user_id: string;
   full_name: string;
   phone: string | null;
+  contact_email: string | null;
   branch_id: string | null;
   department_id: string | null;
   manager_id: string | null;
   shift_id: string | null;
+  custom_shift_enabled: boolean;
+  custom_shift_start: string | null;
+  custom_shift_end: string | null;
   monthly_salary: number;
   role_description: string | null;
   employment_status: EmploymentStatus;

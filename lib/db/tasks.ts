@@ -3,6 +3,14 @@
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { todayPKT } from "@/lib/attendance/format";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  actorFromCurrentUser,
+  canAssignTask,
+  canSeeEmployee,
+  isBranchManagerOrAboveRole,
+  isGlobalAdminRole,
+} from "@/lib/auth/permissions";
 import { isSupabaseConfigured } from "@/lib/db/queries";
 import type {
   RecurringTask,
@@ -28,12 +36,30 @@ export type AssignableUser = {
   email: string;
   role: UserRole;
   employee_id: string | null; // null for system-only users (e.g. Sir Raza)
+  branch_id: string | null;
   branch_code: string | null;
 };
 
 function pickOne<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+async function visibleUserIdsForCurrentActor(): Promise<string[] | null> {
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
+  if (isGlobalAdminRole(actor.role)) return null;
+  if (!isBranchManagerOrAboveRole(actor.role)) return [actor.id];
+  if (!actor.branch_id) return [];
+
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("employees")
+    .select("user_id")
+    .eq("branch_id", actor.branch_id)
+    .eq("employment_status", "active");
+  return ((data ?? []) as Array<{ user_id: string }>).map((row) => row.user_id);
 }
 
 const TASK_SELECT = `
@@ -105,7 +131,12 @@ export async function listDoneTasks(
 ): Promise<TaskRowVM[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
+  if (userId) {
+    const visible = await visibleUserIdsForCurrentActor();
+    if (visible && !visible.includes(userId)) return [];
+  }
+
+  const supabase = userId ? createAdminClient() : await createClient();
   let query = supabase
     .from("tasks")
     .select(TASK_SELECT)
@@ -158,7 +189,15 @@ export async function listTasksInRange(
 ): Promise<TaskRowVM[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
+  const scopedUserIds = userId ? undefined : await visibleUserIdsForCurrentActor();
+  if (scopedUserIds && scopedUserIds.length === 0) return [];
+
+  if (userId) {
+    const visible = await visibleUserIdsForCurrentActor();
+    if (visible && !visible.includes(userId)) return [];
+  }
+
+  const supabase = createAdminClient();
   let query = supabase
     .from("tasks")
     .select(TASK_SELECT)
@@ -168,6 +207,7 @@ export async function listTasksInRange(
     .order("due_time", { ascending: true, nullsFirst: false });
 
   if (userId) query = query.eq("assigned_to", userId);
+  else if (scopedUserIds) query = query.in("assigned_to", scopedUserIds);
 
   const { data, error } = await query;
   if (error) throw new Error(`listTasksInRange: ${error.message}`);
@@ -242,7 +282,10 @@ export async function listTasksForAdmin(
 ): Promise<TaskRowVM[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
+  const scopedUserIds = await visibleUserIdsForCurrentActor();
+  if (scopedUserIds && scopedUserIds.length === 0) return [];
+
+  const supabase = createAdminClient();
   let query = supabase
     .from("tasks")
     .select(TASK_SELECT)
@@ -257,6 +300,7 @@ export async function listTasksForAdmin(
   } else if (filter === "overdue") {
     query = query.neq("status", "done").lt("due_date", today);
   }
+  if (scopedUserIds) query = query.in("assigned_to", scopedUserIds);
 
   const { data, error } = await query;
   if (error) throw new Error(`listTasksForAdmin: ${error.message}`);
@@ -269,7 +313,10 @@ export async function listTasksForEmployeeAdmin(
 ): Promise<TaskRowVM[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
+  const visible = await visibleUserIdsForCurrentActor();
+  if (visible && !visible.includes(userId)) return [];
+
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("tasks")
     .select(TASK_SELECT)
@@ -283,19 +330,25 @@ export async function listTasksForEmployeeAdmin(
 export async function listAssignableUsers(): Promise<AssignableUser[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
+  if (!isBranchManagerOrAboveRole(actor.role)) return [];
+
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("app_users")
     .select(
       `
       id, display_name, email, role,
-      employees!app_users_id_fkey ( id, branches ( code ) )
+      employees!app_users_id_fkey ( id, branch_id, branches ( code ) )
       `
     )
     .eq("is_active", true)
     .order("display_name");
   if (error) {
     // Fallback: select without the implicit FK alias if Postgres can't resolve it.
+    if (!isGlobalAdminRole(actor.role)) return [];
     const fallback = await supabase
       .from("app_users")
       .select("id, display_name, email, role")
@@ -313,6 +366,7 @@ export async function listAssignableUsers(): Promise<AssignableUser[]> {
       email: r.email,
       role: r.role,
       employee_id: null,
+      branch_id: null,
       branch_code: null,
     }));
   }
@@ -323,23 +377,37 @@ export async function listAssignableUsers(): Promise<AssignableUser[]> {
     email: string;
     role: UserRole;
     employees:
-      | { id: string; branches: { code: string } | { code: string }[] | null }
-      | { id: string; branches: { code: string } | { code: string }[] | null }[]
+      | { id: string; branch_id: string | null; branches: { code: string } | { code: string }[] | null }
+      | { id: string; branch_id: string | null; branches: { code: string } | { code: string }[] | null }[]
       | null;
   };
 
-  return ((data ?? []) as Row[]).map((r) => {
-    const emp = pickOne(r.employees);
-    const branch = emp ? pickOne(emp.branches) : null;
-    return {
-      id: r.id,
-      display_name: r.display_name,
-      email: r.email,
-      role: r.role,
-      employee_id: emp?.id ?? null,
-      branch_code: branch?.code ?? null,
-    };
-  });
+  return ((data ?? []) as Row[])
+    .filter((r) => {
+      const emp = pickOne(r.employees);
+      const target = emp
+        ? {
+            id: emp.id,
+            user_id: r.id,
+            branch_id: emp.branch_id,
+            user_role: r.role,
+          }
+        : null;
+      return canAssignTask(actor, target);
+    })
+    .map((r) => {
+      const emp = pickOne(r.employees);
+      const branch = emp ? pickOne(emp.branches) : null;
+      return {
+        id: r.id,
+        display_name: r.display_name,
+        email: r.email,
+        role: r.role,
+        employee_id: emp?.id ?? null,
+        branch_id: emp?.branch_id ?? null,
+        branch_code: branch?.code ?? null,
+      };
+    });
 }
 
 // ---------- recurring tasks ----------
@@ -352,8 +420,11 @@ export type RecurringTaskRowVM = RecurringTask & {
 export async function listRecurringTasks(): Promise<RecurringTaskRowVM[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const scopedUserIds = await visibleUserIdsForCurrentActor();
+  if (scopedUserIds && scopedUserIds.length === 0) return [];
+
+  const supabase = createAdminClient();
+  let query = supabase
     .from("recurring_tasks")
     .select(
       `
@@ -365,6 +436,9 @@ export async function listRecurringTasks(): Promise<RecurringTaskRowVM[]> {
     )
     .order("active", { ascending: false })
     .order("title");
+  if (scopedUserIds) query = query.in("assigned_to", scopedUserIds);
+
+  const { data, error } = await query;
   if (error) throw new Error(`listRecurringTasks: ${error.message}`);
 
   type Row = RecurringTask & {
@@ -397,11 +471,19 @@ export type RedlinedEmployee = {
 export async function listRedlinedEmployees(): Promise<RedlinedEmployee[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
+  const supabase = createAdminClient();
+  let query = supabase
     .from("employee_overdue_tasks")
     .select("*")
     .eq("is_redlined", true);
+  if (!isGlobalAdminRole(actor.role)) {
+    if (!actor.branch_id || !isBranchManagerOrAboveRole(actor.role)) return [];
+    query = query.eq("branch_id", actor.branch_id);
+  }
+  const { data, error } = await query;
   if (error) {
     // The view returns 0 rows when no one is redlined; only real DB errors throw.
     throw new Error(`listRedlinedEmployees: ${error.message}`);

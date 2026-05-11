@@ -1,4 +1,5 @@
 import { Chip } from "@/components/StatusChip";
+import { redirect } from "next/navigation";
 import {
   isSupabaseConfigured,
   listLeaveRequestsForAdmin,
@@ -8,6 +9,8 @@ import {
   approveLeaveRequest,
   rejectLeaveRequest,
 } from "@/app/(dashboard)/leave/actions";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
 export default async function AdminLeavePage({
   searchParams,
@@ -15,6 +18,11 @@ export default async function AdminLeavePage({
   searchParams: Promise<{ error?: string; ok?: string; filter?: string }>;
 }) {
   const { error, ok, filter: filterParam } = await searchParams;
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  if (!isBranchManagerOrAboveRole(me.appUser.role)) {
+    redirect("/dashboard?error=Manager access required");
+  }
   const filter = filterParam === "all" ? "all" : "pending";
   const live = isSupabaseConfigured();
   const requests = await listLeaveRequestsForAdmin(filter);
