@@ -1,4 +1,5 @@
 import { Chip } from "@/components/StatusChip";
+import { redirect } from "next/navigation";
 import {
   listAssignableUsers,
   listRecurringTasks,
@@ -12,6 +13,8 @@ import {
   generateTasksForToday,
   toggleRecurringActive,
 } from "./actions";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
 const WEEKDAYS = [
   { value: 1, label: "Mon" },
@@ -42,6 +45,11 @@ export default async function RecurringTasksPage({
   searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const { error, ok } = await searchParams;
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  if (!isBranchManagerOrAboveRole(me.appUser.role)) {
+    redirect("/dashboard?error=Manager access required");
+  }
   const live = isSupabaseConfigured();
   const [templates, assignees] = await Promise.all([
     listRecurringTasks(),

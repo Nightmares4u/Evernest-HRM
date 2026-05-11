@@ -5,7 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
-import type { UserRole } from "@/lib/types/hrm";
+import { isBranchManagerOrAboveRole, isGlobalAdminRole } from "@/lib/auth/permissions";
 
 export async function requireSuperAdmin(
   errorRedirect: string
@@ -22,8 +22,6 @@ export async function requireSuperAdmin(
   return me;
 }
 
-const TASK_ADMIN_ROLES: UserRole[] = ["super_admin", "admin_hr"];
-
 export async function requireTaskAdmin(
   errorRedirect: string
 ): Promise<CurrentUser> {
@@ -31,9 +29,24 @@ export async function requireTaskAdmin(
   if (!me) {
     redirect("/login");
   }
-  if (!me.appUser.is_active || !TASK_ADMIN_ROLES.includes(me.appUser.role)) {
+  if (!me.appUser.is_active || !isBranchManagerOrAboveRole(me.appUser.role)) {
     redirect(
       `${errorRedirect}?error=${encodeURIComponent("Admin access required.")}`
+    );
+  }
+  return me;
+}
+
+export async function requireGlobalAdmin(
+  errorRedirect: string
+): Promise<CurrentUser> {
+  const me = await getCurrentUser();
+  if (!me) {
+    redirect("/login");
+  }
+  if (!me.appUser.is_active || !isGlobalAdminRole(me.appUser.role)) {
+    redirect(
+      `${errorRedirect}?error=${encodeURIComponent("Global admin access required.")}`
     );
   }
   return me;

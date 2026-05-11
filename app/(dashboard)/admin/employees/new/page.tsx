@@ -11,12 +11,12 @@ import {
 import type { EmploymentStatus, UserRole } from "@/lib/types/hrm";
 
 const USER_ROLES: { value: UserRole; label: string; hint: string }[] = [
-  { value: "employee", label: "Employee", hint: "Standard staff access" },
-  { value: "manager", label: "Manager", hint: "Team-level account" },
+  { value: "team_member", label: "Team member", hint: "Standard staff access" },
+  { value: "assistant_manager", label: "Assistant manager", hint: "Branch/team support" },
   { value: "branch_manager", label: "Branch manager", hint: "Branch operations" },
-  { value: "admin_hr", label: "Admin HR", hint: "HR administration" },
   { value: "super_admin", label: "Super admin", hint: "Full company access" },
 ];
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const EMPLOYMENT_STATUSES: { value: EmploymentStatus; label: string }[] = [
   { value: "active", label: "Active" },
@@ -103,7 +103,7 @@ export default async function NewEmployeePage({
             />
           </Field>
 
-          <Field label="Email" required>
+          <Field label="Login/system email" required>
             <input
               name="email"
               type="email"
@@ -111,6 +111,16 @@ export default async function NewEmployeePage({
               autoComplete="email"
               className={INPUT_CLASS}
               placeholder="name@enconsultants.com"
+            />
+          </Field>
+
+          <Field label="Contact email">
+            <input
+              name="contact_email"
+              type="email"
+              autoComplete="email"
+              className={INPUT_CLASS}
+              placeholder="Optional notification inbox"
             />
           </Field>
 
@@ -180,7 +190,7 @@ export default async function NewEmployeePage({
           </Field>
 
           <Field label="Role" required>
-            <select name="role" required defaultValue="employee" className={INPUT_CLASS}>
+            <select name="role" required defaultValue="team_member" className={INPUT_CLASS}>
               {USER_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>
                   {role.label} — {role.hint}
@@ -227,9 +237,17 @@ export default async function NewEmployeePage({
               logs or audit history.
             </p>
           </Field>
+
+          <Field label="Custom shift start">
+            <input name="custom_shift_start" type="time" className={INPUT_CLASS} />
+          </Field>
+
+          <Field label="Custom shift end">
+            <input name="custom_shift_end" type="time" className={INPUT_CLASS} />
+          </Field>
         </div>
 
-        <div className="grid gap-3 border-t border-gray-100 px-5 py-4 sm:grid-cols-2">
+        <div className="grid gap-3 border-t border-gray-100 px-5 py-4 sm:grid-cols-3">
           <label className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
             <input
               type="checkbox"
@@ -246,6 +264,34 @@ export default async function NewEmployeePage({
             />
             Remote allowed
           </label>
+          <label className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              name="custom_shift_enabled"
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            Custom shift override
+          </label>
+        </div>
+
+        <div className="border-t border-gray-100 px-5 py-4">
+          <p className="text-xs font-medium text-gray-700">Scheduled remote days</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {WEEKDAYS.map((day, index) => (
+              <label
+                key={day}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700"
+              >
+                <input
+                  type="checkbox"
+                  name="remote_default_days"
+                  value={index + 1}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                {day}
+              </label>
+            ))}
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">

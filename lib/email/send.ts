@@ -28,14 +28,30 @@ export function appBaseUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }
 
+export function isValidEmail(value: string | null | undefined): value is string {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export function normalizeRecipients(to: string | string[]): string[] {
+  const recipients = Array.isArray(to) ? to : [to];
+  return recipients.map((email) => email.trim().toLowerCase()).filter(isValidEmail);
+}
+
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM ?? "EN HRM <onboarding@resend.dev>";
+  const to = normalizeRecipients(args.to);
+
+  if (to.length === 0) {
+    console.warn(`[email] skipping send with no valid recipients (subj=${args.subject})`);
+    return;
+  }
 
   if (!apiKey) {
     // Dev/CI mode: log instead of failing so server actions stay green.
     console.log(
-      `[email] RESEND_API_KEY missing — skipping send (to=${Array.isArray(args.to) ? args.to.join(",") : args.to}, subj=${args.subject})`
+      `[email] RESEND_API_KEY missing — skipping send (to=${to.join(",")}, subj=${args.subject})`
     );
     return;
   }
@@ -49,7 +65,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<void> {
       },
       body: JSON.stringify({
         from,
-        to: Array.isArray(args.to) ? args.to : [args.to],
+        to,
         subject: args.subject,
         html: args.html,
         text: args.text,

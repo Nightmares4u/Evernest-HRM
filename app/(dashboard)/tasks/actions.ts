@@ -10,6 +10,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireTaskAdmin } from "@/lib/auth/require-role";
+import { actorFromCurrentUser, canAssignTask } from "@/lib/auth/permissions";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { getUserNotificationTarget } from "@/lib/email/recipients";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { sendEmail, sendEmailSafely } from "@/lib/email/send";
 import { taskAssignedEmail } from "@/lib/email/templates";
@@ -46,7 +49,13 @@ async function logAudit(
   });
 }
 
-const ADMIN_TASK_ROLES: UserRole[] = ["super_admin", "admin_hr"];
+const ADMIN_TASK_ROLES: UserRole[] = [
+  "super_admin",
+  "admin_hr",
+  "branch_manager",
+  "assistant_manager",
+  "manager",
+];
 
 function isTaskAdmin(role: UserRole | null | undefined): boolean {
   return Boolean(role && ADMIN_TASK_ROLES.includes(role));
@@ -92,8 +101,37 @@ export async function markTaskDone(formData: FormData) {
   if (userErr || !appUser?.is_active) fail("/tasks", "Could not verify your account.");
   const canAdminComplete = isTaskAdmin(appUser.role as UserRole);
   if (error || !task) fail("/tasks", "Task not found.");
-  if (task.assigned_to !== user.id && !canAdminComplete)
-    fail("/tasks", "You can't update someone else's task.");
+  if (task.assigned_to !== user.id) {
+    if (!canAdminComplete) fail("/tasks", "You can't update someone else's task.");
+    const me = await getCurrentUser();
+    if (!me) redirect("/login");
+    const actor = actorFromCurrentUser(me);
+    const { data: assigneeEmployee } = await admin
+      .from("employees")
+      .select("id, user_id, branch_id, app_users:user_id ( role )")
+      .eq("user_id", task.assigned_to)
+      .maybeSingle();
+    const assigneeAppUser = assigneeEmployee
+      ? Array.isArray(assigneeEmployee.app_users)
+        ? assigneeEmployee.app_users[0]
+        : assigneeEmployee.app_users
+      : null;
+    if (
+      !canAssignTask(
+        actor,
+        assigneeEmployee
+          ? {
+              id: assigneeEmployee.id,
+              user_id: assigneeEmployee.user_id,
+              branch_id: assigneeEmployee.branch_id,
+              user_role: assigneeAppUser?.role ?? "employee",
+            }
+          : null
+      )
+    ) {
+      fail("/tasks", "You can't update someone else's task.");
+    }
+  }
   if (task.requires_approval && !canAdminComplete)
     fail(
       "/tasks",
@@ -220,8 +258,31 @@ export async function createTask(formData: FormData) {
 
   const me = await requireTaskAdmin(redirectTo);
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
+  const { data: assigneeEmployee } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("user_id", assigned_to)
+    .maybeSingle();
+  const assigneeAppUser = assigneeEmployee
+    ? Array.isArray(assigneeEmployee.app_users)
+      ? assigneeEmployee.app_users[0]
+      : assigneeEmployee.app_users
+    : null;
+  const target = assigneeEmployee
+    ? {
+        id: assigneeEmployee.id,
+        user_id: assigneeEmployee.user_id,
+        branch_id: assigneeEmployee.branch_id,
+        user_role: assigneeAppUser?.role ?? "employee",
+      }
+    : null;
+  if (!canAssignTask(actor, target)) {
+    fail(redirectTo, "You do not have permission to assign tasks to this user.");
+  }
+
   const { data, error } = await admin
     .from("tasks")
     .insert({
@@ -258,12 +319,8 @@ export async function createTask(formData: FormData) {
 
   // Notify the assignee (and capture assigner name for the email body).
   await sendEmailSafely(async () => {
-    const [{ data: assigneeRow }, { data: assignerRow }] = await Promise.all([
-      admin
-        .from("app_users")
-        .select("display_name, email")
-        .eq("id", assigned_to)
-        .maybeSingle(),
+    const [assigneeRow, { data: assignerRow }] = await Promise.all([
+      getUserNotificationTarget(admin, assigned_to),
       admin
         .from("app_users")
         .select("display_name")
@@ -272,7 +329,7 @@ export async function createTask(formData: FormData) {
     ]);
     if (!assigneeRow?.email) return;
     const tpl = taskAssignedEmail({
-      to_name: assigneeRow.display_name ?? assigneeRow.email,
+      to_name: assigneeRow.name ?? assigneeRow.email,
       title,
       description,
       due_date,
@@ -306,11 +363,12 @@ export async function approveTask(formData: FormData) {
 
   const me = await requireTaskAdmin("/admin/tasks");
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
   const { data: task, error: fetchErr } = await admin
     .from("tasks")
-    .select("id, requires_approval, status, title")
+    .select("id, assigned_to, requires_approval, status, title")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr || !task) fail("/admin/tasks", "Task not found.");
@@ -318,6 +376,32 @@ export async function approveTask(formData: FormData) {
     fail("/admin/tasks", "Task does not require approval.");
   if (task.status === "done")
     fail("/admin/tasks", "Task is already approved/done.");
+
+  const { data: assigneeEmployee } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("user_id", task.assigned_to)
+    .maybeSingle();
+  const assigneeAppUser = assigneeEmployee
+    ? Array.isArray(assigneeEmployee.app_users)
+      ? assigneeEmployee.app_users[0]
+      : assigneeEmployee.app_users
+    : null;
+  if (
+    !canAssignTask(
+      actor,
+      assigneeEmployee
+        ? {
+            id: assigneeEmployee.id,
+            user_id: assigneeEmployee.user_id,
+            branch_id: assigneeEmployee.branch_id,
+            user_role: assigneeAppUser?.role ?? "employee",
+          }
+        : null
+    )
+  ) {
+    fail("/admin/tasks", "You do not have permission to approve this task.");
+  }
 
   const now = new Date().toISOString();
   const { error: updErr } = await admin
@@ -364,15 +448,42 @@ export async function rejectTask(formData: FormData) {
 
   const me = await requireTaskAdmin("/admin/tasks");
   const user = { id: me.authUserId };
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
   const { data: task, error: fetchErr } = await admin
     .from("tasks")
-    .select("id, status, title")
+    .select("id, assigned_to, status, title")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr || !task) fail("/admin/tasks", "Task not found.");
   if (task.status === "done") fail("/admin/tasks", "Task is already done.");
+
+  const { data: assigneeEmployee } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("user_id", task.assigned_to)
+    .maybeSingle();
+  const assigneeAppUser = assigneeEmployee
+    ? Array.isArray(assigneeEmployee.app_users)
+      ? assigneeEmployee.app_users[0]
+      : assigneeEmployee.app_users
+    : null;
+  if (
+    !canAssignTask(
+      actor,
+      assigneeEmployee
+        ? {
+            id: assigneeEmployee.id,
+            user_id: assigneeEmployee.user_id,
+            branch_id: assigneeEmployee.branch_id,
+            user_role: assigneeAppUser?.role ?? "employee",
+          }
+        : null
+    )
+  ) {
+    fail("/admin/tasks", "You do not have permission to reject this task.");
+  }
 
   const { error: updErr } = await admin
     .from("tasks")

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import { TaskScheduleGrid } from "@/components/TaskScheduleGrid";
 import {
@@ -11,6 +12,8 @@ import {
 import { isSupabaseConfigured } from "@/lib/db/queries";
 import { todayPKT } from "@/lib/attendance/format";
 import { approveTask, createTask, rejectTask } from "../../tasks/actions";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
 const SCHEDULE_DAYS = 14;
 
@@ -38,6 +41,11 @@ export default async function AdminTasksPage({
   }>;
 }) {
   const sp = await searchParams;
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  if (!isBranchManagerOrAboveRole(me.appUser.role)) {
+    redirect("/dashboard?error=Manager access required");
+  }
   const filter: AdminTaskFilter =
     FILTER_OPTIONS.find((f) => f.key === sp.filter)?.key ?? "open";
   const view = sp.view === "schedule" ? "schedule" : "list";

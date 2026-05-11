@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildPktTimestamp } from "@/lib/attendance/policy";
+import { resolveEmployeeShift } from "@/lib/attendance/shifts";
 import { authorizeCronRequest } from "@/lib/cron/auth";
 import { defaultCronCloseDate, isIsoDate, isoWeekday } from "@/lib/cron/utils";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -16,6 +17,9 @@ type EmployeeRow = {
   id: string;
   branch_id: string | null;
   attendance_exempt: boolean;
+  custom_shift_enabled: boolean;
+  custom_shift_start: string | null;
+  custom_shift_end: string | null;
   shifts: ShiftLite | ShiftLite[] | null;
 };
 
@@ -86,6 +90,7 @@ async function handle(request: Request) {
       .select(
         `
         id, branch_id, attendance_exempt,
+        custom_shift_enabled, custom_shift_start, custom_shift_end,
         shifts ( id, start_time, end_time )
         `
       )
@@ -153,7 +158,16 @@ async function handle(request: Request) {
       continue;
     }
 
-    const shift = pickOne(employee.shifts);
+    const shift = resolveEmployeeShift({
+      employee,
+      shift: pickOne(employee.shifts)
+        ? {
+            ...pickOne(employee.shifts)!,
+            late_grace_minutes: 10,
+            half_day_threshold_minutes: 240,
+          }
+        : null,
+    });
     if (!shift) {
       summary.errors.push(`employee ${employee.id}: missing shift`);
       continue;

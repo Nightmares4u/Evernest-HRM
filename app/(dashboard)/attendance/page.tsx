@@ -11,6 +11,7 @@ import {
   listTodayAttendance,
 } from "@/lib/db/queries";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import type { AttendanceStatus } from "@/lib/types/hrm";
 import { overrideAttendanceRecord } from "./actions";
 
@@ -56,7 +57,7 @@ export default async function AttendancePage({
     listEmployees(),
     getCurrentUser(),
   ]);
-  const isSuperAdmin = me?.appUser.role === "super_admin";
+  const canManageAttendance = me ? isBranchManagerOrAboveRole(me.appUser.role) : false;
 
   const presentCount = records.filter((r) => PRESENT_STATES.includes(r.status)).length;
   const lateCount = records.filter((r) => LATE_STATES.includes(r.status)).length;
@@ -161,13 +162,13 @@ export default async function AttendancePage({
                   </div>
                 </Td>
                 <Td className="text-right">
-                  {isSuperAdmin ? (
+                  {canManageAttendance ? (
                     <OverrideForm record={r} />
                   ) : (
                     <button
                       type="button"
                       disabled
-                      title="Only super-admins can override attendance"
+                      title="Managers can override attendance within their scope"
                       className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-400"
                     >
                       Override

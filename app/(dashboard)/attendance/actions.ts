@@ -17,6 +17,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { sendEmail, sendEmailSafely } from "@/lib/email/send";
+import { listRoleNotificationEmails } from "@/lib/email/recipients";
 import { checkInEmail, checkOutEmail } from "@/lib/email/templates";
 import { formatTimePKT, todayPKT } from "@/lib/attendance/format";
 import {
@@ -25,19 +26,18 @@ import {
   computeOnCheckOut,
   isoWeekdayPKT,
 } from "@/lib/attendance/policy";
+import { resolveEmployeeShift } from "@/lib/attendance/shifts";
+import {
+  actorFromCurrentUser,
+  canOverrideAttendance,
+} from "@/lib/auth/permissions";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import type { AttendanceMode, AttendanceStatus } from "@/lib/types/hrm";
 
 async function getSuperAdminEmails(
   admin: ReturnType<typeof createAdminClient>
 ): Promise<string[]> {
-  const { data } = await admin
-    .from("app_users")
-    .select("email")
-    .eq("role", "super_admin")
-    .eq("is_active", true);
-  return ((data ?? []) as Array<{ email: string }>)
-    .map((u) => u.email)
-    .filter((e): e is string => Boolean(e));
+  return listRoleNotificationEmails(admin, "super_admin");
 }
 
 function fail(msg: string): never {
@@ -90,6 +90,9 @@ type EmployeeLite = {
   attendance_exempt: boolean;
   remote_allowed: boolean;
   remote_default_days: number[] | null;
+  custom_shift_enabled: boolean;
+  custom_shift_start: string | null;
+  custom_shift_end: string | null;
   shifts: ShiftLite | ShiftLite[] | null;
   branches: BranchLite | BranchLite[] | null;
 };
@@ -106,6 +109,7 @@ async function loadMyEmployee() {
     .select(
       `
       id, branch_id, attendance_exempt, remote_allowed, remote_default_days,
+      custom_shift_enabled, custom_shift_start, custom_shift_end,
       shifts ( id, start_time, end_time, late_grace_minutes, half_day_threshold_minutes ),
       branches ( id, office_latitude, office_longitude, office_radius_meters )
       `
@@ -118,11 +122,12 @@ async function loadMyEmployee() {
 
   const emp = data as unknown as EmployeeLite;
   const shift = Array.isArray(emp.shifts) ? emp.shifts[0] : emp.shifts;
-  if (!shift) fail("No shift assigned to your account. Ask admin to set one.");
+  const effectiveShift = resolveEmployeeShift({ employee: emp, shift });
+  if (!effectiveShift) fail("No shift assigned to your account. Ask admin to set one.");
 
   const branch = Array.isArray(emp.branches) ? emp.branches[0] : emp.branches;
 
-  return { supabase, employee: emp, shift, branch };
+  return { supabase, employee: emp, shift: effectiveShift, branch };
 }
 
 type ParsedGeo = {
@@ -560,21 +565,11 @@ export async function overrideAttendanceRecord(formData: FormData) {
   }
   if (!reason) attendanceFail("Override reason is required.");
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const actor = actorFromCurrentUser(me);
 
   const admin = createAdminClient();
-  const { data: actor, error: actorErr } = await admin
-    .from("app_users")
-    .select("role, is_active")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (actorErr || !actor || actor.role !== "super_admin" || !actor.is_active) {
-    overrideFail(formData, "Only super-admins can override attendance.");
-  }
 
   const correctedStatus = statusRaw as AttendanceStatus;
   const recordSelect = `
@@ -605,8 +600,10 @@ export async function overrideAttendanceRecord(formData: FormData) {
       .from("employees")
       .select(
         `
-        id, branch_id, shift_id,
-        shifts ( id, start_time, end_time )
+        id, user_id, branch_id, shift_id,
+        custom_shift_enabled, custom_shift_start, custom_shift_end,
+        app_users:user_id ( role ),
+        shifts ( id, start_time, end_time, late_grace_minutes, half_day_threshold_minutes )
         `
       )
       .eq("id", employeeId)
@@ -614,7 +611,8 @@ export async function overrideAttendanceRecord(formData: FormData) {
     if (empErr || !employee) overrideFail(formData, "Employee not found.");
 
     const shiftValue = employee.shifts;
-    const shift = Array.isArray(shiftValue) ? shiftValue[0] : shiftValue;
+    const baselineShift = Array.isArray(shiftValue) ? shiftValue[0] : shiftValue;
+    const shift = resolveEmployeeShift({ employee, shift: baselineShift });
     if (!shift) overrideFail(formData, "Employee has no shift for manual attendance.");
 
     const rowDate = date;
@@ -645,6 +643,26 @@ export async function overrideAttendanceRecord(formData: FormData) {
     record = inserted;
   }
   if (!record) overrideFail(formData, "Attendance record not found.");
+
+  const { data: targetEmployee, error: targetError } = await admin
+    .from("employees")
+    .select("id, user_id, branch_id, app_users:user_id ( role )")
+    .eq("id", record.employee_id)
+    .maybeSingle();
+  if (targetError || !targetEmployee) overrideFail(formData, "Employee not found.");
+  const targetAppUser = Array.isArray(targetEmployee.app_users)
+    ? targetEmployee.app_users[0]
+    : targetEmployee.app_users;
+  if (
+    !canOverrideAttendance(actor, {
+      id: targetEmployee.id,
+      user_id: targetEmployee.user_id,
+      branch_id: targetEmployee.branch_id,
+      user_role: targetAppUser?.role ?? "employee",
+    })
+  ) {
+    overrideFail(formData, "You do not have permission to override this employee.");
+  }
 
   const correctedCheckIn = parseOverrideTime(formData.get("check_in_time"), record.date);
   const correctedCheckOut = parseOverrideTime(formData.get("check_out_time"), record.date);
@@ -694,7 +712,7 @@ export async function overrideAttendanceRecord(formData: FormData) {
   if (updateErr) overrideFail(formData, `Override failed: ${updateErr.message}`);
 
   const { error: auditErr } = await admin.from("audit_logs").insert({
-    actor_id: user.id,
+    actor_id: me.authUserId,
     target_type: "attendance_record",
     target_id: id,
     action: "override_attendance",
