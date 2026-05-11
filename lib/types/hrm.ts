@@ -105,6 +105,15 @@ export type Employee = {
   full_name: string;
   phone: string | null;
   contact_email: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+  contact_number: string | null;
+  cnic: string | null;
+  emergency_contact_number: string | null;
+  bank_name: string | null;
+  bank_branch_name: string | null;
+  bank_account_or_iban: string | null;
   branch_id: string | null;
   department_id: string | null;
   manager_id: string | null;

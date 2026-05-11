@@ -10,6 +10,7 @@ import {
   listEmployees,
   listTodayAttendance,
 } from "@/lib/db/queries";
+import { personalProfileCompletionStatus } from "@/lib/employees/personal-profile";
 import {
   listAssignableUsers,
   listTasksInRange,
@@ -83,6 +84,9 @@ export default async function DashboardPage({
 
   const totalEmployees = employees.length;
   const totalPayroll = employees.reduce((sum, e) => sum + e.monthly_salary, 0);
+  const myProfileCompletion = me?.employee
+    ? personalProfileCompletionStatus(me.employee)
+    : null;
 
   // schedule grid for the dashboard: super-admin sees company-wide, everyone else sees their own
   const scheduleTasks = canManage ? allUpcomingTasks : myUpcomingTasks;
@@ -126,6 +130,22 @@ export default async function DashboardPage({
       )}
 
       <MyAttendanceCard me={me} />
+
+      {myProfileCompletion && !myProfileCompletion.complete && (
+        <section className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              Complete your profile for HR records and payroll forwarding.
+            </span>
+            <Link
+              href="/profile"
+              className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
+            >
+              My Profile
+            </Link>
+          </div>
+        </section>
+      )}
 
       {canManage && <QuickAssignTaskForm assignees={assignees} />}
 

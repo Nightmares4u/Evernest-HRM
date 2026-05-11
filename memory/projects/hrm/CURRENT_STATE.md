@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Cron scheduled maintenance routes.
+**Last updated**: Payroll Export Center MVP.
 
 ## Branch & commits
 
@@ -37,9 +37,10 @@
 | Route | Audience | What it does |
 |---|---|---|
 | `/login` | public | Real Supabase email+password sign-in via server action. Falls back to "Continue (Mock)" if env missing. |
-| `/dashboard` | any signed-in | Personal landing. `MyAttendanceCard` shows today's status + geolocation-capturing Check-in / Check-out buttons. Stat cards aggregate today's attendance. Super-admins see pending attendance reviews. |
+| `/dashboard` | any signed-in | Personal landing. `MyAttendanceCard` shows today's status + geolocation-capturing Check-in / Check-out buttons. Stat cards aggregate today's attendance. Super-admins see pending attendance reviews. Employees with incomplete HR/payroll profiles see a "Complete your profile" alert. |
+| `/profile` | any signed-in employee | Employee self-service HR/payroll profile. Employees can edit only their own first/middle/last name, contact number/email, CNIC, emergency contact, and bank forwarding details. |
 | `/attendance` | any signed-in | Today panel. Per-row table of every tracked employee's status, mode, times, worked, late minutes, geofence verification chips, review reason, and super-admin override form. |
-| `/employees` | any signed-in | Directory table with branch / dept / role / shift / salary / remote days / exemptions. Super-admins can click an employee name to open the control center. |
+| `/employees` | any signed-in | Directory table with branch / dept / role / shift / salary / remote days / exemptions. Super-admins can click an employee name to open the control center and see a profile-completion badge. |
 | `/leave` | employees | Submit leave request, see balance + history. |
 | `/admin/leave` | super-admin | Approve / reject leave queue. Approval inserts on_leave attendance rows + decrements balance + audit-logs. |
 | `/tasks` | any signed-in | My tasks grouped today / awaiting approval / overdue / upcoming / recently done. Approval-required tasks have a "Submit for approval" form; others have "Mark done". |
@@ -47,7 +48,10 @@
 | `/admin/tasks/recurring` | super-admin | Recurring template CRUD: create (weekly day picker + priority + requires_approval + due_time), pause/resume, delete. "Generate today's tasks" button — idempotent. |
 | `/tasks/history` | any signed-in | Personal done-task history with This week / Last week / This month / Last month / All time filters + 3 stat cards. Chronological list. |
 | `/admin/tasks/history` | super-admin | Company done-task history. Same range filters + Last 8 weeks. List / Grid view tabs. Grid is a heatmap: rows=assignees, cols=last 8 weeks, cells colour-scaled by count. Top-3 performers shown as stat cards. |
-| `/admin/employees/[id]` | super-admin | Employee Attendance Control Center. Profile header, yearly totals, Jan-Dec cards, month calendar with status / check-in-out / worked hours in every day cell, day detail panel, day-level override/create record form, task summary, and payroll-ready deduction preview. |
+| `/admin/employees/[id]` | branch-manager+ scoped, super-admin full | Employee Attendance Control Center. Profile header, yearly totals, Jan-Dec cards, month calendar with status / check-in-out / worked hours in every day cell, day detail panel, day-level override/create record form, task summary, and payroll-ready deduction preview. Super-admins also see/edit sensitive HR/payroll forwarding details; branch/assistant managers do not see CNIC/banking details. |
+| `/admin/payroll` | super-admin | Payroll-ready monthly preview. Uses scheduled working days minus Sundays and paid holidays, attendance deductions, and estimated payable. Does not create payslips or mark salaries paid. |
+| `/admin/payroll/export` | super-admin | Payroll Export Center. Filterable printable salary payable report with monthly / custom range / yearly modes, all-company / branch / department / employee scopes, summary totals, branch/department rollups, HR/banking forwarding columns, and CSV download. Uses browser Print / Save as PDF for the PDF MVP. |
+| `/admin/payroll/export/csv` | super-admin | CSV download endpoint for the export-center report. No XLSX/PDF dependency added. |
 | `/admin/cron` | super-admin | Manual test reference for cron endpoints. Shows placeholder-safe curl commands using `$CRON_SECRET`. |
 | `/admin` | super-admin | **Power-user overview.** Action cards: pending leave, pending task approvals, today's check-in coverage (X/Y), active recurring count. Redlined section (only shown if ≥1 employee has 3+ overdue undone tasks). Headcount/payroll stats. Branch + department + shift + remote-roster tables. Quick-link grid to all admin sections + dashed cards for still-planned controls. |
 
@@ -68,6 +72,7 @@ All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-s
 - `app/(dashboard)/leave/actions.ts`: `submitLeaveRequest`, `approveLeaveRequest`, `rejectLeaveRequest`.
 - `app/(dashboard)/tasks/actions.ts`: `markTaskDone`, `submitForApproval`, `createTask`, `approveTask`, `rejectTask`.
 - `app/(dashboard)/admin/tasks/recurring/actions.ts`: `createRecurringTask`, `toggleRecurringActive`, `deleteRecurringTask`, `generateTasksForToday`.
+- `app/(dashboard)/profile/actions.ts`: `updatePersonalPayrollProfile` — employee self-edit or super-admin correction for personal/payroll forwarding details. Audit log records changed field names only, never raw CNIC/bank/contact values.
 
 ### Domain + helpers
 - `lib/types/hrm.ts` — typed mirror of the applied schema, including Phase A branch office geofence fields and attendance verification columns.
@@ -78,6 +83,8 @@ All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-s
 - `lib/attendance/format.ts` — Asia/Karachi-aware time / date / weekday helpers + status chip mapping.
 - `lib/attendance/policy.ts` — pure rule helpers: `computeOnCheckIn`, `computeOnCheckOut`, `isoWeekdayPKT`, `buildPktTimestamp`.
 - `lib/leave/policy.ts` — working-day counting helpers for leave proration.
+- `lib/payroll/export.ts` — export-center payroll calculations. Monthly mode follows existing payroll preview math; custom ranges split base pay by month and apply date-month daily rates for deductions; yearly mode aggregates Jan-Dec monthly rows.
+- `lib/employees/personal-profile.ts` — validation and completion helpers for required employee self-profile/payroll forwarding fields.
 - `lib/mock/hrm.ts` — used by every read function as a fallback when Supabase env is missing.
 
 ### Components
@@ -90,6 +97,7 @@ All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-s
 - `supabase/migrations/0002_task_due_time.sql` — applied. Adds task / recurring-task due-time support.
 - `supabase/migrations/0003_geolocation_attendance_verification.sql` — applied. Adds branch office latitude/longitude/radius and attendance check-in/out coordinate, distance, verification status, and review reason columns. Seeds Karachi + Lahore office coordinates at 200m radius.
 - `supabase/migrations/0005_attendance_system_mode.sql` — pending/apply next. Adds `attendance_mode = 'system'` for cron-created attendance rows.
+- `supabase/migrations/0008_employee_personal_payroll_details.sql` — pending/apply next. Adds employee self-profile/payroll forwarding fields: first/middle/last name, contact number, CNIC, emergency contact, bank name, bank branch, and account/IBAN.
 
 ### Seed
 - `scripts/seed-users.ts` — applied. 13 users now in `auth.users` + `app_users` (+ 12 in `employees`). Two-pass FK resolution for `manager_email`.
@@ -103,7 +111,7 @@ All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-s
   - monthly leave accrual — first day of each month early morning PKT, e.g. 06:00 PKT / 01:00 UTC.
   - recurring task generation — every morning before office opens, e.g. 08:00 PKT / 03:00 UTC.
 - **Audit log viewer** (`/admin/audit`).
-- **Payroll runs + payslips** UI (`/admin/payroll/*`). Schema is in place (`payroll_runs`, `payslips`). Employee pages only show payroll-ready preview; they do not generate payslips or mark salary paid.
+- **Payroll runs + payslips** UI (`/admin/payroll/runs/*`). Schema is in place (`payroll_runs`, `payslips`). Current payroll export is report-only; it does not generate payslips or mark salary paid.
 - **Super-admin restriction at handler level**. Currently any signed-in user can hit `/admin/*` URLs; RLS on the underlying tables prevents writes by non-super-admins, but a clean redirect to `/dashboard?error=…` for non-admins would be polite. Add to middleware or admin layout.
 - **Task attachments** (Supabase Storage `task-proofs` bucket; metadata table is ready).
 

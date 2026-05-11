@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   actorFromCurrentUser,
   canSeeEmployee,
+  canViewPersonalPayrollDetails,
   isBranchManagerOrAboveRole,
   isGlobalAdminRole,
 } from "@/lib/auth/permissions";
@@ -82,22 +83,23 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
 
   const actor = actorFromCurrentUser(me);
   const supabase = createAdminClient();
+  const includePersonalPayroll = actor.role === "super_admin";
+  const selectColumns: string = `
+    id, user_id, full_name, phone, contact_email,
+    ${includePersonalPayroll ? "first_name, middle_name, last_name, contact_number, cnic, emergency_contact_number, bank_name, bank_branch_name, bank_account_or_iban," : ""}
+    branch_id, department_id, manager_id, shift_id,
+    custom_shift_enabled, custom_shift_start, custom_shift_end,
+    monthly_salary, role_description, employment_status,
+    attendance_exempt, payroll_exempt, remote_allowed, remote_default_days,
+    hire_date, termination_date, created_at, updated_at,
+    app_users:user_id ( email, role ),
+    branches ( name, code ),
+    departments ( name ),
+    shifts ( name )
+  `;
   let query = supabase
     .from("employees")
-    .select(
-      `
-      id, user_id, full_name, phone, contact_email,
-      branch_id, department_id, manager_id, shift_id,
-      custom_shift_enabled, custom_shift_start, custom_shift_end,
-      monthly_salary, role_description, employment_status,
-      attendance_exempt, payroll_exempt, remote_allowed, remote_default_days,
-      hire_date, termination_date, created_at, updated_at,
-      app_users:user_id ( email, role ),
-      branches ( name, code ),
-      departments ( name ),
-      shifts ( name )
-      `
-    )
+    .select(selectColumns)
     .eq("employment_status", "active")
     .order("full_name");
 
@@ -120,6 +122,15 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
     full_name: string;
     phone: string | null;
     contact_email: string | null;
+    first_name?: string | null;
+    middle_name?: string | null;
+    last_name?: string | null;
+    contact_number?: string | null;
+    cnic?: string | null;
+    emergency_contact_number?: string | null;
+    bank_name?: string | null;
+    bank_branch_name?: string | null;
+    bank_account_or_iban?: string | null;
     branch_id: string | null;
     department_id: string | null;
     manager_id: string | null;
@@ -144,7 +155,7 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
     shifts: { name: string } | { name: string }[] | null;
   };
 
-  return ((data ?? []) as Row[]).map((row) => {
+  return ((data ?? []) as unknown as Row[]).map((row) => {
     const appUser = pickOne(row.app_users);
     const branch = pickOne(row.branches);
     const dept = pickOne(row.departments);
@@ -154,7 +165,20 @@ export async function listEmployees(): Promise<EmployeeWithJoins[]> {
       user_id: row.user_id,
       full_name: row.full_name,
       phone: row.phone,
-      contact_email: row.contact_email,
+      contact_email: includePersonalPayroll ? row.contact_email : null,
+      first_name: includePersonalPayroll ? row.first_name ?? null : null,
+      middle_name: includePersonalPayroll ? row.middle_name ?? null : null,
+      last_name: includePersonalPayroll ? row.last_name ?? null : null,
+      contact_number: includePersonalPayroll ? row.contact_number ?? null : null,
+      cnic: includePersonalPayroll ? row.cnic ?? null : null,
+      emergency_contact_number: includePersonalPayroll
+        ? row.emergency_contact_number ?? null
+        : null,
+      bank_name: includePersonalPayroll ? row.bank_name ?? null : null,
+      bank_branch_name: includePersonalPayroll ? row.bank_branch_name ?? null : null,
+      bank_account_or_iban: includePersonalPayroll
+        ? row.bank_account_or_iban ?? null
+        : null,
       branch_id: row.branch_id,
       department_id: row.department_id,
       manager_id: row.manager_id,
@@ -200,6 +224,8 @@ export async function getEmployeeProfile(
     .select(
       `
       id, user_id, full_name, phone, contact_email,
+      first_name, middle_name, last_name, contact_number, cnic,
+      emergency_contact_number, bank_name, bank_branch_name, bank_account_or_iban,
       branch_id, department_id, manager_id, shift_id,
       custom_shift_enabled, custom_shift_start, custom_shift_end,
       monthly_salary, role_description, employment_status,
@@ -224,6 +250,15 @@ export async function getEmployeeProfile(
     full_name: string;
     phone: string | null;
     contact_email: string | null;
+    first_name: string | null;
+    middle_name: string | null;
+    last_name: string | null;
+    contact_number: string | null;
+    cnic: string | null;
+    emergency_contact_number: string | null;
+    bank_name: string | null;
+    bank_branch_name: string | null;
+    bank_account_or_iban: string | null;
     branch_id: string | null;
     department_id: string | null;
     manager_id: string | null;
@@ -265,6 +300,12 @@ export async function getEmployeeProfile(
   const userRole = appUser?.role ?? "employee";
 
   const actor = actorFromCurrentUser(me);
+  const canViewPersonalPayroll = canViewPersonalPayrollDetails(actor, {
+    id: row.id,
+    user_id: row.user_id,
+    branch_id: row.branch_id,
+    user_role: userRole,
+  });
   if (
     !canSeeEmployee(actor, {
       id: row.id,
@@ -281,7 +322,20 @@ export async function getEmployeeProfile(
     user_id: row.user_id,
     full_name: row.full_name,
     phone: row.phone,
-    contact_email: row.contact_email,
+    contact_email: canViewPersonalPayroll ? row.contact_email : null,
+    first_name: canViewPersonalPayroll ? row.first_name : null,
+    middle_name: canViewPersonalPayroll ? row.middle_name : null,
+    last_name: canViewPersonalPayroll ? row.last_name : null,
+    contact_number: canViewPersonalPayroll ? row.contact_number : null,
+    cnic: canViewPersonalPayroll ? row.cnic : null,
+    emergency_contact_number: canViewPersonalPayroll
+      ? row.emergency_contact_number
+      : null,
+    bank_name: canViewPersonalPayroll ? row.bank_name : null,
+    bank_branch_name: canViewPersonalPayroll ? row.bank_branch_name : null,
+    bank_account_or_iban: canViewPersonalPayroll
+      ? row.bank_account_or_iban
+      : null,
     branch_id: row.branch_id,
     department_id: row.department_id,
     manager_id: row.manager_id,
