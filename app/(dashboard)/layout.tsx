@@ -5,6 +5,7 @@ import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/profile", label: "My Profile" },
   { href: "/calendar", label: "Calendar" },
   { href: "/attendance", label: "Attendance" },
   { href: "/tasks", label: "Tasks" },

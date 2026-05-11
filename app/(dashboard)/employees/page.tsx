@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listEmployees, isSupabaseConfigured } from "@/lib/db/queries";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
+import { personalProfileCompletionStatus } from "@/lib/employees/personal-profile";
 import type { EmployeeWithJoins } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -90,6 +91,7 @@ export default async function EmployeesPage() {
               <Th>Department</Th>
               <Th>Role</Th>
               <Th>Shift</Th>
+              {isSuperAdmin && <Th>Profile</Th>}
               {isSuperAdmin && <Th className="text-right">Salary (PKR)</Th>}
               <Th>Remote days</Th>
               <Th>Flags</Th>
@@ -121,6 +123,11 @@ export default async function EmployeesPage() {
                 </Td>
                 <Td>{e.shift_name ?? "—"}</Td>
                 {isSuperAdmin && (
+                  <Td>
+                    <ProfileCompletionBadge employee={e} />
+                  </Td>
+                )}
+                {isSuperAdmin && (
                   <Td className="text-right tabular-nums">
                     {PKR.format(e.monthly_salary)}
                   </Td>
@@ -142,7 +149,7 @@ export default async function EmployeesPage() {
             ))}
             {employees.length === 0 && (
               <tr>
-                <td colSpan={isSuperAdmin ? 8 : 7} className="px-4 py-6 text-center text-sm text-gray-500">
+                <td colSpan={isSuperAdmin ? 9 : 7} className="px-4 py-6 text-center text-sm text-gray-500">
                   No employees visible to your account.
                 </td>
               </tr>
@@ -151,6 +158,21 @@ export default async function EmployeesPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+function ProfileCompletionBadge({ employee }: { employee: EmployeeWithJoins }) {
+  const completion = personalProfileCompletionStatus(employee);
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+        completion.complete
+          ? "bg-green-100 text-green-700"
+          : "bg-amber-100 text-amber-800"
+      }`}
+    >
+      {completion.complete ? "complete" : "missing"}
+    </span>
   );
 }
 

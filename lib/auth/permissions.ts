@@ -113,6 +113,21 @@ export function canEditSensitiveEmployeeFields(
   return actor.role === "admin_hr" && target.user_role !== "super_admin";
 }
 
+export function canViewPersonalPayrollDetails(
+  actor: ActorForPermissions,
+  target: TargetEmployeeForPermissions
+): boolean {
+  if (!actor.is_active) return false;
+  return actor.role === "super_admin" || actor.employee_id === target.id;
+}
+
+export function canEditPersonalPayrollDetails(
+  actor: ActorForPermissions,
+  target: TargetEmployeeForPermissions
+): boolean {
+  return canViewPersonalPayrollDetails(actor, target);
+}
+
 export function canOverrideAttendance(
   actor: ActorForPermissions,
   target: TargetEmployeeForPermissions

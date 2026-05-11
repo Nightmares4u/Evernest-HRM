@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Chip, StatusChip } from "@/components/StatusChip";
 import { updateEmployee } from "@/app/(dashboard)/admin/employees/actions";
+import { updatePersonalPayrollProfile } from "@/app/(dashboard)/profile/actions";
 import { overrideAttendanceRecord } from "@/app/(dashboard)/attendance/actions";
 import {
   dateRangeToTimestamps,
@@ -23,6 +24,13 @@ import {
 } from "@/lib/db/queries";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import { listHolidays, type HolidayRowVM } from "@/lib/db/payroll";
+import {
+  personalProfileCompletionStatus,
+  personalProfileFieldLabel,
+  PERSONAL_PROFILE_FIELDS,
+  REQUIRED_PERSONAL_PROFILE_FIELDS,
+  type PersonalProfileField,
+} from "@/lib/employees/personal-profile";
 import { buildPayrollPreview, type PayrollPreview } from "@/lib/payroll/preview";
 import {
   listDoneTasks,
@@ -211,6 +219,8 @@ export default async function EmployeeControlPage({
         shifts={shifts}
         employees={employees.filter((candidate) => candidate.id !== employee.id)}
       />
+
+      {isSuperAdmin && <PersonalPayrollPanel employee={employee} />}
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Present" value={yearTotals.present} tone="green" />
@@ -476,6 +486,93 @@ function ProfilePanel({
         </form>
       )}
     </section>
+  );
+}
+
+function PersonalPayrollPanel({
+  employee,
+}: {
+  employee: Awaited<ReturnType<typeof getEmployeeProfile>>;
+}) {
+  if (!employee) return null;
+  const completion = personalProfileCompletionStatus(employee);
+  return (
+    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700">
+            Personal and payroll forwarding details
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Visible to super-admin only. CNIC and bank values are never written to audit logs.
+          </p>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-medium ${
+            completion.complete
+              ? "bg-green-100 text-green-700"
+              : "bg-amber-100 text-amber-800"
+          }`}
+        >
+          {completion.complete ? "Complete" : "Missing required fields"}
+        </span>
+      </div>
+      {!completion.complete && (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Missing: {completion.missingLabels.join(", ")}
+        </p>
+      )}
+      <form action={updatePersonalPayrollProfile} className="mt-5 grid gap-3 md:grid-cols-2">
+        <input type="hidden" name="employee_id" value={employee.id} />
+        <input type="hidden" name="redirect_to" value={`/admin/employees/${employee.id}`} />
+        {PERSONAL_PROFILE_FIELDS.map((field) => (
+          <PersonalProfileInput
+            key={field}
+            field={field}
+            value={employee[field] ?? ""}
+          />
+        ))}
+        <Field label="Admin correction reason">
+          <input
+            name="reason"
+            required
+            className={INPUT_CLASS}
+            placeholder="Employee correction, bank detail update..."
+          />
+        </Field>
+        <div className="flex items-end justify-end md:col-span-2">
+          <button
+            type="submit"
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+          >
+            Save personal details
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function PersonalProfileInput({
+  field,
+  value,
+}: {
+  field: PersonalProfileField;
+  value: string;
+}) {
+  const required = REQUIRED_PERSONAL_PROFILE_FIELDS.includes(
+    field as (typeof REQUIRED_PERSONAL_PROFILE_FIELDS)[number]
+  );
+  return (
+    <Field label={personalProfileFieldLabel(field)}>
+      <input
+        name={field}
+        type={field === "contact_email" ? "email" : "text"}
+        required={required}
+        defaultValue={value}
+        className={INPUT_CLASS}
+      />
+    </Field>
   );
 }
 

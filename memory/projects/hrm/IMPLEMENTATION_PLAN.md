@@ -61,12 +61,13 @@
 - Approval creates `attendance_records` rows with `status='on_leave'` and decrements `leave_balances.used`.
 - Cron: `monthly_leave_accrual` (`1 19 28-31 * *` UTC + in-handler last-day check).
 
-### Day 5 — Payroll CSV export
+### Day 5 — Payroll preview + export
 
 - `/admin/payroll?month=YYYY-MM`.
 - Per-employee compute per `HRM_MASTER_CONTEXT.md` §7 (dual `/30` + `/26`).
 - Marketing employees: full salary, deduction_days = 0.
-- CSV download.
+- `/admin/payroll/export` MVP: printable payroll-ready report plus CSV download. Monthly uses the existing preview logic; custom ranges split base pay by month and use date-month daily rates for deductions; yearly aggregates Jan-Dec monthly rows. No bank transfer, paid-status, XLSX, or payslip generation yet.
+- Employee self-profile MVP: `/profile` lets each employee maintain required HR/payroll forwarding details. Super-admins can correct the same details from `/admin/employees/[id]`. Branch/assistant managers are intentionally blocked from CNIC/banking visibility. Payroll export includes contact/CNIC/banking columns for bank/accounting forwarding.
 
 ### Day 6 — Polish + edge cases + UAT
 
