@@ -1,0 +1,82 @@
+# CRM Board
+
+## Backlog
+
+- Finalize MVP branch scope
+- Finalize MVP product scope
+- Choose first 2-3 WhatsApp numbers for Stage 1
+- Map first WhatsApp numbers to products/campaigns/branches
+- Decide WhatsApp Cloud API direct versus BSP
+- Confirm Stage 1 greeting text
+- Define mandatory fields before assignment
+- Define low-confidence review owner
+- Confirm initial agents and branch owners
+- Map current WhatsApp numbers
+- Map current Meta campaigns
+- Define lead quality labels
+- Define high-priority lead criteria
+- Define sales lead statuses
+- Define case/application statuses
+- Define document checklist templates
+- Define invoice numbering format
+- Define payment methods
+- Define role permissions
+- Decide same HRM repo versus separate CRM repo
+- Audit candidate CRM repos if provided
+
+## Planning
+
+- CRM master context
+- Project charter
+- WhatsApp and Meta pipeline
+- Stage 1 WhatsApp intake
+- Product requirements
+- Conceptual data model
+- MVP scope
+- CRM/HRM integration
+- Reporting KPIs
+- Automation plan
+- Repo audit criteria
+- Open questions
+- Implementation plan
+
+## Ready For Decision
+
+- WhatsApp-first approach
+- Postgres/Supabase data foundation
+- HRM as employee/task/payroll source
+- No chatbot in MVP
+- No full WhatsApp API before pipeline clarity
+- Manual/CSV campaign data before Meta API if needed
+- Hybrid multiple-number strategy
+- Rule-based parsing before Gemini fallback
+- Raw inbox before qualified CRM lead
+
+## Ready For Build
+
+None yet.
+
+Implementation should wait until planning review and key decisions are complete.
+
+## In Progress
+
+- Initial CRM planning documentation
+
+## Done
+
+- CRM planning directory created
+- Initial planning files drafted
+- Stage 1 WhatsApp intake plan drafted
+- Stage 1 data model additions drafted
+- Stage 1 MVP boundaries drafted
+
+## Risks
+
+- WhatsApp attribution may be weak without number/campaign discipline.
+- Existing WhatsApp numbers may be staff-owned or inconsistently used.
+- A generic CRM repo may fight EN's WhatsApp-first workflow.
+- Combining sales statuses and case statuses may create reporting confusion.
+- Full automation too early may recreate prior low-quality lead clogging.
+- Duplicate HRM employee/branch tables would create long-term data drift.
+- Using Gemini on every message may create avoidable cost.
+- Treating every "hi/details?" as a qualified lead will pollute CRM metrics.
