@@ -1,5 +1,13 @@
 # MVP Scope
 
+> **Locked 2026-05-12.** Stage 1 scope is in `STAGE_1_DECISIONS.md`
+> and `CODEX_STAGE_1_PACKET.md`. Stage 1 ships a **read-only**
+> WhatsApp pipeline: webhook intake, raw inbox, parser, assignment,
+> human follow-up. Outbound WhatsApp send, Gemini, cases, invoices,
+> documents, commissions, and Meta spend sync are all deferred.
+> The remainder of this document describes the larger MVP envelope
+> that Stage 1 is the first slice of.
+
 ## MVP Goal
 
 Build a CRM that lets EN Consultants run a real WhatsApp-first lead and case workflow with clear ownership, follow-up discipline, basic revenue tracking, and management visibility.

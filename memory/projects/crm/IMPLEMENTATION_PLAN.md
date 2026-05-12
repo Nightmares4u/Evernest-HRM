@@ -4,9 +4,14 @@
 
 Do not implement app code until planning is approved and key open questions are answered.
 
+**Stage 1 status (2026-05-12):** Phase 0 and Phase 1 are complete.
+Stage 1 decisions are locked in `STAGE_1_DECISIONS.md`. The build spec
+lives in `CODEX_STAGE_1_PACKET.md` and supersedes the phase-by-phase
+ordering below for Stage 1 work.
+
 ## Phase 0: Planning Base
 
-Status: In progress
+Status: Complete
 
 Deliverables:
 
@@ -26,19 +31,22 @@ Deliverables:
 
 ## Phase 1: Decisions Before Build
 
-Required decisions:
+Status: Complete for Stage 1. Locked answers in `STAGE_1_DECISIONS.md`.
 
-- Same HRM app/repo or separate CRM repo
-- Supabase project strategy
-- Shared auth/user/branch model
-- MVP office scope
-- MVP products
-- Lead status model
-- Case conversion rule
-- Document checklist depth
-- Invoice/payment MVP depth
-- Manual campaign spend versus API sync
-- Whether to audit candidate repos before custom build
+Historical list (for context only):
+
+- Same HRM app/repo or separate CRM repo — same repo (EN HRM)
+- Supabase project strategy — shared with HRM
+- Shared auth/user/branch model — yes, reuse HRM tables
+- MVP office scope — Karachi + Lahore only
+- MVP products — Italy, Korea, B2B
+- Lead status model — see `CODEX_STAGE_1_PACKET.md` § 3.1
+- Case conversion rule — deferred (out of Stage 1)
+- Document checklist depth — deferred (out of Stage 1)
+- Invoice/payment MVP depth — deferred (out of Stage 1)
+- Manual campaign spend versus API sync — manual, deferred
+- Whether to audit candidate repos before custom build —
+  custom build inside EN HRM, no fork
 
 ## Phase 2: Data Model Finalization
 

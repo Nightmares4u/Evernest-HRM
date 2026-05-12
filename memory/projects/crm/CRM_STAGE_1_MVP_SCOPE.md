@@ -1,5 +1,19 @@
 # CRM Stage 1 MVP Scope
 
+> **Locked 2026-05-12.** See `STAGE_1_DECISIONS.md` for the
+> authoritative answer list and `CODEX_STAGE_1_PACKET.md` for the
+> build spec. Key corrections to this document:
+> - **Gemini fallback is OUT of Stage 1.** Parser + manual review
+>   queue only. Moves to Stage 1.5.
+> - **WhatsApp send is OUT of Stage 1.** Webhook intake is real;
+>   outbound send is mock/log-only. Real send moves to Stage 1.5.
+> - **CRM Chat UI (agent reply from CRM) is OUT of Stage 1.** Stage
+>   1 is read-only on the outbound side; agents reply manually via
+>   WhatsApp outside CRM.
+> - Mandatory fields before raw → lead promotion: country + city.
+> - Confidence thresholds: ≥ 0.80 auto-promote, 0.50–0.79
+>   needs_review, < 0.50 awaiting_details.
+
 To ensure rapid delivery and prevent scope creep, Stage 1 focuses strictly on the **WhatsApp Intake -> Qualification -> Assignment -> Human Follow-up** pipeline. 
 
 ## ✅ IN SCOPE (Stage 1)

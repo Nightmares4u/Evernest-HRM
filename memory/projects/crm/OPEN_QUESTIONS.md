@@ -1,5 +1,11 @@
 # Open Questions
 
+**Status:** Stage 1 questions are resolved. See `STAGE_1_DECISIONS.md`
+for locked answers. The list below is preserved as the historical
+question set and as the backlog for Stage 1.5+. Items already answered
+for Stage 1 are not re-listed; questions kept here are either
+deferred or scoped to later stages.
+
 ## Business and Operations
 
 1. Which offices should be live in CRM MVP: Karachi only, Karachi + Lahore, or all active/satellite teams?

@@ -1,5 +1,19 @@
 # CRM Architecture Decision Record
 
+> **Stage 1 note (2026-05-12):** Stage 1 decisions are locked in
+> `STAGE_1_DECISIONS.md`. Where this file conflicts with that one,
+> the locked decisions win. Key corrections applied below:
+> - HRM tables are unprefixed (`employees`, `branches`,
+>   `app_users`) — there is no `hrm_employees` or `hrm_clients`
+>   table in the repo.
+> - `user_role` values in this repo are `super_admin | admin_hr |
+>   branch_manager | assistant_manager | manager | employee |
+>   team_member`. Stage 1 does not add new roles.
+> - Vercel function timeout is 300s by default with Fluid Compute;
+>   the older 10–15s claim below is outdated.
+> - Gemini fallback is **not** in Stage 1 (deferred to Stage 1.5).
+> - Stage 1 WhatsApp send path is read-only / mock send.
+
 ## 1. Context and Goal
 EN Consultants requires a CRM to manage study visa, immigration, and B2B leads. Previous generic CRMs failed because they assumed a Western, form-first, email-centric funnel. The reality of the Pakistani market is **WhatsApp-first**. The CRM must act as a control tower for WhatsApp communications, handling raw intake, automated structured qualification, and intelligent routing before a human agent takes over.
 

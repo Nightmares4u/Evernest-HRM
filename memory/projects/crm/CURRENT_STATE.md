@@ -2,11 +2,14 @@
 
 ## Status
 
-CRM planning base has started.
+CRM planning base complete.
 
-No app code should be implemented yet.
+Stage 1 decisions locked on 2026-05-12 — see `STAGE_1_DECISIONS.md`.
+Implementation spec for Codex — see `CODEX_STAGE_1_PACKET.md`.
 
-Stage 1 lead intake planning has been added.
+App code implementation has not started. CRM Stage 1 build begins
+after HRM live baseline is stable; parallel work allowed only if
+fully isolated under `/crm` and `/admin/crm`.
 
 ## Current Goal
 
@@ -27,25 +30,6 @@ Create and review the CRM planning documents before building:
 - Implementation plan
 - CRM board
 
-## Key Decisions Not Yet Made
-
-- Same HRM app/repo versus separate CRM repo
-- CRM database schema integration with HRM
-- Which 2-3 WhatsApp numbers to connect first
-- Which products map to the first connected WhatsApp numbers
-- Whether to use WhatsApp Cloud API direct or a BSP
-- Stage 1 greeting text
-- Mandatory fields before assignment
-- Low-confidence review owner
-- Initial branch owners and agents
-- Final MVP products
-- Final MVP branch scope
-- WhatsApp API timing
-- Meta campaign import/sync timing
-- Lead-to-case conversion rule
-- Document checklist MVP depth
-- Invoice/payment MVP depth
-- Candidate repo audit before custom build
 
 ## Working Philosophy
 
@@ -59,15 +43,9 @@ Create and review the CRM planning documents before building:
 
 ## Next Best Step
 
-Review Stage 1 intake plan with Syed and answer the highest-impact open questions:
-
-1. Which 2-3 WhatsApp numbers should be connected first?
-2. Which products/campaigns/branches map to those numbers?
-3. Who owns the first assignment queues?
-4. What exact greeting should be sent?
-5. Which fields are mandatory before assignment?
-6. Should low-confidence items go to a central queue or branch manager?
-7. Should WhatsApp Cloud API direct or BSP be used?
+Stage 1 decisions are locked. The next concrete action is for Codex to
+work through `CODEX_STAGE_1_PACKET.md` § 15 (Implementation Order),
+starting with migration `0009_crm_init.sql`.
 
 ## Current Stage 1 Boundary
 

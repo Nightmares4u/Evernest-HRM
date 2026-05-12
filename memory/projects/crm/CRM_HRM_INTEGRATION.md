@@ -1,5 +1,21 @@
 # CRM and HRM Integration
 
+> **Locked 2026-05-12.** Stage 1 integration boundaries are in
+> `STAGE_1_DECISIONS.md` and `CODEX_STAGE_1_PACKET.md`. Key
+> corrections to the lists below:
+> - The actual `user_role` enum is `super_admin | admin_hr |
+>   branch_manager | assistant_manager | manager | employee |
+>   team_member`. The roles `b2b_staff`, `ops_staff`, `marketing`,
+>   `finance`, `agent`, `client` mentioned later in this file do
+>   **not** exist in the repo and must not be added in Stage 1.
+>   Map CRM concepts onto existing roles.
+> - Stage 1 CRM does **not** create HRM tasks. CRM follow-ups stay
+>   inside `crm_lead_activities` (and a future `crm_follow_ups`).
+>   HRM task sync with `origin='crm'` is deferred.
+> - CRM agent identity = `employees.id`. When CRM needs an auth
+>   user id (for emails, audit), join through `employees.user_id`
+>   to `app_users.id`.
+
 ## Integration Principle
 
 CRM should integrate with EN HRM conceptually and eventually technically. HRM is the employee, role, attendance, task, and payroll foundation. CRM should not duplicate employee or branch systems unless there is no alternative.

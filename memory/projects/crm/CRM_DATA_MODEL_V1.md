@@ -1,5 +1,16 @@
 # CRM Data Model (V1)
 
+> **Locked 2026-05-12.** The Stage 1 schema of record is in
+> `CODEX_STAGE_1_PACKET.md` § 3. Where this V1 document conflicts,
+> the packet wins. Notable corrections:
+> - HRM tables are unprefixed (`employees`, `branches`, `app_users`).
+>   There is no `hrm_clients` table; converted clients become a
+>   future `crm_cases` table (out of Stage 1).
+> - The packet expands `crm_raw_inbox` with explicit extracted
+>   columns (Stage 1 keeps fields as typed columns, not jsonb, for
+>   query simplicity).
+> - Mandatory promotion fields = country + city only.
+
 This document outlines the proposed Supabase (PostgreSQL) schema for Stage 1 of the EN CRM. It is designed to integrate natively with the existing HRM tables.
 
 ## 1. HRM Linkage (Existing Tables)
