@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import { createManualRawIntake } from "@/app/(dashboard)/admin/crm/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { formatCrmDateTime } from "@/lib/crm/format";
 import {
   CRM_PRODUCT_CATEGORIES,
   CRM_RAW_STATUSES,
@@ -42,9 +43,8 @@ export default async function CrmInboxPage({
   const sp = await searchParams;
   const me = await getCurrentUser();
   if (!me) redirect("/login");
-  if (me.appUser.role !== "super_admin") {
-    redirect("/dashboard?error=Super-admin%20access%20required");
-  }
+  if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
+  const canCreateMockIntake = me.appUser.role === "super_admin";
 
   const [branches, whatsappNumbers, campaignSources, rows] = await Promise.all([
     listCrmBranches(),
@@ -78,63 +78,65 @@ export default async function CrmInboxPage({
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-        <h2 className="text-sm font-semibold text-gray-700">Manual mock intake</h2>
-        <form action={createManualRawIntake} className="mt-4 grid gap-3 lg:grid-cols-6">
-          <Field label="Phone number" className="lg:col-span-2">
-            <input name="sender_phone" required className={INPUT} placeholder="+92..." />
-          </Field>
-          <Field label="WhatsApp number mapping" className="lg:col-span-2">
-            <select name="whatsapp_number_id" className={INPUT}>
-              <option value="">No mapping</option>
-              {whatsappNumbers
-                .filter((number) => number.is_active)
-                .map((number) => (
-                  <option key={number.id} value={number.id}>
-                    {number.label} - {number.display_number}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          <Field label="Campaign/source optional" className="lg:col-span-2">
-            <select name="campaign_source_id" className={INPUT}>
-              <option value="">manual_mock</option>
-              {campaignSources
-                .filter((source) => source.is_active)
-                .map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.label} - {source.platform}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          <Field label="Received at" className="lg:col-span-2">
-            <input
-              type="datetime-local"
-              name="received_at"
-              defaultValue={datetimeLocalPKT()}
-              className={INPUT}
-            />
-          </Field>
-          <Field label="Message text" className="lg:col-span-3">
-            <textarea
-              name="message_text"
-              required
-              rows={3}
-              className={INPUT}
-              placeholder="Student inquiry message"
-            />
-          </Field>
-          <div className="flex items-end">
-            <button
-              type="submit"
-              className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-            >
-              Create raw intake
-            </button>
-          </div>
-        </form>
-      </section>
+      {canCreateMockIntake && (
+        <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+          <h2 className="text-sm font-semibold text-gray-700">Manual mock intake</h2>
+          <form action={createManualRawIntake} className="mt-4 grid gap-3 lg:grid-cols-6">
+            <Field label="Phone number" className="lg:col-span-2">
+              <input name="sender_phone" required className={INPUT} placeholder="+92..." />
+            </Field>
+            <Field label="WhatsApp number mapping" className="lg:col-span-2">
+              <select name="whatsapp_number_id" className={INPUT}>
+                <option value="">No mapping</option>
+                {whatsappNumbers
+                  .filter((number) => number.is_active)
+                  .map((number) => (
+                    <option key={number.id} value={number.id}>
+                      {number.label} - {number.display_number}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Campaign/source optional" className="lg:col-span-2">
+              <select name="campaign_source_id" className={INPUT}>
+                <option value="">manual_mock</option>
+                {campaignSources
+                  .filter((source) => source.is_active)
+                  .map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.label} - {source.platform}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Received at" className="lg:col-span-2">
+              <input
+                type="datetime-local"
+                name="received_at"
+                defaultValue={datetimeLocalPKT()}
+                className={INPUT}
+              />
+            </Field>
+            <Field label="Message text" className="lg:col-span-3">
+              <textarea
+                name="message_text"
+                required
+                rows={3}
+                className={INPUT}
+                placeholder="Student inquiry message"
+              />
+            </Field>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              >
+                Create raw intake
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       <section className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
         <form className="grid gap-3 lg:grid-cols-5">
@@ -222,9 +224,16 @@ export default async function CrmInboxPage({
                 {rows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
                     <Td className="whitespace-nowrap text-gray-500">
-                      {formatDateTimePKT(row.received_at)}
+                      {formatCrmDateTime(row.received_at)}
                     </Td>
-                    <Td className="font-medium text-gray-900">{row.sender_phone}</Td>
+                    <Td className="font-medium text-gray-900">
+                      <Link
+                        href={`/crm/inbox/${row.id}`}
+                        className="text-indigo-600 hover:text-indigo-500"
+                      >
+                        {row.sender_phone}
+                      </Link>
+                    </Td>
                     <Td>
                       {row.whatsapp_number_label ? (
                         <div>
@@ -273,7 +282,12 @@ export default async function CrmInboxPage({
                     </Td>
                     <Td>
                       {row.lead_id ? (
-                        <span className="text-xs text-gray-500">Lead linked</span>
+                        <Link
+                          href={`/crm/leads/${row.lead_id}`}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                        >
+                          Lead linked
+                        </Link>
                       ) : (
                         <span className="text-xs text-gray-400">Placeholder</span>
                       )}
@@ -302,19 +316,6 @@ function datetimeLocalPKT(date = new Date()): string {
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
   const hour = get("hour") === "24" ? "00" : get("hour");
   return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
-}
-
-function formatDateTimePKT(iso: string | null): string {
-  if (!iso) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Karachi",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(iso));
 }
 
 function Field({

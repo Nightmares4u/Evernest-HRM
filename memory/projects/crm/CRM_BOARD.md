@@ -54,13 +54,14 @@
 
 ## Ready For Build
 
-None yet.
-
-Implementation should wait until planning review and key decisions are complete.
+- Real WhatsApp Cloud API/webhook intake
+- Gemini fallback only after rule-based parser review
+- Auto-assignment rules/round-robin
+- HRM task sync for follow-up work
 
 ## In Progress
 
-- Initial CRM planning documentation
+- Stage 1 manual testing and review on `crm-dev`
 
 ## Done
 
@@ -69,6 +70,9 @@ Implementation should wait until planning review and key decisions are complete.
 - Stage 1 WhatsApp intake plan drafted
 - Stage 1 data model additions drafted
 - Stage 1 MVP boundaries drafted
+- Stage 1 Phase 1 schema/types foundation
+- Stage 1 Phase 2 admin config and raw inbox UI
+- Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment
 
 ## Risks
 

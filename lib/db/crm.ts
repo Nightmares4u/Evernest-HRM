@@ -1,10 +1,20 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import type { Branch } from "@/lib/types/hrm";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
+import {
+  actorFromCurrentUser,
+  isBranchManagerOrAboveRole,
+  isGlobalAdminRole,
+  isTeamMemberRole,
+} from "@/lib/auth/permissions";
+import type { Branch, Employee, UserRole } from "@/lib/types/hrm";
 import type {
+  CrmActivityType,
   CrmCampaignSource,
   CrmInitialProductCategory,
   CrmJsonObject,
   CrmJsonValue,
+  CrmLead,
+  CrmLeadActivity,
   CrmRawInbox,
   CrmRawStatus,
   CrmWhatsappNumber,
@@ -33,6 +43,14 @@ export const CRM_RAW_STATUSES: CrmRawStatus[] = [
 export type CrmCampaignPlatform = (typeof CRM_CAMPAIGN_PLATFORMS)[number];
 
 export type BranchRef = Pick<Branch, "id" | "name" | "code">;
+
+export type CrmEmployeeRef = Pick<Employee, "id" | "full_name" | "branch_id"> & {
+  user_id: string;
+  role: UserRole;
+  email: string | null;
+  branch_name: string | null;
+  branch_code: string | null;
+};
 
 export type CrmWhatsappNumberVM = CrmWhatsappNumber & {
   branch_name: string | null;
@@ -69,6 +87,50 @@ export type CrmRawInboxVM = CrmRawInbox & {
   needs_review: boolean;
 };
 
+export type CrmActivityVM = CrmLeadActivity & {
+  activity_label: string;
+  actor_name: string | null;
+};
+
+export type CrmLeadVM = CrmLead & {
+  assigned_agent_name: string | null;
+  assigned_agent_role: UserRole | null;
+  branch_name: string | null;
+  branch_code: string | null;
+  source_whatsapp_label: string | null;
+  source_whatsapp_display_number: string | null;
+  campaign_label: string | null;
+  campaign_platform: string | null;
+  latest_activity_at: string | null;
+  latest_activity_label: string | null;
+};
+
+export type CrmRawInboxDetailVM = CrmRawInboxVM & {
+  lead: CrmLeadVM | null;
+  activities: CrmActivityVM[];
+  messages: Array<{
+    id: string;
+    content: string | null;
+    direction: string;
+    received_at: string | null;
+    created_at: string;
+  }>;
+};
+
+export type CrmLeadDetailVM = CrmLeadVM & {
+  raw_inbox: CrmRawInboxVM | null;
+  activities: CrmActivityVM[];
+  assignments: Array<{
+    id: string;
+    status: string;
+    to_employee_id: string | null;
+    to_employee_name: string | null;
+    from_employee_name: string | null;
+    reason: string | null;
+    created_at: string;
+  }>;
+};
+
 function isSupabaseConfigured(): boolean {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -86,6 +148,46 @@ function metaString(metadata: CrmJsonObject | null | undefined, key: string): st
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function pickOne<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function activityLabel(activityType: CrmActivityType): string {
+  return activityType
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function requireActiveCrmUser(me: CurrentUser | null): CurrentUser {
+  if (!me || !me.appUser.is_active) {
+    throw new Error("CRM access requires an active signed-in user.");
+  }
+  return me;
+}
+
+function canViewCrmLead(me: CurrentUser, lead: Pick<CrmLead, "assigned_agent_id" | "branch_id">): boolean {
+  const actor = actorFromCurrentUser(me);
+  if (isGlobalAdminRole(actor.role)) return true;
+  if (isBranchManagerOrAboveRole(actor.role)) {
+    return Boolean(actor.branch_id && actor.branch_id === lead.branch_id);
+  }
+  if (isTeamMemberRole(actor.role)) {
+    return Boolean(actor.employee_id && actor.employee_id === lead.assigned_agent_id);
+  }
+  return false;
+}
+
+function canViewRawInboxRow(me: CurrentUser, row: CrmRawInboxVM): boolean {
+  const actor = actorFromCurrentUser(me);
+  if (isGlobalAdminRole(actor.role)) return true;
+  if (row.lead_id) {
+    return Boolean(row.branch_id && actor.branch_id && row.branch_id === actor.branch_id);
+  }
+  return false;
+}
+
 export async function listCrmBranches(): Promise<BranchRef[]> {
   if (!isSupabaseConfigured()) return [];
 
@@ -96,6 +198,44 @@ export async function listCrmBranches(): Promise<BranchRef[]> {
     .order("name");
   if (error) throw new Error(`listCrmBranches: ${error.message}`);
   return (data ?? []) as BranchRef[];
+}
+
+export async function listCrmAssignableEmployees(): Promise<CrmEmployeeRef[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("employees")
+    .select("id, user_id, full_name, branch_id, app_users:user_id ( email, role ), branches ( name, code )")
+    .eq("employment_status", "active")
+    .order("full_name");
+  if (error) throw new Error(`listCrmAssignableEmployees: ${error.message}`);
+
+  type Row = Pick<Employee, "id" | "user_id" | "full_name" | "branch_id"> & {
+    app_users:
+      | { email: string | null; role: UserRole }
+      | { email: string | null; role: UserRole }[]
+      | null;
+    branches:
+      | { name: string | null; code: string | null }
+      | { name: string | null; code: string | null }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((row) => {
+    const user = pickOne(row.app_users);
+    const branch = pickOne(row.branches);
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      full_name: row.full_name,
+      branch_id: row.branch_id,
+      role: user?.role ?? "employee",
+      email: user?.email ?? null,
+      branch_name: branch?.name ?? null,
+      branch_code: branch?.code ?? null,
+    };
+  });
 }
 
 export async function listCrmWhatsappNumbers(): Promise<CrmWhatsappNumberVM[]> {
@@ -168,6 +308,7 @@ export async function listCrmRawInbox(
 ): Promise<CrmRawInboxVM[]> {
   if (!isSupabaseConfigured()) return [];
 
+  const me = requireActiveCrmUser(await getCurrentUser());
   const admin = createAdminClient();
   let query = admin
     .from("crm_raw_inbox")
@@ -229,10 +370,215 @@ export async function listCrmRawInbox(
   });
 
   return rows.filter((row) => {
+    if (!canViewRawInboxRow(me, row)) return false;
     if (filters.product && row.product_category !== filters.product) return false;
     if (filters.branch_id && row.branch_id !== filters.branch_id) return false;
     return true;
   });
+}
+
+async function listCrmActivities(filters: {
+  lead_id?: string | null;
+  raw_inbox_id?: string | null;
+}): Promise<CrmActivityVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const admin = createAdminClient();
+  let query = admin
+    .from("crm_lead_activities")
+    .select("*, app_users:actor_user_id ( display_name, email )")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (filters.lead_id && filters.raw_inbox_id) {
+    query = query.or(`lead_id.eq.${filters.lead_id},raw_inbox_id.eq.${filters.raw_inbox_id}`);
+  } else if (filters.lead_id) {
+    query = query.eq("lead_id", filters.lead_id);
+  } else if (filters.raw_inbox_id) {
+    query = query.eq("raw_inbox_id", filters.raw_inbox_id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listCrmActivities: ${error.message}`);
+
+  type Row = CrmLeadActivity & {
+    app_users:
+      | { display_name: string | null; email: string | null }
+      | { display_name: string | null; email: string | null }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((row) => {
+    const actor = pickOne(row.app_users);
+    return {
+      id: row.id,
+      lead_id: row.lead_id,
+      raw_inbox_id: row.raw_inbox_id,
+      activity_type: row.activity_type,
+      actor_user_id: row.actor_user_id,
+      description: row.description,
+      payload: row.payload,
+      created_at: row.created_at,
+      activity_label: activityLabel(row.activity_type),
+      actor_name: actor?.display_name ?? actor?.email ?? null,
+    };
+  });
+}
+
+async function enrichCrmLeads(leads: CrmLead[]): Promise<CrmLeadVM[]> {
+  const [employees, branches, whatsappNumbers, campaignSources] = await Promise.all([
+    listCrmAssignableEmployees(),
+    listCrmBranches(),
+    listCrmWhatsappNumbers(),
+    listCrmCampaignSources(),
+  ]);
+  const employeesById = byId(employees);
+  const branchesById = byId(branches);
+  const numbersById = byId(whatsappNumbers);
+  const campaignsById = byId(campaignSources);
+
+  const activitiesByLead = new Map<string, CrmActivityVM>();
+  await Promise.all(
+    leads.map(async (lead) => {
+      const activities = await listCrmActivities({ lead_id: lead.id });
+      if (activities[0]) activitiesByLead.set(lead.id, activities[0]);
+    })
+  );
+
+  return leads.map((lead) => {
+    const employee = lead.assigned_agent_id
+      ? employeesById.get(lead.assigned_agent_id) ?? null
+      : null;
+    const branch = lead.branch_id ? branchesById.get(lead.branch_id) ?? null : null;
+    const whatsappNumber = lead.source_whatsapp_number_id
+      ? numbersById.get(lead.source_whatsapp_number_id) ?? null
+      : null;
+    const campaign = lead.campaign_source_id
+      ? campaignsById.get(lead.campaign_source_id) ?? null
+      : null;
+    const latestActivity = activitiesByLead.get(lead.id) ?? null;
+
+    return {
+      ...lead,
+      assigned_agent_name: employee?.full_name ?? null,
+      assigned_agent_role: employee?.role ?? null,
+      branch_name: branch?.name ?? null,
+      branch_code: branch?.code ?? null,
+      source_whatsapp_label: whatsappNumber?.label ?? null,
+      source_whatsapp_display_number: whatsappNumber?.display_number ?? null,
+      campaign_label: campaign?.label ?? null,
+      campaign_platform: campaign?.platform ?? null,
+      latest_activity_at: latestActivity?.created_at ?? null,
+      latest_activity_label: latestActivity?.activity_label ?? null,
+    };
+  });
+}
+
+export async function getCrmRawInboxDetail(id: string): Promise<CrmRawInboxDetailVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const rows = await listCrmRawInbox();
+  const row = rows.find((item) => item.id === id) ?? null;
+  if (!row || !canViewRawInboxRow(me, row)) return null;
+
+  const admin = createAdminClient();
+  const [{ data: messageRows, error: messageError }, leadRows, activities] =
+    await Promise.all([
+      admin
+        .from("crm_lead_messages")
+        .select("id, content, direction, received_at, created_at")
+        .eq("raw_inbox_id", id)
+        .order("created_at", { ascending: false }),
+      row.lead_id ? getCrmLeadDetail(row.lead_id) : Promise.resolve(null),
+      listCrmActivities({ raw_inbox_id: id, lead_id: row.lead_id }),
+    ]);
+  if (messageError) throw new Error(`getCrmRawInboxDetail messages: ${messageError.message}`);
+
+  return {
+    ...row,
+    lead: leadRows,
+    activities,
+    messages: (messageRows ?? []) as CrmRawInboxDetailVM["messages"],
+  };
+}
+
+export async function listCrmLeads(): Promise<CrmLeadVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_leads")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`listCrmLeads: ${error.message}`);
+
+  const leads = ((data ?? []) as CrmLead[]).filter((lead) => canViewCrmLead(me, lead));
+  return enrichCrmLeads(leads);
+}
+
+export async function getCrmLeadDetail(id: string): Promise<CrmLeadDetailVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_leads")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`getCrmLeadDetail: ${error.message}`);
+  if (!data) return null;
+
+  const lead = data as CrmLead;
+  if (!canViewCrmLead(me, lead)) return null;
+
+  const [enrichedLead, rawInbox, activities, assignments, employees] = await Promise.all([
+    enrichCrmLeads([lead]).then((rows) => rows[0]),
+    lead.raw_inbox_id ? listCrmRawInbox().then((rows) => rows.find((row) => row.id === lead.raw_inbox_id) ?? null) : null,
+    listCrmActivities({ lead_id: id, raw_inbox_id: lead.raw_inbox_id }),
+    admin
+      .from("crm_lead_assignments")
+      .select("*")
+      .eq("lead_id", id)
+      .order("created_at", { ascending: false }),
+    listCrmAssignableEmployees(),
+  ]);
+
+  if (assignments.error) {
+    throw new Error(`getCrmLeadDetail assignments: ${assignments.error.message}`);
+  }
+
+  const employeesById = byId(employees);
+  type AssignmentRow = {
+    id: string;
+    status: string;
+    to_employee_id: string | null;
+    from_employee_id: string | null;
+    reason: string | null;
+    created_at: string;
+  };
+
+  return {
+    ...enrichedLead,
+    raw_inbox: rawInbox,
+    activities,
+    assignments: ((assignments.data ?? []) as AssignmentRow[]).map((assignment) => ({
+      id: assignment.id,
+      status: assignment.status,
+      to_employee_id: assignment.to_employee_id,
+      to_employee_name: assignment.to_employee_id
+        ? employeesById.get(assignment.to_employee_id)?.full_name ?? null
+        : null,
+      from_employee_name: assignment.from_employee_id
+        ? employeesById.get(assignment.from_employee_id)?.full_name ?? null
+        : null,
+      reason: assignment.reason,
+      created_at: assignment.created_at,
+    })),
+  };
 }
 
 export function normalizeProductCategory(value: string): CrmInitialProductCategory {

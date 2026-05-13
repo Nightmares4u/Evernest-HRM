@@ -24,24 +24,18 @@ intake creation for testing. Real WhatsApp API/webhook integration,
 parser, auto-assignment, Gemini integration, and downstream client/case
 systems remain pending.
 
+Stage 1 Phase 3 has been implemented on `crm-dev`: raw inbox detail,
+structured rule-based parsing for the 7-question reply, raw intake
+promotion to CRM leads, CRM lead list/detail pages, activity timeline
+display, and super-admin manual lead assignment. This remains manual and
+rule-based only; no real WhatsApp API, webhook, Gemini integration,
+auto-assignment engine, invoice/document/client portal, or HRM task sync
+has been added.
+
 ## Current Goal
 
-Create and review the CRM planning documents before building:
-
-- Business context
-- Product charter
-- Requirements
-- WhatsApp-first pipeline
-- Stage 1 WhatsApp intake
-- Data model
-- MVP scope
-- HRM integration
-- Reporting and KPIs
-- Automation plan
-- Repo audit criteria
-- Open questions
-- Implementation plan
-- CRM board
+Review and manually test Stage 1 Phase 3 before building any real
+WhatsApp API, Gemini, auto-assignment, or downstream CRM modules.
 
 
 ## Working Philosophy
@@ -56,16 +50,20 @@ Create and review the CRM planning documents before building:
 
 ## Next Best Step
 
-Manually test the Phase 2 CRM admin/config and raw inbox screens:
+Manually test the Phase 3 CRM intake flow:
 
 - `/admin/crm`
 - `/admin/crm/whatsapp-numbers`
 - `/admin/crm/campaign-sources`
 - `/crm/inbox`
+- `/crm/inbox/[id]`
+- `/crm/leads`
+- `/crm/leads/[id]`
 
 Then continue to the next Stage 1 phase only after approval. Do not
-build the WhatsApp API/webhook, parser, auto-assignment, or Gemini
-integration until Phase 2 is reviewed.
+build the WhatsApp API/webhook, Gemini integration, auto-assignment
+engine, HRM task sync, or downstream client/case/invoice/document system
+until Phase 3 is reviewed.
 
 ## Current Stage 1 Boundary
 

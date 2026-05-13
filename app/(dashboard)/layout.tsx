@@ -11,6 +11,8 @@ const NAV = [
   { href: "/tasks", label: "Tasks" },
   { href: "/tasks/history", label: "My Task History" },
   { href: "/leave", label: "Leave" },
+  { href: "/crm/leads", label: "CRM Leads" },
+  { href: "/crm/inbox", label: "CRM Inbox" },
   { href: "/employees", label: "Employees" },
   { href: "/admin", label: "Admin" },
 ] as const;
@@ -33,7 +35,6 @@ export default async function DashboardLayout({
     : baseNav;
   const adminNavItems = isSuperAdmin
     ? [
-        { href: "/crm/inbox", label: "CRM Inbox" },
         { href: "/admin/crm", label: "Admin CRM" },
         { href: "/admin/holidays", label: "Paid Holidays" },
         { href: "/admin/payroll", label: "Payroll Preview" },

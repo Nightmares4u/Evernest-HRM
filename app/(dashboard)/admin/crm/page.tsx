@@ -4,6 +4,7 @@ import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   listCrmCampaignSources,
+  listCrmLeads,
   listCrmRawInbox,
   listCrmWhatsappNumbers,
 } from "@/lib/db/crm";
@@ -22,10 +23,11 @@ export default async function AdminCrmPage({
     redirect("/dashboard?error=Super-admin%20access%20required");
   }
 
-  const [numbers, sources, inbox] = await Promise.all([
+  const [numbers, sources, inbox, leads] = await Promise.all([
     listCrmWhatsappNumbers(),
     listCrmCampaignSources(),
     listCrmRawInbox(),
+    listCrmLeads(),
   ]);
   const activeNumbers = numbers.filter((number) => number.is_active).length;
   const activeSources = sources.filter((source) => source.is_active).length;
@@ -51,7 +53,7 @@ export default async function AdminCrmPage({
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <AdminCard
           title="WhatsApp Numbers"
           href="/admin/crm/whatsapp-numbers"
@@ -71,10 +73,16 @@ export default async function AdminCrmPage({
           hint={`${needsReview} need review`}
         />
         <AdminCard
+          title="CRM Leads"
+          href="/crm/leads"
+          value={leads.length}
+          hint="Promoted leads"
+        />
+        <AdminCard
           title="Assignment Rules later"
           href="/admin/crm"
           value="Pending"
-          hint="Phase 2 does not assign leads"
+          hint="No auto-assignment yet"
           disabled
         />
       </section>
@@ -84,12 +92,12 @@ export default async function AdminCrmPage({
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Stage 1 status</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Phase 2 creates admin configuration screens, raw inbox visibility,
-              and manual mock intake. Real WhatsApp API, parser, auto-assignment,
-              and Gemini integration remain pending.
+              Phase 3 adds rule-based parsing, raw intake detail, promotion to
+              leads, lead views, and manual assignment. Real WhatsApp API,
+              Gemini, auto-assignment, and HRM task sync remain pending.
             </p>
           </div>
-          <Chip label="Phase 2 foundation" tone="indigo" />
+          <Chip label="Phase 3 CRM intake" tone="indigo" />
         </div>
       </section>
     </div>

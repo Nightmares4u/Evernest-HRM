@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth/require-role";
+import { parseSevenQuestionReply } from "@/lib/crm/parser";
 import {
   CRM_CAMPAIGN_PLATFORMS,
   normalizeProductCategory,
@@ -15,6 +16,7 @@ const ADMIN_CRM_PATH = "/admin/crm";
 const WHATSAPP_PATH = "/admin/crm/whatsapp-numbers";
 const CAMPAIGNS_PATH = "/admin/crm/campaign-sources";
 const INBOX_PATH = "/crm/inbox";
+const LEADS_PATH = "/crm/leads";
 
 function readString(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
@@ -29,6 +31,8 @@ function ok(path: string, message: string): never {
   revalidatePath(WHATSAPP_PATH);
   revalidatePath(CAMPAIGNS_PATH);
   revalidatePath(INBOX_PATH);
+  revalidatePath(LEADS_PATH);
+  revalidatePath(path);
   redirect(`${path}?ok=${encodeURIComponent(message)}`);
 }
 
@@ -228,4 +232,242 @@ export async function createManualRawIntake(formData: FormData) {
   }
 
   ok(INBOX_PATH, "Manual raw intake created.");
+}
+
+export async function parseRawInboxDetails(formData: FormData) {
+  const me = await assertSuperAdmin(INBOX_PATH);
+  const id = readString(formData, "id");
+  if (!id) fail(INBOX_PATH, "Missing raw inbox id.");
+
+  const detailPath = `/crm/inbox/${id}`;
+  const admin = createAdminClient();
+  const { data: raw, error: rawError } = await admin
+    .from("crm_raw_inbox")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (rawError || !raw) {
+    fail(INBOX_PATH, `Raw inbox row not found: ${rawError?.message ?? "missing row"}`);
+  }
+
+  const text = raw.last_message_text ?? raw.first_message_text ?? "";
+  const parsed = parseSevenQuestionReply(text);
+
+  const { error: updateError } = await admin
+    .from("crm_raw_inbox")
+    .update({
+      status: parsed.status,
+      parser_confidence: parsed.confidence,
+      extracted_country: parsed.country_interest,
+      extracted_city: parsed.city,
+      extracted_qualification: parsed.qualification,
+      extracted_marks_cgpa: parsed.marks_or_cgpa,
+      extracted_study_gap: parsed.study_gap,
+      extracted_budget_range: parsed.budget_range,
+      extracted_english_test: parsed.english_test,
+      missing_fields: parsed.missing_fields,
+    })
+    .eq("id", id);
+
+  if (updateError) {
+    fail(detailPath, `Could not store parsed details: ${updateError.message}`);
+  }
+
+  const { error: activityError } = await admin.from("crm_lead_activities").insert({
+    lead_id: raw.lead_id ?? null,
+    raw_inbox_id: id,
+    activity_type:
+      parsed.confidence >= 0.8 ? "parser_succeeded" : "parser_low_confidence",
+    actor_user_id: me.authUserId,
+    description: `Rule parser confidence ${parsed.confidence.toFixed(2)}`,
+    payload: {
+      parser: "structured_7_question_reply",
+      parsed_fields: {
+        country_interest: parsed.country_interest,
+        qualification: parsed.qualification,
+        marks_or_cgpa: parsed.marks_or_cgpa,
+        study_gap: parsed.study_gap,
+        city: parsed.city,
+        budget_range: parsed.budget_range,
+        english_test: parsed.english_test,
+      },
+      missing_fields: parsed.missing_fields,
+    },
+  });
+
+  if (activityError) {
+    fail(detailPath, `Parsed details saved, but activity failed: ${activityError.message}`);
+  }
+
+  ok(detailPath, "Raw details parsed.");
+}
+
+export async function promoteRawInboxToLead(formData: FormData) {
+  const me = await assertSuperAdmin(INBOX_PATH);
+  const id = readString(formData, "id");
+  if (!id) fail(INBOX_PATH, "Missing raw inbox id.");
+
+  const detailPath = `/crm/inbox/${id}`;
+  const admin = createAdminClient();
+  const { data: raw, error: rawError } = await admin
+    .from("crm_raw_inbox")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (rawError || !raw) {
+    fail(INBOX_PATH, `Raw inbox row not found: ${rawError?.message ?? "missing row"}`);
+  }
+  if (raw.lead_id) {
+    redirect(`/crm/leads/${raw.lead_id}?ok=${encodeURIComponent("Raw intake is already promoted.")}`);
+  }
+  if (!raw.extracted_country || !raw.extracted_city) {
+    fail(detailPath, "Country and city are required before promotion. Run Parse Details or review manually.");
+  }
+
+  const [{ data: number }, { data: campaign }] = await Promise.all([
+    raw.whatsapp_number_id
+      ? admin
+          .from("crm_whatsapp_numbers")
+          .select("product_category, default_branch_id")
+          .eq("id", raw.whatsapp_number_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    raw.campaign_source_id
+      ? admin
+          .from("crm_campaign_sources")
+          .select("product_category, default_branch_id")
+          .eq("id", raw.campaign_source_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const branchId = campaign?.default_branch_id ?? number?.default_branch_id ?? null;
+  const productCategory =
+    campaign?.product_category ?? number?.product_category ?? raw.extracted_country;
+
+  const { data: lead, error: leadError } = await admin
+    .from("crm_leads")
+    .insert({
+      raw_inbox_id: id,
+      assigned_agent_id: null,
+      branch_id: branchId,
+      status: "new",
+      customer_phone: raw.sender_phone,
+      customer_name: raw.sender_name ?? null,
+      product_category: productCategory,
+      interested_country: raw.extracted_country,
+      city: raw.extracted_city,
+      last_qualification: raw.extracted_qualification,
+      marks_cgpa: raw.extracted_marks_cgpa,
+      study_gap: raw.extracted_study_gap,
+      budget_range: raw.extracted_budget_range,
+      english_test_status: raw.extracted_english_test,
+      quality_score: raw.parser_confidence,
+      source_whatsapp_number_id: raw.whatsapp_number_id,
+      campaign_source_id: raw.campaign_source_id,
+      next_followup_at: null,
+    })
+    .select("id")
+    .single();
+
+  if (leadError || !lead) {
+    fail(detailPath, `Could not promote lead: ${leadError?.message ?? "unknown error"}`);
+  }
+
+  const [{ error: rawUpdateError }, { error: messageUpdateError }, { error: activityError }] =
+    await Promise.all([
+      admin.from("crm_raw_inbox").update({ lead_id: lead.id, status: "qualified" }).eq("id", id),
+      admin.from("crm_lead_messages").update({ lead_id: lead.id }).eq("raw_inbox_id", id),
+      admin.from("crm_lead_activities").insert({
+        lead_id: lead.id,
+        raw_inbox_id: id,
+        activity_type: "lead_shell_created",
+        actor_user_id: me.authUserId,
+        description: "Lead promoted from raw inbox.",
+        payload: {
+          source: "manual_promotion",
+          raw_inbox_id: id,
+        },
+      }),
+    ]);
+
+  if (rawUpdateError) fail(detailPath, `Lead created, but raw link failed: ${rawUpdateError.message}`);
+  if (messageUpdateError) fail(detailPath, `Lead created, but message link failed: ${messageUpdateError.message}`);
+  if (activityError) fail(detailPath, `Lead created, but activity failed: ${activityError.message}`);
+
+  revalidatePath(INBOX_PATH);
+  revalidatePath(LEADS_PATH);
+  redirect(`/crm/leads/${lead.id}?ok=${encodeURIComponent("Raw intake promoted to lead.")}`);
+}
+
+export async function assignCrmLead(formData: FormData) {
+  const me = await assertSuperAdmin(LEADS_PATH);
+  const leadId = readString(formData, "lead_id");
+  const employeeId = readString(formData, "employee_id");
+  const reason = readString(formData, "reason");
+  if (!leadId) fail(LEADS_PATH, "Missing lead id.");
+  if (!employeeId) fail(`/crm/leads/${leadId}`, "Choose an employee to assign.");
+
+  const detailPath = `/crm/leads/${leadId}`;
+  const admin = createAdminClient();
+  const [{ data: lead, error: leadError }, { data: employee, error: employeeError }] =
+    await Promise.all([
+      admin.from("crm_leads").select("*").eq("id", leadId).maybeSingle(),
+      admin.from("employees").select("id, branch_id").eq("id", employeeId).maybeSingle(),
+    ]);
+
+  if (leadError || !lead) fail(LEADS_PATH, `Lead not found: ${leadError?.message ?? "missing row"}`);
+  if (employeeError || !employee) {
+    fail(detailPath, `Employee not found: ${employeeError?.message ?? "missing row"}`);
+  }
+
+  const nextBranchId = lead.branch_id ?? employee.branch_id ?? null;
+  const nextStatus = lead.status === "new" ? "assigned" : lead.status;
+  const assignmentStatus = lead.assigned_agent_id ? "reassigned" : "assigned";
+
+  const [{ error: updateError }, { error: assignmentError }, { error: activityError }] =
+    await Promise.all([
+      admin
+        .from("crm_leads")
+        .update({
+          assigned_agent_id: employeeId,
+          branch_id: nextBranchId,
+          status: nextStatus,
+        })
+        .eq("id", leadId),
+      admin.from("crm_lead_assignments").insert({
+        lead_id: leadId,
+        status: assignmentStatus,
+        from_employee_id: lead.assigned_agent_id,
+        to_employee_id: employeeId,
+        from_branch_id: lead.branch_id,
+        to_branch_id: nextBranchId,
+        assigned_by: me.authUserId,
+        method: "manual",
+        matched_rule_id: null,
+        reason: reason || "Manual CRM assignment",
+      }),
+      admin.from("crm_lead_activities").insert({
+        lead_id: leadId,
+        raw_inbox_id: lead.raw_inbox_id,
+        activity_type: assignmentStatus,
+        actor_user_id: me.authUserId,
+        description: reason || "Lead assigned manually.",
+        payload: {
+          from_employee_id: lead.assigned_agent_id,
+          to_employee_id: employeeId,
+          from_branch_id: lead.branch_id,
+          to_branch_id: nextBranchId,
+          method: "manual",
+        },
+      }),
+    ]);
+
+  if (updateError) fail(detailPath, `Could not assign lead: ${updateError.message}`);
+  if (assignmentError) fail(detailPath, `Lead assigned, but assignment history failed: ${assignmentError.message}`);
+  if (activityError) fail(detailPath, `Lead assigned, but activity failed: ${activityError.message}`);
+
+  ok(detailPath, "Lead assigned.");
 }
