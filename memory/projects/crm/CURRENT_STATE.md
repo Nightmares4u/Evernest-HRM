@@ -14,10 +14,15 @@ include `next_followup_at` for scheduled human follow-up tracking.
 Stage 1 decisions locked on 2026-05-12 — see `STAGE_1_DECISIONS.md`.
 Implementation spec for Codex — see `CODEX_STAGE_1_PACKET.md`.
 
-Phase 1 implementation has started and remains isolated to CRM schema,
-CRM TypeScript domain types, and CRM planning state notes. No CRM UI,
-WhatsApp API, parser, auto-assignment, Gemini integration, or HRM task
-sync has been built.
+Phase 1 implementation is complete: CRM schema foundation, CRM
+TypeScript domain types, and CRM planning state notes are in place.
+
+Stage 1 Phase 2 admin config/raw inbox UI has been implemented in the
+existing HRM app. It adds super-admin CRM admin screens, WhatsApp number
+mapping, campaign/source mapping, a raw inbox view, and manual/mock raw
+intake creation for testing. Real WhatsApp API/webhook integration,
+parser, auto-assignment, Gemini integration, and downstream client/case
+systems remain pending.
 
 ## Current Goal
 
@@ -51,13 +56,16 @@ Create and review the CRM planning documents before building:
 
 ## Next Best Step
 
-Review and apply the Phase 1 migration when ready:
+Manually test the Phase 2 CRM admin/config and raw inbox screens:
 
-- `supabase/migrations/0009_crm_stage_1_foundation.sql`
+- `/admin/crm`
+- `/admin/crm/whatsapp-numbers`
+- `/admin/crm/campaign-sources`
+- `/crm/inbox`
 
 Then continue to the next Stage 1 phase only after approval. Do not
-build UI, WhatsApp API, parser, or auto-assignment until Phase 1 is
-reviewed.
+build the WhatsApp API/webhook, parser, auto-assignment, or Gemini
+integration until Phase 2 is reviewed.
 
 ## Current Stage 1 Boundary
 

@@ -33,6 +33,8 @@ export default async function DashboardLayout({
     : baseNav;
   const adminNavItems = isSuperAdmin
     ? [
+        { href: "/crm/inbox", label: "CRM Inbox" },
+        { href: "/admin/crm", label: "Admin CRM" },
         { href: "/admin/holidays", label: "Paid Holidays" },
         { href: "/admin/payroll", label: "Payroll Preview" },
       ]
