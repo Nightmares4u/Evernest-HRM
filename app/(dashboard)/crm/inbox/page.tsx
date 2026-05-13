@@ -81,13 +81,19 @@ export default async function CrmInboxPage({
       {canCreateMockIntake && (
         <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
           <h2 className="text-sm font-semibold text-gray-700">Manual mock intake</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Assignment uses the receiving EN number, not the customer's phone.
+          </p>
           <form action={createManualRawIntake} className="mt-4 grid gap-3 lg:grid-cols-6">
-            <Field label="Phone number" className="lg:col-span-2">
+            <Field label="Lead/customer name optional" className="lg:col-span-2">
+              <input name="sender_name" className={INPUT} placeholder="Student name" />
+            </Field>
+            <Field label="Lead/customer phone" className="lg:col-span-2">
               <input name="sender_phone" required className={INPUT} placeholder="+92..." />
             </Field>
-            <Field label="WhatsApp number mapping" className="lg:col-span-2">
+            <Field label="Receiving EN WhatsApp number" className="lg:col-span-2">
               <select name="whatsapp_number_id" className={INPUT}>
-                <option value="">No mapping</option>
+                <option value="">No receiving number selected</option>
                 {whatsappNumbers
                   .filter((number) => number.is_active)
                   .map((number) => (
@@ -210,8 +216,8 @@ export default async function CrmInboxPage({
               <thead className="bg-gray-50">
                 <tr>
                   <Th>Received</Th>
-                  <Th>Phone</Th>
-                  <Th>Incoming number</Th>
+                  <Th>Lead/customer phone</Th>
+                  <Th>Receiving EN number</Th>
                   <Th>Message</Th>
                   <Th>Status</Th>
                   <Th>Product</Th>

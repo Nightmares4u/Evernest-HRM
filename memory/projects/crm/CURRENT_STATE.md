@@ -60,9 +60,19 @@ is no `assigned_employee_id` on `crm_campaign_sources`. The parser
 remains for qualification and reporting only — it is not part of the
 assignment path.
 
+Stage 1 Phase 5 now also supports temporary per-number fallback
+counselor routing. Each `crm_whatsapp_numbers` row can define an active
+`fallback_employee_id` with optional reason/start/end window. When the
+fallback is active and within its time window, new leads from that
+receiving number route to the fallback counselor; otherwise they route
+to the default `assigned_employee_id`. Campaigns still inherit through
+their parent WhatsApp number. Existing assigned leads are not
+automatically reassigned.
+
 ## Current Goal
 
-Review and manually test Stage 1 Phase 5 (number-owner assignment)
+Review and manually test Stage 1 Phase 5 (number-owner assignment and
+per-number temporary fallback routing)
 before building any real WhatsApp API, Gemini, HRM task sync, or
 downstream CRM modules.
 

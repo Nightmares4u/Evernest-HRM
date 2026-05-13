@@ -71,6 +71,11 @@ function parseReceivedAt(value: string): string {
   return dt.toISOString();
 }
 
+function parseOptionalDateTime(value: string): string | null {
+  if (!value) return null;
+  return parseReceivedAt(value);
+}
+
 async function assertSuperAdmin(path: string) {
   return requireSuperAdmin(path);
 }
@@ -129,6 +134,79 @@ export async function updateWhatsappNumberOwner(formData: FormData) {
       ? "WhatsApp number owner updated."
       : "WhatsApp number owner cleared."
   );
+}
+
+export async function updateWhatsappNumberFallback(formData: FormData) {
+  await assertSuperAdmin(WHATSAPP_PATH);
+
+  const id = readString(formData, "id");
+  const fallbackEmployeeId = readString(formData, "fallback_employee_id");
+  const fallbackActive = formData.get("fallback_active") === "on";
+  const fallbackReason = readString(formData, "fallback_reason");
+  const fallbackStartsAt = readString(formData, "fallback_starts_at");
+  const fallbackEndsAt = readString(formData, "fallback_ends_at");
+
+  if (!id) fail(WHATSAPP_PATH, "Missing WhatsApp number id.");
+  if (fallbackActive && !fallbackEmployeeId) {
+    fail(WHATSAPP_PATH, "Choose a fallback counselor before activating fallback.");
+  }
+
+  let startsAt: string | null = null;
+  let endsAt: string | null = null;
+  try {
+    startsAt = parseOptionalDateTime(fallbackStartsAt);
+    endsAt = parseOptionalDateTime(fallbackEndsAt);
+  } catch (error) {
+    fail(
+      WHATSAPP_PATH,
+      error instanceof Error ? error.message : "Fallback date/time is invalid."
+    );
+  }
+  if (startsAt && endsAt && new Date(startsAt) > new Date(endsAt)) {
+    fail(WHATSAPP_PATH, "Fallback start time must be before end time.");
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("crm_whatsapp_numbers")
+    .update({
+      fallback_employee_id: nullable(fallbackEmployeeId),
+      fallback_active: fallbackActive,
+      fallback_reason: nullable(fallbackReason),
+      fallback_starts_at: startsAt,
+      fallback_ends_at: endsAt,
+    })
+    .eq("id", id);
+
+  if (error) fail(WHATSAPP_PATH, `Could not update fallback routing: ${error.message}`);
+  ok(
+    WHATSAPP_PATH,
+    fallbackActive
+      ? "Temporary fallback routing activated."
+      : "Temporary fallback routing saved."
+  );
+}
+
+export async function clearWhatsappNumberFallback(formData: FormData) {
+  await assertSuperAdmin(WHATSAPP_PATH);
+
+  const id = readString(formData, "id");
+  if (!id) fail(WHATSAPP_PATH, "Missing WhatsApp number id.");
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("crm_whatsapp_numbers")
+    .update({
+      fallback_employee_id: null,
+      fallback_active: false,
+      fallback_reason: null,
+      fallback_starts_at: null,
+      fallback_ends_at: null,
+    })
+    .eq("id", id);
+
+  if (error) fail(WHATSAPP_PATH, `Could not clear fallback routing: ${error.message}`);
+  ok(WHATSAPP_PATH, "Temporary fallback routing cleared.");
 }
 
 export async function setWhatsappNumberActive(formData: FormData) {
@@ -264,13 +342,14 @@ export async function setAssignmentRuleActive(formData: FormData) {
 export async function createManualRawIntake(formData: FormData) {
   const me = await assertSuperAdmin(INBOX_PATH);
 
+  const senderName = readString(formData, "sender_name");
   const senderPhone = readString(formData, "sender_phone");
   const messageText = readString(formData, "message_text");
   const whatsappNumberId = readString(formData, "whatsapp_number_id");
   const campaignSourceId = readString(formData, "campaign_source_id");
   const receivedAtRaw = readString(formData, "received_at");
 
-  if (!senderPhone) fail(INBOX_PATH, "Phone number is required.");
+  if (!senderPhone) fail(INBOX_PATH, "Lead/customer phone is required.");
   if (!messageText) fail(INBOX_PATH, "Message text is required.");
 
   let receivedAt: string;
@@ -287,7 +366,7 @@ export async function createManualRawIntake(formData: FormData) {
       whatsapp_number_id: nullable(whatsappNumberId),
       campaign_source_id: nullable(campaignSourceId),
       sender_phone: senderPhone,
-      sender_name: null,
+      sender_name: nullable(senderName),
       status: "raw_new",
       first_message_text: messageText,
       last_message_text: messageText,
@@ -427,7 +506,7 @@ export async function promoteRawInboxToLead(formData: FormData) {
     raw.campaign_source_id
       ? admin
           .from("crm_campaign_sources")
-          .select("product_category, default_branch_id")
+          .select("product_category, default_branch_id, whatsapp_number_id")
           .eq("id", raw.campaign_source_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
@@ -435,6 +514,7 @@ export async function promoteRawInboxToLead(formData: FormData) {
 
   const branchId = campaign?.default_branch_id ?? number?.default_branch_id ?? null;
   const productCategory = campaign?.product_category ?? number?.product_category ?? null;
+  const sourceWhatsappNumberId = raw.whatsapp_number_id ?? campaign?.whatsapp_number_id ?? null;
 
   const ownerMatch = await findSourceOwnerForLead({
     source_whatsapp_number_id: raw.whatsapp_number_id,
@@ -469,7 +549,7 @@ export async function promoteRawInboxToLead(formData: FormData) {
       budget_range: raw.extracted_budget_range,
       english_test_status: raw.extracted_english_test,
       quality_score: raw.parser_confidence,
-      source_whatsapp_number_id: raw.whatsapp_number_id,
+      source_whatsapp_number_id: sourceWhatsappNumberId,
       campaign_source_id: raw.campaign_source_id,
       next_followup_at: null,
     })
@@ -524,10 +604,18 @@ export async function promoteRawInboxToLead(formData: FormData) {
         payload: {
           method: "auto_source_owner",
           via: ownerMatch.via,
+          source_owner_type: ownerMatch.source_owner_type,
           target_employee_id: ownerMatch.target_employee_id,
           target_branch_id: resolvedBranchId,
           whatsapp_number_id: ownerMatch.whatsapp_number_id,
           whatsapp_number_label: ownerMatch.whatsapp_number_label,
+          default_employee_id: ownerMatch.default_employee_id,
+          default_employee_name: ownerMatch.default_employee_name,
+          fallback_employee_id: ownerMatch.fallback_employee_id,
+          fallback_employee_name: ownerMatch.fallback_employee_name,
+          fallback_reason: ownerMatch.fallback_reason,
+          fallback_starts_at: ownerMatch.fallback_starts_at,
+          fallback_ends_at: ownerMatch.fallback_ends_at,
         },
       }),
     ]);
@@ -690,10 +778,18 @@ export async function autoAssignCrmLead(formData: FormData) {
           payload: {
             method: "auto_source_owner",
             via: ownerMatch.via,
+            source_owner_type: ownerMatch.source_owner_type,
             target_employee_id: ownerMatch.target_employee_id,
             target_branch_id: nextBranchId,
             whatsapp_number_id: ownerMatch.whatsapp_number_id,
             whatsapp_number_label: ownerMatch.whatsapp_number_label,
+            default_employee_id: ownerMatch.default_employee_id,
+            default_employee_name: ownerMatch.default_employee_name,
+            fallback_employee_id: ownerMatch.fallback_employee_id,
+            fallback_employee_name: ownerMatch.fallback_employee_name,
+            fallback_reason: ownerMatch.fallback_reason,
+            fallback_starts_at: ownerMatch.fallback_starts_at,
+            fallback_ends_at: ownerMatch.fallback_ends_at,
           },
         }),
       ]);

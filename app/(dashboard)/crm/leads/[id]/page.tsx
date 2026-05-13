@@ -195,8 +195,8 @@ export default async function CrmLeadDetailPage({
                       {assignment.to_employee_name ?? "Unassigned"}
                     </div>
                     <Chip
-                      label={assignmentMethodLabel(assignment.method)}
-                      tone={assignmentMethodTone(assignment.method)}
+                      label={assignmentMethodLabel(assignment.method, assignment.reason)}
+                      tone={assignmentMethodTone(assignment.method, assignment.reason)}
                     />
                   </div>
                   <div className="text-gray-500">{assignment.reason ?? assignment.status}</div>
@@ -219,12 +219,19 @@ export default async function CrmLeadDetailPage({
   );
 }
 
+function isFallbackOwnerAssignment(reason: string | null): boolean {
+  return Boolean(reason && /WhatsApp number fallback/i.test(reason));
+}
+
 function assignmentMethodLabel(
-  method: string | null
+  method: string | null,
+  reason: string | null = null
 ): string {
   switch (method) {
     case "auto_source_owner":
-      return "WhatsApp number owner";
+      return isFallbackOwnerAssignment(reason)
+        ? "Fallback counselor"
+        : "WhatsApp number owner";
     case "auto_rule":
       return "Fallback rule";
     case "manual":
@@ -239,11 +246,12 @@ function assignmentMethodLabel(
 }
 
 function assignmentMethodTone(
-  method: string | null
-): "indigo" | "blue" | "amber" | "gray" {
+  method: string | null,
+  reason: string | null = null
+): "indigo" | "blue" | "amber" | "gray" | "teal" {
   switch (method) {
     case "auto_source_owner":
-      return "indigo";
+      return isFallbackOwnerAssignment(reason) ? "teal" : "indigo";
     case "auto_rule":
       return "amber";
     case "manual":

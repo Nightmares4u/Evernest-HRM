@@ -75,6 +75,7 @@
 - Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment
 - Stage 1 Phase 4 employee-direct assignment rules UI and explicit rule-based auto-assignment
 - Stage 1 Phase 5 WhatsApp number ownership as primary assignment; rules demoted to fallback
+- Stage 1 Phase 5 temporary per-number fallback counselor routing for leave/break coverage
 
 ## Assignment model (Stage 1)
 
@@ -85,6 +86,10 @@
   there is no `assigned_employee_id` on `crm_campaign_sources`.
 - Promotion auto-assigns from the source owner. The lead detail
   "Auto-assign lead" button runs the same waterfall on demand.
+- A WhatsApp number can temporarily route new leads to a per-number
+  fallback counselor using `fallback_employee_id`, `fallback_active`,
+  optional reason, and optional start/end timestamps. This does not
+  change the default owner and does not reassign existing leads.
 - The rule engine remains as fallback for advanced/edge cases (shared
   numbers, transferred campaigns, B2B routing). It is not the default
   path.

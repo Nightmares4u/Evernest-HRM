@@ -88,10 +88,10 @@ export default async function CrmRawInboxDetailPage({
             <Chip label={row.status} tone={STATUS_TONES[row.status] ?? "gray"} />
           </div>
           <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Info label="Phone number" value={row.sender_phone} />
+            <Info label="Lead/customer phone" value={row.sender_phone} />
             <Info label="Received" value={formatCrmDateTime(row.received_at)} />
             <Info
-              label="WhatsApp mapping"
+              label="Receiving EN WhatsApp number"
               value={
                 row.whatsapp_number_label
                   ? `${row.whatsapp_number_label} (${row.whatsapp_display_number})`

@@ -87,6 +87,11 @@ export type CrmWhatsappNumber = {
   default_branch_id: string | null;
   default_department_id: string | null;
   assigned_employee_id: string | null;
+  fallback_employee_id: string | null;
+  fallback_active: boolean;
+  fallback_reason: string | null;
+  fallback_starts_at: string | null;
+  fallback_ends_at: string | null;
   greeting_template: string | null;
   is_api_connected: boolean;
   is_active: boolean;
