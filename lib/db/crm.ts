@@ -9,6 +9,7 @@ import {
 import type { Branch, Employee, UserRole } from "@/lib/types/hrm";
 import type {
   CrmActivityType,
+  CrmAssignmentMethod,
   CrmAssignmentRule,
   CrmCampaignSource,
   CrmInitialProductCategory,
@@ -56,6 +57,8 @@ export type CrmEmployeeRef = Pick<Employee, "id" | "full_name" | "branch_id"> & 
 export type CrmWhatsappNumberVM = CrmWhatsappNumber & {
   branch_name: string | null;
   branch_code: string | null;
+  assigned_employee_name: string | null;
+  assigned_employee_branch_code: string | null;
 };
 
 export type CrmCampaignSourceVM = CrmCampaignSource & {
@@ -136,6 +139,7 @@ export type CrmLeadDetailVM = CrmLeadVM & {
   assignments: Array<{
     id: string;
     status: string;
+    method: CrmAssignmentMethod | null;
     to_employee_id: string | null;
     to_employee_name: string | null;
     from_employee_name: string | null;
@@ -255,25 +259,33 @@ export async function listCrmWhatsappNumbers(): Promise<CrmWhatsappNumberVM[]> {
   if (!isSupabaseConfigured()) return [];
 
   const admin = createAdminClient();
-  const [{ data: numbers, error: numbersError }, branches] = await Promise.all([
-    admin
-      .from("crm_whatsapp_numbers")
-      .select("*")
-      .order("is_active", { ascending: false })
-      .order("label"),
-    listCrmBranches(),
-  ]);
+  const [{ data: numbers, error: numbersError }, branches, employees] =
+    await Promise.all([
+      admin
+        .from("crm_whatsapp_numbers")
+        .select("*")
+        .order("is_active", { ascending: false })
+        .order("label"),
+      listCrmBranches(),
+      listCrmAssignableEmployees(),
+    ]);
   if (numbersError) throw new Error(`listCrmWhatsappNumbers: ${numbersError.message}`);
 
   const branchesById = byId(branches);
+  const employeesById = byId(employees);
   return ((numbers ?? []) as CrmWhatsappNumber[]).map((number) => {
     const branch = number.default_branch_id
       ? branchesById.get(number.default_branch_id) ?? null
+      : null;
+    const employee = number.assigned_employee_id
+      ? employeesById.get(number.assigned_employee_id) ?? null
       : null;
     return {
       ...number,
       branch_name: branch?.name ?? null,
       branch_code: branch?.code ?? null,
+      assigned_employee_name: employee?.full_name ?? null,
+      assigned_employee_branch_code: employee?.branch_code ?? null,
     };
   });
 }
@@ -645,6 +657,7 @@ export async function getCrmLeadDetail(id: string): Promise<CrmLeadDetailVM | nu
   type AssignmentRow = {
     id: string;
     status: string;
+    method: CrmAssignmentMethod | null;
     to_employee_id: string | null;
     from_employee_id: string | null;
     reason: string | null;
@@ -658,6 +671,7 @@ export async function getCrmLeadDetail(id: string): Promise<CrmLeadDetailVM | nu
     assignments: ((assignments.data ?? []) as AssignmentRow[]).map((assignment) => ({
       id: assignment.id,
       status: assignment.status,
+      method: assignment.method ?? null,
       to_employee_id: assignment.to_employee_id,
       to_employee_name: assignment.to_employee_id
         ? employeesById.get(assignment.to_employee_id)?.full_name ?? null

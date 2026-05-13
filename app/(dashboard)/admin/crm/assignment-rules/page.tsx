@@ -61,6 +61,18 @@ export default async function CrmAssignmentRulesPage({
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Rules are fallback routing. Normal assignment should come from
+        WhatsApp number ownership — set it on{" "}
+        <Link
+          href="/admin/crm/whatsapp-numbers"
+          className="font-medium underline underline-offset-2"
+        >
+          WhatsApp numbers
+        </Link>
+        . Rules only run when no number/campaign owner matches the lead.
+      </div>
+
       <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
         <h2 className="text-sm font-semibold text-gray-700">Create rule</h2>
         <p className="mt-1 text-sm text-gray-500">

@@ -40,10 +40,31 @@ campaign/source, then assign directly to a required employee/counselor.
 Branch is only optional matching metadata in Stage 1, not the primary
 assignment target. Assignment does not auto-run after promotion yet.
 
+Stage 1 Phase 5 has been implemented on `crm-dev`: WhatsApp number
+ownership is now the primary assignment model. Each WhatsApp number can
+have an `assigned_employee_id`. On promotion, the raw intake's source
+WhatsApp number (or its campaign's parent WhatsApp number) is resolved
+and the lead is auto-assigned to that counselor using
+`method = auto_source_owner`. The existing rule engine remains
+unchanged and runs only as a fallback when no source owner matches. The
+"Auto-assign by rules" button on the lead detail page is now
+"Auto-assign lead" and runs the waterfall:
+
+  1. lead already assigned → no-op
+  2. WhatsApp number owner (lead → number, else campaign → number)
+  3. assignment rule engine (priority + specificity, unchanged)
+  4. otherwise: sent_to_review
+
+Campaigns inherit ownership through their parent WhatsApp number. There
+is no `assigned_employee_id` on `crm_campaign_sources`. The parser
+remains for qualification and reporting only — it is not part of the
+assignment path.
+
 ## Current Goal
 
-Review and manually test Stage 1 Phase 4 before building any real
-WhatsApp API, Gemini, HRM task sync, or downstream CRM modules.
+Review and manually test Stage 1 Phase 5 (number-owner assignment)
+before building any real WhatsApp API, Gemini, HRM task sync, or
+downstream CRM modules.
 
 
 ## Working Philosophy
@@ -58,7 +79,7 @@ WhatsApp API, Gemini, HRM task sync, or downstream CRM modules.
 
 ## Next Best Step
 
-Manually test the Phase 4 CRM assignment flow:
+Manually test the Phase 5 number-ownership CRM assignment flow:
 
 - `/admin/crm`
 - `/admin/crm/whatsapp-numbers`

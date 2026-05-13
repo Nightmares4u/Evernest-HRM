@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth/require-role";
-import { findCrmAssignmentRuleForLead } from "@/lib/crm/assignment";
+import {
+  findCrmAssignmentRuleForLead,
+  findSourceOwnerForLead,
+} from "@/lib/crm/assignment";
 import { parseSevenQuestionReply } from "@/lib/crm/parser";
 import {
   CRM_CAMPAIGN_PLATFORMS,
@@ -80,6 +83,7 @@ export async function createWhatsappNumber(formData: FormData) {
   const phoneNumberId = readString(formData, "phone_number_id");
   const productCategory = normalizeProductCategory(readString(formData, "product_category"));
   const branchId = readString(formData, "default_branch_id");
+  const assignedEmployeeId = readString(formData, "assigned_employee_id");
   const notes = readString(formData, "notes");
   const isActive = formData.get("is_active") === "on";
 
@@ -94,6 +98,7 @@ export async function createWhatsappNumber(formData: FormData) {
     product_category: productCategory,
     default_branch_id: nullable(branchId),
     default_department_id: null,
+    assigned_employee_id: nullable(assignedEmployeeId),
     greeting_template: null,
     is_api_connected: false,
     is_active: isActive,
@@ -102,6 +107,28 @@ export async function createWhatsappNumber(formData: FormData) {
 
   if (error) fail(WHATSAPP_PATH, `Could not add WhatsApp number: ${error.message}`);
   ok(WHATSAPP_PATH, "WhatsApp number added.");
+}
+
+export async function updateWhatsappNumberOwner(formData: FormData) {
+  await assertSuperAdmin(WHATSAPP_PATH);
+
+  const id = readString(formData, "id");
+  const assignedEmployeeId = readString(formData, "assigned_employee_id");
+  if (!id) fail(WHATSAPP_PATH, "Missing WhatsApp number id.");
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("crm_whatsapp_numbers")
+    .update({ assigned_employee_id: nullable(assignedEmployeeId) })
+    .eq("id", id);
+
+  if (error) fail(WHATSAPP_PATH, `Could not update WhatsApp number owner: ${error.message}`);
+  ok(
+    WHATSAPP_PATH,
+    assignedEmployeeId
+      ? "WhatsApp number owner updated."
+      : "WhatsApp number owner cleared."
+  );
 }
 
 export async function setWhatsappNumberActive(formData: FormData) {
@@ -409,13 +436,28 @@ export async function promoteRawInboxToLead(formData: FormData) {
   const branchId = campaign?.default_branch_id ?? number?.default_branch_id ?? null;
   const productCategory = campaign?.product_category ?? number?.product_category ?? null;
 
+  const ownerMatch = await findSourceOwnerForLead({
+    source_whatsapp_number_id: raw.whatsapp_number_id,
+    campaign_source_id: raw.campaign_source_id,
+  });
+
+  let resolvedBranchId = branchId;
+  if (ownerMatch.matched) {
+    const { data: ownerEmployee } = await admin
+      .from("employees")
+      .select("id, branch_id")
+      .eq("id", ownerMatch.target_employee_id)
+      .maybeSingle();
+    resolvedBranchId = branchId ?? ownerEmployee?.branch_id ?? null;
+  }
+
   const { data: lead, error: leadError } = await admin
     .from("crm_leads")
     .insert({
       raw_inbox_id: id,
-      assigned_agent_id: null,
-      branch_id: branchId,
-      status: "new",
+      assigned_agent_id: ownerMatch.matched ? ownerMatch.target_employee_id : null,
+      branch_id: resolvedBranchId,
+      status: ownerMatch.matched ? "assigned" : "new",
       customer_phone: raw.sender_phone,
       customer_name: raw.sender_name ?? null,
       product_category: productCategory,
@@ -459,9 +501,50 @@ export async function promoteRawInboxToLead(formData: FormData) {
   if (messageUpdateError) fail(detailPath, `Lead created, but message link failed: ${messageUpdateError.message}`);
   if (activityError) fail(detailPath, `Lead created, but activity failed: ${activityError.message}`);
 
+  if (ownerMatch.matched) {
+    const [{ error: assignmentError }, { error: assignActivityError }] = await Promise.all([
+      admin.from("crm_lead_assignments").insert({
+        lead_id: lead.id,
+        status: "assigned",
+        from_employee_id: null,
+        to_employee_id: ownerMatch.target_employee_id,
+        from_branch_id: null,
+        to_branch_id: resolvedBranchId,
+        assigned_by: me.authUserId,
+        method: "auto_source_owner",
+        matched_rule_id: null,
+        reason: ownerMatch.reason,
+      }),
+      admin.from("crm_lead_activities").insert({
+        lead_id: lead.id,
+        raw_inbox_id: id,
+        activity_type: "assigned",
+        actor_user_id: me.authUserId,
+        description: ownerMatch.reason,
+        payload: {
+          method: "auto_source_owner",
+          via: ownerMatch.via,
+          target_employee_id: ownerMatch.target_employee_id,
+          target_branch_id: resolvedBranchId,
+          whatsapp_number_id: ownerMatch.whatsapp_number_id,
+          whatsapp_number_label: ownerMatch.whatsapp_number_label,
+        },
+      }),
+    ]);
+    if (assignmentError) {
+      fail(detailPath, `Lead created, but owner assignment failed: ${assignmentError.message}`);
+    }
+    if (assignActivityError) {
+      fail(detailPath, `Lead created, but assignment activity failed: ${assignActivityError.message}`);
+    }
+  }
+
   revalidatePath(INBOX_PATH);
   revalidatePath(LEADS_PATH);
-  redirect(`/crm/leads/${lead.id}?ok=${encodeURIComponent("Raw intake promoted to lead.")}`);
+  const promotionMsg = ownerMatch.matched
+    ? "Raw intake promoted and assigned from WhatsApp number owner."
+    : "Raw intake promoted to lead (no source owner found).";
+  redirect(`/crm/leads/${lead.id}?ok=${encodeURIComponent(promotionMsg)}`);
 }
 
 export async function assignCrmLead(formData: FormData) {
@@ -551,6 +634,82 @@ export async function autoAssignCrmLead(formData: FormData) {
     fail(LEADS_PATH, `Lead not found: ${leadError?.message ?? "missing row"}`);
   }
 
+  if (lead.assigned_agent_id) {
+    ok(detailPath, "Lead is already assigned.");
+  }
+
+  // 1. Source owner (WhatsApp number → campaign's parent WhatsApp number)
+  const ownerMatch = await findSourceOwnerForLead({
+    source_whatsapp_number_id: lead.source_whatsapp_number_id,
+    campaign_source_id: lead.campaign_source_id,
+  });
+
+  if (ownerMatch.matched) {
+    const { data: ownerEmployee, error: ownerEmployeeError } = await admin
+      .from("employees")
+      .select("id, branch_id")
+      .eq("id", ownerMatch.target_employee_id)
+      .maybeSingle();
+    if (ownerEmployeeError || !ownerEmployee) {
+      fail(
+        detailPath,
+        `Source owner not found: ${ownerEmployeeError?.message ?? "missing employee"}`
+      );
+    }
+    const nextBranchId = lead.branch_id ?? ownerEmployee.branch_id ?? null;
+    const assignmentStatus = lead.assigned_agent_id ? "reassigned" : "assigned";
+
+    const [{ error: updateError }, { error: assignmentError }, { error: activityError }] =
+      await Promise.all([
+        admin
+          .from("crm_leads")
+          .update({
+            assigned_agent_id: ownerMatch.target_employee_id,
+            branch_id: nextBranchId,
+            status: "assigned",
+          })
+          .eq("id", leadId),
+        admin.from("crm_lead_assignments").insert({
+          lead_id: leadId,
+          status: assignmentStatus,
+          from_employee_id: lead.assigned_agent_id,
+          to_employee_id: ownerMatch.target_employee_id,
+          from_branch_id: lead.branch_id,
+          to_branch_id: nextBranchId,
+          assigned_by: me.authUserId,
+          method: "auto_source_owner",
+          matched_rule_id: null,
+          reason: ownerMatch.reason,
+        }),
+        admin.from("crm_lead_activities").insert({
+          lead_id: leadId,
+          raw_inbox_id: lead.raw_inbox_id,
+          activity_type: assignmentStatus,
+          actor_user_id: me.authUserId,
+          description: ownerMatch.reason,
+          payload: {
+            method: "auto_source_owner",
+            via: ownerMatch.via,
+            target_employee_id: ownerMatch.target_employee_id,
+            target_branch_id: nextBranchId,
+            whatsapp_number_id: ownerMatch.whatsapp_number_id,
+            whatsapp_number_label: ownerMatch.whatsapp_number_label,
+          },
+        }),
+      ]);
+
+    if (updateError) fail(detailPath, `Could not assign from source owner: ${updateError.message}`);
+    if (assignmentError) {
+      fail(detailPath, `Lead assigned, but assignment history failed: ${assignmentError.message}`);
+    }
+    if (activityError) {
+      fail(detailPath, `Lead assigned, but activity failed: ${activityError.message}`);
+    }
+
+    ok(detailPath, "Lead assigned from WhatsApp number owner.");
+  }
+
+  // 2. Rule engine fallback (unchanged)
   const match = await findCrmAssignmentRuleForLead(lead);
   if (!match.matched) {
     const { error: activityError } = await admin.from("crm_lead_activities").insert({
@@ -558,16 +717,17 @@ export async function autoAssignCrmLead(formData: FormData) {
       raw_inbox_id: lead.raw_inbox_id,
       activity_type: "sent_to_review",
       actor_user_id: me.authUserId,
-      description: match.reason,
+      description: `No source owner or matching rule. ${match.reason}`,
       payload: {
         method: "auto_rule",
         result: "no_match",
+        source_owner_reason: ownerMatch.reason,
       },
     });
     if (activityError) {
-      fail(detailPath, `No matching rule found, and activity failed: ${activityError.message}`);
+      fail(detailPath, `No source owner or matching rule, and activity failed: ${activityError.message}`);
     }
-    ok(detailPath, match.reason);
+    ok(detailPath, `No source owner or matching rule found. ${match.reason}`);
   }
 
   const nextEmployeeId = match.target_employee_id;
@@ -610,7 +770,7 @@ export async function autoAssignCrmLead(formData: FormData) {
         raw_inbox_id: lead.raw_inbox_id,
         activity_type: assignmentStatus,
         actor_user_id: me.authUserId,
-        description: `Auto-assigned by rule: ${match.rule.name}`,
+        description: `Auto-assigned by fallback rule: ${match.rule.name}`,
         payload: {
           method: "auto_rule",
           matched_rule_id: match.rule.id,
@@ -629,5 +789,5 @@ export async function autoAssignCrmLead(formData: FormData) {
     fail(detailPath, `Lead auto-assigned, but activity failed: ${activityError.message}`);
   }
 
-  ok(detailPath, `Lead auto-assigned by rule: ${match.rule.name}`);
+  ok(detailPath, `Lead assigned by fallback rule: ${match.rule.name}`);
 }

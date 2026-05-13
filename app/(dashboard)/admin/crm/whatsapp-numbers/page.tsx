@@ -4,9 +4,11 @@ import { Chip } from "@/components/StatusChip";
 import {
   createWhatsappNumber,
   setWhatsappNumberActive,
+  updateWhatsappNumberOwner,
 } from "@/app/(dashboard)/admin/crm/actions";
 import {
   CRM_PRODUCT_CATEGORIES,
+  listCrmAssignableEmployees,
   listCrmBranches,
   listCrmWhatsappNumbers,
 } from "@/lib/db/crm";
@@ -29,9 +31,10 @@ export default async function CrmWhatsappNumbersPage({
     redirect("/dashboard?error=Super-admin%20access%20required");
   }
 
-  const [branches, numbers] = await Promise.all([
+  const [branches, numbers, employees] = await Promise.all([
     listCrmBranches(),
     listCrmWhatsappNumbers(),
+    listCrmAssignableEmployees(),
   ]);
 
   return (
@@ -85,6 +88,19 @@ export default async function CrmWhatsappNumbersPage({
               ))}
             </select>
           </Field>
+          <Field label="Assigned counselor" className="lg:col-span-2">
+            <select name="assigned_employee_id" className={INPUT}>
+              <option value="">Unassigned (rules fallback only)</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.full_name} ({employee.branch_code ?? "no branch"})
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-[11px] font-normal text-gray-500">
+              Leads received on this number are assigned to this counselor.
+            </span>
+          </Field>
           <Field label="Notes" className="lg:col-span-2">
             <input name="notes" className={INPUT} placeholder="Manual setup note" />
           </Field>
@@ -118,6 +134,7 @@ export default async function CrmWhatsappNumbersPage({
                   <Th>Display number</Th>
                   <Th>Product</Th>
                   <Th>Branch</Th>
+                  <Th>Assigned counselor</Th>
                   <Th>Status</Th>
                   <Th>Notes</Th>
                   <Th className="text-right">Action</Th>
@@ -140,6 +157,45 @@ export default async function CrmWhatsappNumbersPage({
                       {number.branch_code
                         ? `${number.branch_code} - ${number.branch_name}`
                         : "—"}
+                    </Td>
+                    <Td>
+                      <form
+                        action={updateWhatsappNumberOwner}
+                        className="flex items-center gap-2"
+                      >
+                        <input type="hidden" name="id" value={number.id} />
+                        <select
+                          name="assigned_employee_id"
+                          defaultValue={number.assigned_employee_id ?? ""}
+                          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900"
+                        >
+                          <option value="">Unassigned</option>
+                          {employees.map((employee) => (
+                            <option key={employee.id} value={employee.id}>
+                              {employee.full_name}
+                              {employee.branch_code ? ` (${employee.branch_code})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                        >
+                          Save
+                        </button>
+                      </form>
+                      {number.assigned_employee_name ? (
+                        <div className="mt-1 text-[11px] text-gray-500">
+                          Current: {number.assigned_employee_name}
+                          {number.assigned_employee_branch_code
+                            ? ` (${number.assigned_employee_branch_code})`
+                            : ""}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-[11px] text-gray-400">
+                          No counselor — rules fallback only
+                        </div>
+                      )}
                     </Td>
                     <Td>
                       <Chip

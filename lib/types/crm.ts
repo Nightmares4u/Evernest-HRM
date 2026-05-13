@@ -43,6 +43,7 @@ export type CrmAssignmentStatus = "assigned" | "reassigned" | "unassigned";
 
 export type CrmAssignmentMethod =
   | "auto_rule"
+  | "auto_source_owner"
   | "manual"
   | "manager_override"
   | "review_queue";
@@ -85,6 +86,7 @@ export type CrmWhatsappNumber = {
   product_category: CrmInitialProductCategory;
   default_branch_id: string | null;
   default_department_id: string | null;
+  assigned_employee_id: string | null;
   greeting_template: string | null;
   is_api_connected: boolean;
   is_active: boolean;

@@ -74,6 +74,22 @@
 - Stage 1 Phase 2 admin config and raw inbox UI
 - Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment
 - Stage 1 Phase 4 employee-direct assignment rules UI and explicit rule-based auto-assignment
+- Stage 1 Phase 5 WhatsApp number ownership as primary assignment; rules demoted to fallback
+
+## Assignment model (Stage 1)
+
+- WhatsApp number ownership is the primary source of truth for CRM
+  assignment. Each `crm_whatsapp_numbers` row may have an
+  `assigned_employee_id`.
+- Campaigns inherit ownership through their parent WhatsApp number;
+  there is no `assigned_employee_id` on `crm_campaign_sources`.
+- Promotion auto-assigns from the source owner. The lead detail
+  "Auto-assign lead" button runs the same waterfall on demand.
+- The rule engine remains as fallback for advanced/edge cases (shared
+  numbers, transferred campaigns, B2B routing). It is not the default
+  path.
+- The structured parser is for qualification and reporting only — never
+  for primary assignment.
 
 ## Risks
 

@@ -97,8 +97,11 @@ export default async function CrmLeadDetailPage({
                   type="submit"
                   className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
                 >
-                  Auto-assign by rules
+                  Auto-assign lead
                 </button>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Tries WhatsApp number owner first, then fallback rules.
+                </p>
               </form>
               <form action={assignCrmLead} className="space-y-3 border-t border-gray-100 pt-4">
                 <input type="hidden" name="lead_id" value={lead.id} />
@@ -187,8 +190,14 @@ export default async function CrmLeadDetailPage({
             <ul className="mt-4 space-y-3">
               {lead.assignments.map((assignment) => (
                 <li key={assignment.id} className="rounded-md border border-gray-100 p-3 text-sm">
-                  <div className="font-medium text-gray-900">
-                    {assignment.to_employee_name ?? "Unassigned"}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium text-gray-900">
+                      {assignment.to_employee_name ?? "Unassigned"}
+                    </div>
+                    <Chip
+                      label={assignmentMethodLabel(assignment.method)}
+                      tone={assignmentMethodTone(assignment.method)}
+                    />
                   </div>
                   <div className="text-gray-500">{assignment.reason ?? assignment.status}</div>
                   <div className="mt-1 text-xs text-gray-400">
@@ -208,6 +217,41 @@ export default async function CrmLeadDetailPage({
       </section>
     </div>
   );
+}
+
+function assignmentMethodLabel(
+  method: string | null
+): string {
+  switch (method) {
+    case "auto_source_owner":
+      return "WhatsApp number owner";
+    case "auto_rule":
+      return "Fallback rule";
+    case "manual":
+      return "Manual";
+    case "manager_override":
+      return "Manager override";
+    case "review_queue":
+      return "Review queue";
+    default:
+      return "Unknown";
+  }
+}
+
+function assignmentMethodTone(
+  method: string | null
+): "indigo" | "blue" | "amber" | "gray" {
+  switch (method) {
+    case "auto_source_owner":
+      return "indigo";
+    case "auto_rule":
+      return "amber";
+    case "manual":
+    case "manager_override":
+      return "blue";
+    default:
+      return "gray";
+  }
 }
 
 function Info({ label, value }: { label: string; value: string }) {

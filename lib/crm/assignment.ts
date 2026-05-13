@@ -13,6 +13,21 @@ export type CrmAssignmentMatch =
       reason: string;
     };
 
+export type CrmSourceOwnerMatch =
+  | {
+      matched: true;
+      target_employee_id: string;
+      whatsapp_number_id: string;
+      whatsapp_number_label: string | null;
+      whatsapp_display_number: string | null;
+      via: "lead_whatsapp_number" | "campaign_whatsapp_number";
+      reason: string;
+    }
+  | {
+      matched: false;
+      reason: string;
+    };
+
 function normalize(value: string | null | undefined): string {
   return String(value ?? "")
     .trim()
@@ -54,6 +69,86 @@ function ruleMatches(rule: CrmAssignmentRule, lead: CrmLead): boolean {
     idMatches(rule.whatsapp_number_id, lead.source_whatsapp_number_id) &&
     idMatches(rule.campaign_source_id, lead.campaign_source_id)
   );
+}
+
+export type CrmSourceOwnerInput = {
+  source_whatsapp_number_id: string | null;
+  campaign_source_id: string | null;
+};
+
+export async function findSourceOwnerForLead(
+  source: CrmSourceOwnerInput
+): Promise<CrmSourceOwnerMatch> {
+  const admin = createAdminClient();
+
+  if (source.source_whatsapp_number_id) {
+    const { data: number, error } = await admin
+      .from("crm_whatsapp_numbers")
+      .select("id, label, display_number, assigned_employee_id")
+      .eq("id", source.source_whatsapp_number_id)
+      .maybeSingle();
+    if (error) {
+      return {
+        matched: false,
+        reason: `Could not load WhatsApp number: ${error.message}`,
+      };
+    }
+    if (number?.assigned_employee_id) {
+      return {
+        matched: true,
+        target_employee_id: number.assigned_employee_id,
+        whatsapp_number_id: number.id,
+        whatsapp_number_label: number.label ?? null,
+        whatsapp_display_number: number.display_number ?? null,
+        via: "lead_whatsapp_number",
+        reason: `Assigned from WhatsApp number owner (${number.label ?? number.display_number ?? number.id}).`,
+      };
+    }
+  }
+
+  if (source.campaign_source_id) {
+    const { data: campaign, error } = await admin
+      .from("crm_campaign_sources")
+      .select(
+        "whatsapp_number_id, crm_whatsapp_numbers:whatsapp_number_id ( id, label, display_number, assigned_employee_id )"
+      )
+      .eq("id", source.campaign_source_id)
+      .maybeSingle();
+    if (error) {
+      return {
+        matched: false,
+        reason: `Could not load campaign source: ${error.message}`,
+      };
+    }
+    type NumberRow = {
+      id: string;
+      label: string | null;
+      display_number: string | null;
+      assigned_employee_id: string | null;
+    };
+    const numberRaw = campaign?.crm_whatsapp_numbers as
+      | NumberRow
+      | NumberRow[]
+      | null
+      | undefined;
+    const number = Array.isArray(numberRaw) ? numberRaw[0] ?? null : numberRaw ?? null;
+    if (number?.assigned_employee_id) {
+      return {
+        matched: true,
+        target_employee_id: number.assigned_employee_id,
+        whatsapp_number_id: number.id,
+        whatsapp_number_label: number.label,
+        whatsapp_display_number: number.display_number,
+        via: "campaign_whatsapp_number",
+        reason: `Assigned from campaign's WhatsApp number owner (${number.label ?? number.display_number ?? number.id}).`,
+      };
+    }
+  }
+
+  return {
+    matched: false,
+    reason: "No source owner found on WhatsApp number or campaign.",
+  };
 }
 
 export async function findCrmAssignmentRuleForLead(
