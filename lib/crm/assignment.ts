@@ -14,7 +14,14 @@ export type CrmAssignmentMatch =
     };
 
 function normalize(value: string | null | undefined): string {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .replace(
+      /^(?:country interested|interested country|country|city|product|category|product\/category)\s*[:.-]\s*/i,
+      ""
+    )
+    .trim()
+    .toLowerCase();
 }
 
 function textMatches(ruleValue: string | null, leadValue: string | null): boolean {

@@ -36,17 +36,30 @@ const FIELD_BY_NUMBER: Record<string, FieldKey> = {
 };
 
 const LABEL_PATTERNS: Array<[FieldKey, RegExp]> = [
-  ["country_interest", /(?:country|interested country|destination)\s*[:.-]\s*(.+)$/i],
+  ["country_interest", /(?:country interested|interested country|country|destination)\s*[:.-]\s*(.+)$/i],
   ["qualification", /(?:qualification|last qualification|education)\s*[:.-]\s*(.+)$/i],
   ["marks_or_cgpa", /(?:marks|cgpa|gpa|percentage)\s*[:.-]\s*(.+)$/i],
   ["study_gap", /(?:study gap|gap)\s*[:.-]\s*(.+)$/i],
   ["city", /(?:city|location)\s*[:.-]\s*(.+)$/i],
-  ["budget_range", /(?:budget|range)\s*[:.-]\s*(.+)$/i],
-  ["english_test", /(?:english|ielts|pte|test)\s*[:.-]\s*(.+)$/i],
+  ["budget_range", /(?:budget range|budget|range)\s*[:.-]\s*(.+)$/i],
+  ["english_test", /(?:english test|english|ielts|pte|test)\s*[:.-]\s*(.+)$/i],
 ];
 
-function cleanValue(value: string): string | null {
-  const cleaned = value
+const FIELD_LABEL_PREFIXES: Record<FieldKey, RegExp> = {
+  country_interest: /^(?:country interested|interested country|country|destination)\s*[:.-]\s*/i,
+  qualification: /^(?:last qualification|qualification|education)\s*[:.-]\s*/i,
+  marks_or_cgpa: /^(?:marks\/cgpa|marks|cgpa|gpa|percentage)\s*[:.-]\s*/i,
+  study_gap: /^(?:study gap|gap)\s*[:.-]\s*/i,
+  city: /^(?:city|location)\s*[:.-]\s*/i,
+  budget_range: /^(?:budget range|budget|range)\s*[:.-]\s*/i,
+  english_test: /^(?:english test|english|ielts|pte|test)\s*[:.-]\s*/i,
+};
+
+function cleanValue(value: string, field?: FieldKey): string | null {
+  const withoutFieldLabel = field
+    ? value.replace(FIELD_LABEL_PREFIXES[field], "")
+    : value;
+  const cleaned = withoutFieldLabel
     .replace(/^[-:.)\s]+/, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -87,14 +100,14 @@ export function parseSevenQuestionReply(text: string | null | undefined): Parsed
     const numbered = line.match(/^([1-7])(?:[\s.)-]+)(.+)$/);
     if (numbered) {
       const field = FIELD_BY_NUMBER[numbered[1]];
-      values[field] = cleanValue(numbered[2]);
+      values[field] = cleanValue(numbered[2], field);
       continue;
     }
 
     for (const [field, pattern] of LABEL_PATTERNS) {
       const labeled = line.match(pattern);
       if (labeled) {
-        values[field] = cleanValue(labeled[1]);
+        values[field] = cleanValue(labeled[1], field);
         break;
       }
     }

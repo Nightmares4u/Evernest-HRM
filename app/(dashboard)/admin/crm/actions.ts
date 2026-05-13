@@ -407,8 +407,7 @@ export async function promoteRawInboxToLead(formData: FormData) {
   ]);
 
   const branchId = campaign?.default_branch_id ?? number?.default_branch_id ?? null;
-  const productCategory =
-    campaign?.product_category ?? number?.product_category ?? raw.extracted_country;
+  const productCategory = campaign?.product_category ?? number?.product_category ?? null;
 
   const { data: lead, error: leadError } = await admin
     .from("crm_leads")
