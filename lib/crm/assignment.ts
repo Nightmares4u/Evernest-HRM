@@ -5,8 +5,7 @@ export type CrmAssignmentMatch =
   | {
       matched: true;
       rule: CrmAssignmentRule;
-      target_employee_id: string | null;
-      target_branch_id: string | null;
+      target_employee_id: string;
       reason: string;
     }
   | {
@@ -66,6 +65,7 @@ export async function findCrmAssignmentRuleForLead(
   }
 
   const matches = ((data ?? []) as CrmAssignmentRule[])
+    .filter((rule) => Boolean(rule.target_employee_id))
     .filter((rule) => ruleMatches(rule, lead))
     .sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
@@ -78,8 +78,7 @@ export async function findCrmAssignmentRuleForLead(
   return {
     matched: true,
     rule,
-    target_employee_id: rule.target_employee_id,
-    target_branch_id: rule.target_branch_id,
+    target_employee_id: rule.target_employee_id!,
     reason: rule.reason_template || `Matched assignment rule: ${rule.name}`,
   };
 }

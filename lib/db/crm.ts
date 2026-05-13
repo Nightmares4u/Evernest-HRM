@@ -74,8 +74,6 @@ export type CrmAssignmentRuleVM = CrmAssignmentRule & {
   campaign_platform: string | null;
   match_branch_name: string | null;
   match_branch_code: string | null;
-  target_branch_name: string | null;
-  target_branch_code: string | null;
   target_employee_name: string | null;
   target_employee_branch_code: string | null;
   specificity: number;
@@ -371,9 +369,6 @@ export async function listCrmAssignmentRules(): Promise<CrmAssignmentRuleVM[]> {
     const matchBranch = rule.match_branch_id
       ? branchesById.get(rule.match_branch_id) ?? null
       : null;
-    const targetBranch = rule.target_branch_id
-      ? branchesById.get(rule.target_branch_id) ?? null
-      : null;
     const targetEmployee = rule.target_employee_id
       ? employeesById.get(rule.target_employee_id) ?? null
       : null;
@@ -386,8 +381,6 @@ export async function listCrmAssignmentRules(): Promise<CrmAssignmentRuleVM[]> {
       campaign_platform: campaign?.platform ?? null,
       match_branch_name: matchBranch?.name ?? null,
       match_branch_code: matchBranch?.code ?? null,
-      target_branch_name: targetBranch?.name ?? null,
-      target_branch_code: targetBranch?.code ?? null,
       target_employee_name: targetEmployee?.full_name ?? null,
       target_employee_branch_code: targetEmployee?.branch_code ?? null,
       specificity: assignmentRuleSpecificity(rule),

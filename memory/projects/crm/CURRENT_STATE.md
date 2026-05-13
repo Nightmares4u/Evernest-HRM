@@ -36,8 +36,9 @@ Stage 1 Phase 4 has been implemented on `crm-dev`: super-admin
 assignment rule management, deterministic assignment rule matching, and
 an explicit "Auto-assign by rules" action on lead detail. Rules can
 match product/category, country, city, branch, WhatsApp number, and
-campaign/source, then target an employee or branch fallback. Assignment
-does not auto-run after promotion yet.
+campaign/source, then assign directly to a required employee/counselor.
+Branch is only optional matching metadata in Stage 1, not the primary
+assignment target. Assignment does not auto-run after promotion yet.
 
 ## Current Goal
 

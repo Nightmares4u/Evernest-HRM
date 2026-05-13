@@ -73,7 +73,7 @@
 - Stage 1 Phase 1 schema/types foundation
 - Stage 1 Phase 2 admin config and raw inbox UI
 - Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment
-- Stage 1 Phase 4 assignment rules UI and explicit rule-based auto-assignment
+- Stage 1 Phase 4 employee-direct assignment rules UI and explicit rule-based auto-assignment
 
 ## Risks
 

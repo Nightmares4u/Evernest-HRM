@@ -47,7 +47,7 @@ export default async function CrmAssignmentRulesPage({
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Assignment rules</h1>
           <p className="text-sm text-gray-500">
-            Match promoted leads to a specific employee or a branch review queue.
+            Assign matching leads to employee based on parsed lead details.
           </p>
         </div>
         <Link
@@ -63,6 +63,11 @@ export default async function CrmAssignmentRulesPage({
 
       <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
         <h2 className="text-sm font-semibold text-gray-700">Create rule</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Match country, city, and product first. Campaign/source, branch, and
+          WhatsApp number are optional refiners. Every matching rule assigns to
+          one required employee.
+        </p>
         <form action={createAssignmentRule} className="mt-4 grid gap-3 lg:grid-cols-6">
           <Field label="Rule name" className="lg:col-span-2">
             <input name="name" required className={INPUT} placeholder="Italy Lahore to counsellor" />
@@ -70,7 +75,7 @@ export default async function CrmAssignmentRulesPage({
           <Field label="Priority">
             <input name="priority" type="number" defaultValue={100} className={INPUT} />
           </Field>
-          <Field label="Product/category">
+          <Field label="Lead product/category">
             <select name="match_product_category" className={INPUT}>
               <option value="">Any product</option>
               {CRM_PRODUCT_CATEGORIES.map((category) => (
@@ -80,13 +85,13 @@ export default async function CrmAssignmentRulesPage({
               ))}
             </select>
           </Field>
-          <Field label="Country">
+          <Field label="Interested country">
             <input name="match_country" className={INPUT} placeholder="Italy" />
           </Field>
-          <Field label="City">
+          <Field label="Lead city">
             <input name="match_city" className={INPUT} placeholder="Lahore" />
           </Field>
-          <Field label="Match branch">
+          <Field label="Branch filter optional">
             <select name="match_branch_id" className={INPUT}>
               <option value="">Any branch</option>
               {branches.map((branch) => (
@@ -96,7 +101,7 @@ export default async function CrmAssignmentRulesPage({
               ))}
             </select>
           </Field>
-          <Field label="WhatsApp number" className="lg:col-span-2">
+          <Field label="WhatsApp number optional" className="lg:col-span-2">
             <select name="whatsapp_number_id" className={INPUT}>
               <option value="">Any WhatsApp number</option>
               {whatsappNumbers.map((number) => (
@@ -106,7 +111,7 @@ export default async function CrmAssignmentRulesPage({
               ))}
             </select>
           </Field>
-          <Field label="Campaign/source" className="lg:col-span-2">
+          <Field label="Campaign/source optional" className="lg:col-span-2">
             <select name="campaign_source_id" className={INPUT}>
               <option value="">Any campaign/source</option>
               {campaignSources.map((source) => (
@@ -116,22 +121,12 @@ export default async function CrmAssignmentRulesPage({
               ))}
             </select>
           </Field>
-          <Field label="Target employee/user" className="lg:col-span-2">
-            <select name="target_employee_id" className={INPUT}>
-              <option value="">No specific employee</option>
+          <Field label="Assign matching leads to employee" className="lg:col-span-2">
+            <select name="target_employee_id" required className={INPUT}>
+              <option value="">Choose employee</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.full_name} ({employee.branch_code ?? "no branch"})
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Target branch fallback" className="lg:col-span-2">
-            <select name="target_branch_id" className={INPUT}>
-              <option value="">No branch fallback</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.code} - {branch.name}
                 </option>
               ))}
             </select>
@@ -167,7 +162,7 @@ export default async function CrmAssignmentRulesPage({
                 <tr>
                   <Th>Rule</Th>
                   <Th>Match</Th>
-                  <Th>Target</Th>
+                  <Th>Assign to employee</Th>
                   <Th>Status</Th>
                   <Th>Notes</Th>
                   <Th className="text-right">Action</Th>
@@ -208,18 +203,11 @@ export default async function CrmAssignmentRulesPage({
                             {rule.target_employee_name}
                           </div>
                           <div className="text-xs text-gray-500">
-                            employee / {rule.target_employee_branch_code ?? "no branch"}
+                            {rule.target_employee_branch_code ?? "no branch"}
                           </div>
-                        </div>
-                      ) : rule.target_branch_code || rule.target_branch_name ? (
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {rule.target_branch_code ?? rule.target_branch_name}
-                          </div>
-                          <div className="text-xs text-gray-500">branch fallback</div>
                         </div>
                       ) : (
-                        "-"
+                        <Chip label="missing employee" tone="red" />
                       )}
                     </Td>
                     <Td>
