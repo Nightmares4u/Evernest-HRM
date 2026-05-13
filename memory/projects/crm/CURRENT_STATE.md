@@ -32,10 +32,17 @@ rule-based only; no real WhatsApp API, webhook, Gemini integration,
 auto-assignment engine, invoice/document/client portal, or HRM task sync
 has been added.
 
+Stage 1 Phase 4 has been implemented on `crm-dev`: super-admin
+assignment rule management, deterministic assignment rule matching, and
+an explicit "Auto-assign by rules" action on lead detail. Rules can
+match product/category, country, city, branch, WhatsApp number, and
+campaign/source, then target an employee or branch fallback. Assignment
+does not auto-run after promotion yet.
+
 ## Current Goal
 
-Review and manually test Stage 1 Phase 3 before building any real
-WhatsApp API, Gemini, auto-assignment, or downstream CRM modules.
+Review and manually test Stage 1 Phase 4 before building any real
+WhatsApp API, Gemini, HRM task sync, or downstream CRM modules.
 
 
 ## Working Philosophy
@@ -50,20 +57,20 @@ WhatsApp API, Gemini, auto-assignment, or downstream CRM modules.
 
 ## Next Best Step
 
-Manually test the Phase 3 CRM intake flow:
+Manually test the Phase 4 CRM assignment flow:
 
 - `/admin/crm`
 - `/admin/crm/whatsapp-numbers`
 - `/admin/crm/campaign-sources`
+- `/admin/crm/assignment-rules`
 - `/crm/inbox`
 - `/crm/inbox/[id]`
 - `/crm/leads`
 - `/crm/leads/[id]`
 
 Then continue to the next Stage 1 phase only after approval. Do not
-build the WhatsApp API/webhook, Gemini integration, auto-assignment
-engine, HRM task sync, or downstream client/case/invoice/document system
-until Phase 3 is reviewed.
+build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
+downstream client/case/invoice/document system until Phase 4 is reviewed.
 
 ## Current Stage 1 Boundary
 

@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDate, formatCrmDateTime } from "@/lib/crm/format";
 import { listCrmLeads } from "@/lib/db/crm";
 
-type Search = { error?: string; ok?: string };
+type Search = { error?: string; ok?: string; assignment?: string };
 
 const STATUS_TONES = {
   new: "indigo",
@@ -27,7 +27,7 @@ export default async function CrmLeadsPage({
   if (!me) redirect("/login");
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
-  const leads = await listCrmLeads();
+  const leads = await listCrmLeads({ assignment: sp.assignment });
 
   return (
     <div className="space-y-6">
@@ -48,6 +48,35 @@ export default async function CrmLeadsPage({
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
+
+      <section className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
+        <form className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1 text-xs font-medium text-gray-600">
+            <span>Assignment</span>
+            <select
+              name="assignment"
+              defaultValue={sp.assignment ?? ""}
+              className="w-52 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+            >
+              <option value="">All leads</option>
+              <option value="assigned">Assigned</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+          >
+            Filter
+          </button>
+          <Link
+            href="/crm/leads"
+            className="rounded-md bg-white px-4 py-2 text-sm text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+          >
+            Reset
+          </Link>
+        </form>
+      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">

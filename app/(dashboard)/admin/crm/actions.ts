@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth/require-role";
+import { findCrmAssignmentRuleForLead } from "@/lib/crm/assignment";
 import { parseSevenQuestionReply } from "@/lib/crm/parser";
 import {
   CRM_CAMPAIGN_PLATFORMS,
@@ -15,6 +16,7 @@ import type { CrmJsonObject } from "@/lib/types/crm";
 const ADMIN_CRM_PATH = "/admin/crm";
 const WHATSAPP_PATH = "/admin/crm/whatsapp-numbers";
 const CAMPAIGNS_PATH = "/admin/crm/campaign-sources";
+const ASSIGNMENT_RULES_PATH = "/admin/crm/assignment-rules";
 const INBOX_PATH = "/crm/inbox";
 const LEADS_PATH = "/crm/leads";
 
@@ -30,6 +32,7 @@ function ok(path: string, message: string): never {
   revalidatePath(ADMIN_CRM_PATH);
   revalidatePath(WHATSAPP_PATH);
   revalidatePath(CAMPAIGNS_PATH);
+  revalidatePath(ASSIGNMENT_RULES_PATH);
   revalidatePath(INBOX_PATH);
   revalidatePath(LEADS_PATH);
   revalidatePath(path);
@@ -169,6 +172,67 @@ export async function setCampaignSourceActive(formData: FormData) {
 
   if (error) fail(CAMPAIGNS_PATH, `Could not update campaign source: ${error.message}`);
   ok(CAMPAIGNS_PATH, isActive ? "Campaign source activated." : "Campaign source deactivated.");
+}
+
+export async function createAssignmentRule(formData: FormData) {
+  await assertSuperAdmin(ASSIGNMENT_RULES_PATH);
+
+  const name = readString(formData, "name");
+  const priorityRaw = readString(formData, "priority");
+  const priority = Number.parseInt(priorityRaw || "100", 10);
+  const matchProductCategory = readString(formData, "match_product_category");
+  const matchCountry = readString(formData, "match_country");
+  const matchCity = readString(formData, "match_city");
+  const matchBranchId = readString(formData, "match_branch_id");
+  const whatsappNumberId = readString(formData, "whatsapp_number_id");
+  const campaignSourceId = readString(formData, "campaign_source_id");
+  const targetEmployeeId = readString(formData, "target_employee_id");
+  const targetBranchId = readString(formData, "target_branch_id");
+  const notes = readString(formData, "notes");
+  const isActive = formData.get("is_active") === "on";
+
+  if (!name) fail(ASSIGNMENT_RULES_PATH, "Rule name is required.");
+  if (!Number.isFinite(priority)) fail(ASSIGNMENT_RULES_PATH, "Priority must be a number.");
+  if (!targetEmployeeId && !targetBranchId) {
+    fail(ASSIGNMENT_RULES_PATH, "Choose a target employee or target branch.");
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("crm_assignment_rules").insert({
+    name,
+    priority,
+    whatsapp_number_id: nullable(whatsappNumberId),
+    campaign_source_id: nullable(campaignSourceId),
+    match_branch_id: nullable(matchBranchId),
+    match_city: nullable(matchCity),
+    match_country: nullable(matchCountry),
+    match_product_category: nullable(matchProductCategory),
+    action: targetEmployeeId ? "assign_to_agent" : "assign_to_branch",
+    target_branch_id: nullable(targetBranchId),
+    target_employee_id: nullable(targetEmployeeId),
+    reason_template: nullable(notes),
+    is_active: isActive,
+  });
+
+  if (error) fail(ASSIGNMENT_RULES_PATH, `Could not create assignment rule: ${error.message}`);
+  ok(ASSIGNMENT_RULES_PATH, "Assignment rule created.");
+}
+
+export async function setAssignmentRuleActive(formData: FormData) {
+  await assertSuperAdmin(ASSIGNMENT_RULES_PATH);
+
+  const id = readString(formData, "id");
+  const isActive = formData.get("is_active") === "on";
+  if (!id) fail(ASSIGNMENT_RULES_PATH, "Missing assignment rule id.");
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("crm_assignment_rules")
+    .update({ is_active: isActive })
+    .eq("id", id);
+
+  if (error) fail(ASSIGNMENT_RULES_PATH, `Could not update assignment rule: ${error.message}`);
+  ok(ASSIGNMENT_RULES_PATH, isActive ? "Assignment rule activated." : "Assignment rule deactivated.");
 }
 
 export async function createManualRawIntake(formData: FormData) {
@@ -470,4 +534,108 @@ export async function assignCrmLead(formData: FormData) {
   if (activityError) fail(detailPath, `Lead assigned, but activity failed: ${activityError.message}`);
 
   ok(detailPath, "Lead assigned.");
+}
+
+export async function autoAssignCrmLead(formData: FormData) {
+  const me = await assertSuperAdmin(LEADS_PATH);
+  const leadId = readString(formData, "lead_id");
+  if (!leadId) fail(LEADS_PATH, "Missing lead id.");
+
+  const detailPath = `/crm/leads/${leadId}`;
+  const admin = createAdminClient();
+  const { data: lead, error: leadError } = await admin
+    .from("crm_leads")
+    .select("*")
+    .eq("id", leadId)
+    .maybeSingle();
+
+  if (leadError || !lead) {
+    fail(LEADS_PATH, `Lead not found: ${leadError?.message ?? "missing row"}`);
+  }
+
+  const match = await findCrmAssignmentRuleForLead(lead);
+  if (!match.matched) {
+    const { error: activityError } = await admin.from("crm_lead_activities").insert({
+      lead_id: leadId,
+      raw_inbox_id: lead.raw_inbox_id,
+      activity_type: "sent_to_review",
+      actor_user_id: me.authUserId,
+      description: match.reason,
+      payload: {
+        method: "auto_rule",
+        result: "no_match",
+      },
+    });
+    if (activityError) {
+      fail(detailPath, `No matching rule found, and activity failed: ${activityError.message}`);
+    }
+    ok(detailPath, match.reason);
+  }
+
+  const nextEmployeeId = match.target_employee_id;
+  const { data: targetEmployee } = nextEmployeeId
+    ? await admin
+        .from("employees")
+        .select("id, branch_id")
+        .eq("id", nextEmployeeId)
+        .maybeSingle()
+    : { data: null };
+  const nextBranchId = match.target_branch_id ?? lead.branch_id ?? targetEmployee?.branch_id ?? null;
+  const nextStatus = nextEmployeeId ? "assigned" : lead.status;
+  const assignmentStatus = lead.assigned_agent_id && nextEmployeeId ? "reassigned" : "assigned";
+
+  const [{ error: updateError }, { error: assignmentError }, { error: activityError }] =
+    await Promise.all([
+      admin
+        .from("crm_leads")
+        .update({
+          assigned_agent_id: nextEmployeeId,
+          branch_id: nextBranchId,
+          status: nextStatus,
+        })
+        .eq("id", leadId),
+      admin.from("crm_lead_assignments").insert({
+        lead_id: leadId,
+        status: assignmentStatus,
+        from_employee_id: lead.assigned_agent_id,
+        to_employee_id: nextEmployeeId,
+        from_branch_id: lead.branch_id,
+        to_branch_id: nextBranchId,
+        assigned_by: me.authUserId,
+        method: "auto_rule",
+        matched_rule_id: match.rule.id,
+        reason: match.reason,
+      }),
+      admin.from("crm_lead_activities").insert({
+        lead_id: leadId,
+        raw_inbox_id: lead.raw_inbox_id,
+        activity_type: nextEmployeeId ? assignmentStatus : "sent_to_review",
+        actor_user_id: me.authUserId,
+        description: nextEmployeeId
+          ? `Auto-assigned by rule: ${match.rule.name}`
+          : `Rule matched branch only: ${match.rule.name}`,
+        payload: {
+          method: "auto_rule",
+          matched_rule_id: match.rule.id,
+          matched_rule_name: match.rule.name,
+          target_employee_id: nextEmployeeId,
+          target_branch_id: nextBranchId,
+        },
+      }),
+    ]);
+
+  if (updateError) fail(detailPath, `Could not auto-assign lead: ${updateError.message}`);
+  if (assignmentError) {
+    fail(detailPath, `Lead auto-assigned, but assignment history failed: ${assignmentError.message}`);
+  }
+  if (activityError) {
+    fail(detailPath, `Lead auto-assigned, but activity failed: ${activityError.message}`);
+  }
+
+  ok(
+    detailPath,
+    nextEmployeeId
+      ? `Lead auto-assigned by rule: ${match.rule.name}`
+      : `Rule matched branch only: ${match.rule.name}`
+  );
 }

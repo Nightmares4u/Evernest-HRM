@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
+  listCrmAssignmentRules,
   listCrmCampaignSources,
   listCrmLeads,
   listCrmRawInbox,
@@ -23,11 +24,12 @@ export default async function AdminCrmPage({
     redirect("/dashboard?error=Super-admin%20access%20required");
   }
 
-  const [numbers, sources, inbox, leads] = await Promise.all([
+  const [numbers, sources, inbox, leads, rules] = await Promise.all([
     listCrmWhatsappNumbers(),
     listCrmCampaignSources(),
     listCrmRawInbox(),
     listCrmLeads(),
+    listCrmAssignmentRules(),
   ]);
   const activeNumbers = numbers.filter((number) => number.is_active).length;
   const activeSources = sources.filter((source) => source.is_active).length;
@@ -79,11 +81,10 @@ export default async function AdminCrmPage({
           hint="Promoted leads"
         />
         <AdminCard
-          title="Assignment Rules later"
-          href="/admin/crm"
-          value="Pending"
-          hint="No auto-assignment yet"
-          disabled
+          title="Assignment Rules"
+          href="/admin/crm/assignment-rules"
+          value={rules.filter((rule) => rule.is_active).length}
+          hint={`${rules.length} configured`}
         />
       </section>
 
@@ -92,12 +93,12 @@ export default async function AdminCrmPage({
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Stage 1 status</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Phase 3 adds rule-based parsing, raw intake detail, promotion to
-              leads, lead views, and manual assignment. Real WhatsApp API,
-              Gemini, auto-assignment, and HRM task sync remain pending.
+              Phase 4 adds admin assignment rules and explicit rule-based
+              auto-assignment from lead detail. Real WhatsApp API, Gemini,
+              HRM task sync, and automatic post-promotion assignment remain pending.
             </p>
           </div>
-          <Chip label="Phase 3 CRM intake" tone="indigo" />
+          <Chip label="Phase 4 assignment rules" tone="indigo" />
         </div>
       </section>
     </div>

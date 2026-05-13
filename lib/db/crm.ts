@@ -9,6 +9,7 @@ import {
 import type { Branch, Employee, UserRole } from "@/lib/types/hrm";
 import type {
   CrmActivityType,
+  CrmAssignmentRule,
   CrmCampaignSource,
   CrmInitialProductCategory,
   CrmJsonObject,
@@ -64,6 +65,20 @@ export type CrmCampaignSourceVM = CrmCampaignSource & {
   whatsapp_display_number: string | null;
   branch_name: string | null;
   branch_code: string | null;
+};
+
+export type CrmAssignmentRuleVM = CrmAssignmentRule & {
+  whatsapp_number_label: string | null;
+  whatsapp_display_number: string | null;
+  campaign_label: string | null;
+  campaign_platform: string | null;
+  match_branch_name: string | null;
+  match_branch_code: string | null;
+  target_branch_name: string | null;
+  target_branch_code: string | null;
+  target_employee_name: string | null;
+  target_employee_branch_code: string | null;
+  specificity: number;
 };
 
 export type CrmRawInboxFilters = {
@@ -303,6 +318,83 @@ export async function listCrmCampaignSources(): Promise<CrmCampaignSourceVM[]> {
   });
 }
 
+function assignmentRuleSpecificity(rule: Pick<
+  CrmAssignmentRule,
+  | "match_product_category"
+  | "match_country"
+  | "match_city"
+  | "match_branch_id"
+  | "whatsapp_number_id"
+  | "campaign_source_id"
+>): number {
+  return [
+    rule.match_product_category,
+    rule.match_country,
+    rule.match_city,
+    rule.match_branch_id,
+    rule.whatsapp_number_id,
+    rule.campaign_source_id,
+  ].filter(Boolean).length;
+}
+
+export async function listCrmAssignmentRules(): Promise<CrmAssignmentRuleVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const admin = createAdminClient();
+  const [{ data: rules, error }, whatsappNumbers, campaignSources, branches, employees] =
+    await Promise.all([
+      admin
+        .from("crm_assignment_rules")
+        .select("*")
+        .order("is_active", { ascending: false })
+        .order("priority", { ascending: true })
+        .order("created_at", { ascending: true }),
+      listCrmWhatsappNumbers(),
+      listCrmCampaignSources(),
+      listCrmBranches(),
+      listCrmAssignableEmployees(),
+    ]);
+  if (error) throw new Error(`listCrmAssignmentRules: ${error.message}`);
+
+  const numbersById = byId(whatsappNumbers);
+  const campaignsById = byId(campaignSources);
+  const branchesById = byId(branches);
+  const employeesById = byId(employees);
+
+  return ((rules ?? []) as CrmAssignmentRule[]).map((rule) => {
+    const number = rule.whatsapp_number_id
+      ? numbersById.get(rule.whatsapp_number_id) ?? null
+      : null;
+    const campaign = rule.campaign_source_id
+      ? campaignsById.get(rule.campaign_source_id) ?? null
+      : null;
+    const matchBranch = rule.match_branch_id
+      ? branchesById.get(rule.match_branch_id) ?? null
+      : null;
+    const targetBranch = rule.target_branch_id
+      ? branchesById.get(rule.target_branch_id) ?? null
+      : null;
+    const targetEmployee = rule.target_employee_id
+      ? employeesById.get(rule.target_employee_id) ?? null
+      : null;
+
+    return {
+      ...rule,
+      whatsapp_number_label: number?.label ?? null,
+      whatsapp_display_number: number?.display_number ?? null,
+      campaign_label: campaign?.label ?? null,
+      campaign_platform: campaign?.platform ?? null,
+      match_branch_name: matchBranch?.name ?? null,
+      match_branch_code: matchBranch?.code ?? null,
+      target_branch_name: targetBranch?.name ?? null,
+      target_branch_code: targetBranch?.code ?? null,
+      target_employee_name: targetEmployee?.full_name ?? null,
+      target_employee_branch_code: targetEmployee?.branch_code ?? null,
+      specificity: assignmentRuleSpecificity(rule),
+    };
+  });
+}
+
 export async function listCrmRawInbox(
   filters: CrmRawInboxFilters = {}
 ): Promise<CrmRawInboxVM[]> {
@@ -503,7 +595,7 @@ export async function getCrmRawInboxDetail(id: string): Promise<CrmRawInboxDetai
   };
 }
 
-export async function listCrmLeads(): Promise<CrmLeadVM[]> {
+export async function listCrmLeads(filters: { assignment?: string } = {}): Promise<CrmLeadVM[]> {
   if (!isSupabaseConfigured()) return [];
 
   const me = requireActiveCrmUser(await getCurrentUser());
@@ -515,7 +607,12 @@ export async function listCrmLeads(): Promise<CrmLeadVM[]> {
     .limit(200);
   if (error) throw new Error(`listCrmLeads: ${error.message}`);
 
-  const leads = ((data ?? []) as CrmLead[]).filter((lead) => canViewCrmLead(me, lead));
+  const leads = ((data ?? []) as CrmLead[]).filter((lead) => {
+    if (!canViewCrmLead(me, lead)) return false;
+    if (filters.assignment === "assigned" && !lead.assigned_agent_id) return false;
+    if (filters.assignment === "unassigned" && lead.assigned_agent_id) return false;
+    return true;
+  });
   return enrichCrmLeads(leads);
 }
 

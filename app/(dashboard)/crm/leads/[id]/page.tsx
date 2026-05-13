@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
-import { assignCrmLead } from "@/app/(dashboard)/admin/crm/actions";
+import {
+  assignCrmLead,
+  autoAssignCrmLead,
+} from "@/app/(dashboard)/admin/crm/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDate, formatCrmDateTime } from "@/lib/crm/format";
 import { getCrmLeadDetail, listCrmAssignableEmployees } from "@/lib/db/crm";
@@ -87,30 +90,41 @@ export default async function CrmLeadDetailPage({
             />
           </div>
           {canAssign && (
-            <form action={assignCrmLead} className="mt-5 space-y-3">
-              <input type="hidden" name="lead_id" value={lead.id} />
-              <label className="block space-y-1 text-xs font-medium text-gray-600">
-                <span>Assign to employee</span>
-                <select name="employee_id" defaultValue={lead.assigned_agent_id ?? ""} className={INPUT}>
-                  <option value="">Choose employee</option>
-                  {employees.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.full_name} ({employee.branch_code ?? "no branch"})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-1 text-xs font-medium text-gray-600">
-                <span>Reason optional</span>
-                <input name="reason" className={INPUT} placeholder="Manual assignment" />
-              </label>
-              <button
-                type="submit"
-                className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-              >
-                Assign lead
-              </button>
-            </form>
+            <div className="mt-5 space-y-4">
+              <form action={autoAssignCrmLead}>
+                <input type="hidden" name="lead_id" value={lead.id} />
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+                >
+                  Auto-assign by rules
+                </button>
+              </form>
+              <form action={assignCrmLead} className="space-y-3 border-t border-gray-100 pt-4">
+                <input type="hidden" name="lead_id" value={lead.id} />
+                <label className="block space-y-1 text-xs font-medium text-gray-600">
+                  <span>Assign to employee</span>
+                  <select name="employee_id" defaultValue={lead.assigned_agent_id ?? ""} className={INPUT}>
+                    <option value="">Choose employee</option>
+                    {employees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.full_name} ({employee.branch_code ?? "no branch"})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1 text-xs font-medium text-gray-600">
+                  <span>Reason optional</span>
+                  <input name="reason" className={INPUT} placeholder="Manual assignment" />
+                </label>
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                >
+                  Assign lead
+                </button>
+              </form>
+            </div>
           )}
         </div>
       </section>

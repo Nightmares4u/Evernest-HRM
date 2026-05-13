@@ -56,7 +56,7 @@
 
 - Real WhatsApp Cloud API/webhook intake
 - Gemini fallback only after rule-based parser review
-- Auto-assignment rules/round-robin
+- Round-robin assignment after rule review
 - HRM task sync for follow-up work
 
 ## In Progress
@@ -73,6 +73,7 @@
 - Stage 1 Phase 1 schema/types foundation
 - Stage 1 Phase 2 admin config and raw inbox UI
 - Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment
+- Stage 1 Phase 4 assignment rules UI and explicit rule-based auto-assignment
 
 ## Risks
 

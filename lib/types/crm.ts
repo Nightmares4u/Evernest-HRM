@@ -184,6 +184,8 @@ export type CrmAssignmentRule = {
   name: string;
   priority: number;
   whatsapp_number_id: string | null;
+  campaign_source_id: string | null;
+  match_branch_id: string | null;
   match_city: string | null;
   match_country: string | null;
   match_product_category: string | null;
