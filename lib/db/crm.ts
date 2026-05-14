@@ -17,9 +17,11 @@ import type {
   CrmJsonValue,
   CrmLead,
   CrmLeadActivity,
+  CrmLeadTransfer,
   CrmParserSettings,
   CrmRawInbox,
   CrmRawStatus,
+  CrmTransferStatus,
   CrmWhatsappNumber,
 } from "@/lib/types/crm";
 import { DEFAULT_CRM_PARSER_SETTINGS } from "@/lib/crm/intake";
@@ -154,6 +156,32 @@ export type CrmLeadDetailVM = CrmLeadVM & {
   }>;
 };
 
+export type CrmTransferFilters = {
+  status?: CrmTransferStatus | "all";
+};
+
+export type CrmLeadTransferVM = CrmLeadTransfer & {
+  lead_customer_phone: string | null;
+  lead_customer_name: string | null;
+  lead_status: string | null;
+  lead_interested_country: string | null;
+  lead_city: string | null;
+  from_employee_name: string | null;
+  from_employee_branch_code: string | null;
+  from_branch_name: string | null;
+  from_branch_code: string | null;
+  to_employee_name: string | null;
+  to_employee_branch_code: string | null;
+  to_branch_name: string | null;
+  to_branch_code: string | null;
+  requested_by_name: string | null;
+  decided_by_name: string | null;
+};
+
+export type CrmLeadTransferDetailVM = CrmLeadTransferVM & {
+  lead: CrmLeadVM | null;
+};
+
 function isSupabaseConfigured(): boolean {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -209,6 +237,17 @@ function canViewRawInboxRow(me: CurrentUser, row: CrmRawInboxVM): boolean {
     return Boolean(row.branch_id && actor.branch_id && row.branch_id === actor.branch_id);
   }
   return false;
+}
+
+function canViewCrmTransfer(me: CurrentUser, transfer: CrmLeadTransfer): boolean {
+  const actor = actorFromCurrentUser(me);
+  if (actor.role === "super_admin") return true;
+  return Boolean(
+    actor.employee_id &&
+      (transfer.from_employee_id === actor.employee_id ||
+        transfer.to_employee_id === actor.employee_id ||
+        transfer.requested_by_user_id === actor.id)
+  );
 }
 
 export async function listCrmBranches(): Promise<BranchRef[]> {
@@ -724,6 +763,237 @@ export async function getCrmLeadDetail(id: string): Promise<CrmLeadDetailVM | nu
       created_at: assignment.created_at,
     })),
   };
+}
+
+async function enrichCrmTransfers(
+  transfers: CrmLeadTransfer[]
+): Promise<CrmLeadTransferVM[]> {
+  if (transfers.length === 0) return [];
+
+  const admin = createAdminClient();
+  const leadIds = Array.from(new Set(transfers.map((transfer) => transfer.lead_id)));
+  const userIds = Array.from(
+    new Set(
+      transfers
+        .flatMap((transfer) => [
+          transfer.requested_by_user_id,
+          transfer.decided_by_user_id,
+        ])
+        .filter(Boolean) as string[]
+    )
+  );
+
+  const [employees, branches, leadsRes, usersRes] = await Promise.all([
+    listCrmAssignableEmployees(),
+    listCrmBranches(),
+    admin
+      .from("crm_leads")
+      .select(
+        "id, customer_phone, customer_name, status, interested_country, city"
+      )
+      .in("id", leadIds),
+    userIds.length > 0
+      ? admin
+          .from("app_users")
+          .select("id, display_name, email")
+          .in("id", userIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (leadsRes.error) {
+    throw new Error(`enrichCrmTransfers leads: ${leadsRes.error.message}`);
+  }
+  if (usersRes.error) {
+    throw new Error(`enrichCrmTransfers users: ${usersRes.error.message}`);
+  }
+
+  type LeadSummary = Pick<
+    CrmLead,
+    "id" | "customer_phone" | "customer_name" | "status" | "interested_country" | "city"
+  >;
+  type UserSummary = {
+    id: string;
+    display_name: string | null;
+    email: string | null;
+  };
+
+  const employeesById = byId(employees);
+  const branchesById = byId(branches);
+  const leadsById = byId((leadsRes.data ?? []) as LeadSummary[]);
+  const usersById = byId((usersRes.data ?? []) as UserSummary[]);
+
+  return transfers.map((transfer) => {
+    const lead = leadsById.get(transfer.lead_id) ?? null;
+    const fromEmployee = transfer.from_employee_id
+      ? employeesById.get(transfer.from_employee_id) ?? null
+      : null;
+    const toEmployee = employeesById.get(transfer.to_employee_id) ?? null;
+    const fromBranch = transfer.from_branch_id
+      ? branchesById.get(transfer.from_branch_id) ?? null
+      : null;
+    const toBranch = transfer.to_branch_id
+      ? branchesById.get(transfer.to_branch_id) ?? null
+      : null;
+    const requester = transfer.requested_by_user_id
+      ? usersById.get(transfer.requested_by_user_id) ?? null
+      : null;
+    const decider = transfer.decided_by_user_id
+      ? usersById.get(transfer.decided_by_user_id) ?? null
+      : null;
+
+    return {
+      ...transfer,
+      lead_customer_phone: lead?.customer_phone ?? null,
+      lead_customer_name: lead?.customer_name ?? null,
+      lead_status: lead?.status ?? null,
+      lead_interested_country: lead?.interested_country ?? null,
+      lead_city: lead?.city ?? null,
+      from_employee_name: fromEmployee?.full_name ?? null,
+      from_employee_branch_code: fromEmployee?.branch_code ?? null,
+      from_branch_name: fromBranch?.name ?? null,
+      from_branch_code: fromBranch?.code ?? null,
+      to_employee_name: toEmployee?.full_name ?? null,
+      to_employee_branch_code: toEmployee?.branch_code ?? null,
+      to_branch_name: toBranch?.name ?? null,
+      to_branch_code: toBranch?.code ?? null,
+      requested_by_name: requester?.display_name ?? requester?.email ?? null,
+      decided_by_name: decider?.display_name ?? decider?.email ?? null,
+    };
+  });
+}
+
+export async function listIncomingCrmTransfersForCurrentUser(): Promise<
+  CrmLeadTransferVM[]
+> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const actor = actorFromCurrentUser(me);
+  const admin = createAdminClient();
+  let query = admin
+    .from("crm_lead_transfers")
+    .select("*")
+    .eq("status", "pending")
+    .order("requested_at", { ascending: false })
+    .limit(200);
+
+  if (actor.role !== "super_admin") {
+    if (!actor.employee_id) return [];
+    query = query.eq("to_employee_id", actor.employee_id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listIncomingCrmTransfersForCurrentUser: ${error.message}`);
+
+  return enrichCrmTransfers((data ?? []) as CrmLeadTransfer[]);
+}
+
+export async function listOutgoingCrmTransfersForCurrentUser(): Promise<
+  CrmLeadTransferVM[]
+> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const actor = actorFromCurrentUser(me);
+  const admin = createAdminClient();
+  let query = admin
+    .from("crm_lead_transfers")
+    .select("*")
+    .order("requested_at", { ascending: false })
+    .limit(200);
+
+  if (actor.employee_id) {
+    query = query.or(
+      `from_employee_id.eq.${actor.employee_id},requested_by_user_id.eq.${actor.id}`
+    );
+  } else {
+    query = query.eq("requested_by_user_id", actor.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listOutgoingCrmTransfersForCurrentUser: ${error.message}`);
+
+  return enrichCrmTransfers((data ?? []) as CrmLeadTransfer[]);
+}
+
+export async function listAllCrmTransfersForAdmin(
+  filters: CrmTransferFilters = {}
+): Promise<CrmLeadTransferVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  if (me.appUser.role !== "super_admin") {
+    throw new Error("Super-admin access required.");
+  }
+
+  const admin = createAdminClient();
+  let query = admin
+    .from("crm_lead_transfers")
+    .select("*")
+    .order("requested_at", { ascending: false })
+    .limit(300);
+
+  if (filters.status && filters.status !== "all") {
+    query = query.eq("status", filters.status);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listAllCrmTransfersForAdmin: ${error.message}`);
+
+  return enrichCrmTransfers((data ?? []) as CrmLeadTransfer[]);
+}
+
+export async function getCrmTransferDetail(
+  transferId: string
+): Promise<CrmLeadTransferDetailVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_lead_transfers")
+    .select("*")
+    .eq("id", transferId)
+    .maybeSingle();
+
+  if (error) throw new Error(`getCrmTransferDetail: ${error.message}`);
+  if (!data) return null;
+
+  const transfer = data as CrmLeadTransfer;
+  if (!canViewCrmTransfer(me, transfer)) return null;
+
+  const [enrichedTransfer, lead] = await Promise.all([
+    enrichCrmTransfers([transfer]).then((rows) => rows[0]),
+    getCrmLeadDetail(transfer.lead_id),
+  ]);
+
+  return {
+    ...enrichedTransfer,
+    lead,
+  };
+}
+
+export async function getPendingCrmTransferForLead(
+  leadId: string
+): Promise<CrmLeadTransferVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_lead_transfers")
+    .select("*")
+    .eq("lead_id", leadId)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (error) throw new Error(`getPendingCrmTransferForLead: ${error.message}`);
+  if (!data) return null;
+
+  const transfer = data as CrmLeadTransfer;
+  if (!canViewCrmTransfer(me, transfer)) return null;
+
+  return enrichCrmTransfers([transfer]).then((rows) => rows[0] ?? null);
 }
 
 export function normalizeProductCategory(value: string): CrmInitialProductCategory {
