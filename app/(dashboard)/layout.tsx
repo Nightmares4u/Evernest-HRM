@@ -3,6 +3,12 @@ import { signOut } from "@/app/login/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 
+type NavItem = {
+  href: string;
+  label: string;
+  superAdminOnly?: boolean;
+};
+
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "My Profile" },
@@ -11,11 +17,14 @@ const NAV = [
   { href: "/tasks", label: "Tasks" },
   { href: "/tasks/history", label: "My Task History" },
   { href: "/leave", label: "Leave" },
-  { href: "/crm/leads", label: "CRM Leads" },
-  { href: "/crm/inbox", label: "CRM Inbox" },
   { href: "/employees", label: "Employees" },
   { href: "/admin", label: "Admin" },
-] as const;
+] satisfies NavItem[];
+
+const CRM_NAV = [
+  { href: "/crm/leads", label: "Leads" },
+  { href: "/crm/inbox", label: "Raw Inbox", superAdminOnly: true },
+] satisfies NavItem[];
 
 export default async function DashboardLayout({
   children,
@@ -33,6 +42,7 @@ export default async function DashboardLayout({
   const navItems = isSuperAdmin
     ? [...baseNav, { href: "/admin/tasks/history", label: "Company Task History" }]
     : baseNav;
+  const crmNavItems = CRM_NAV.filter((item) => !item.superAdminOnly || isSuperAdmin);
   const adminNavItems = isSuperAdmin
     ? [
         { href: "/admin/crm", label: "Admin CRM" },
@@ -50,24 +60,11 @@ export default async function DashboardLayout({
           <h1 className="text-xl font-bold text-gray-800">EN HRM</h1>
         </div>
         <nav className="mt-6 flex flex-col space-y-1 px-4">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center rounded-md px-4 py-2 text-gray-700 hover:bg-gray-100"
-            >
-              {item.label}
-            </Link>
-          ))}
-          {adminNavItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center rounded-md px-4 py-2 text-gray-700 hover:bg-gray-100"
-            >
-              {item.label}
-            </Link>
-          ))}
+          <NavSection items={navItems} />
+          <NavSection title="CRM" items={crmNavItems} />
+          {adminNavItems.length > 0 && (
+            <NavSection title="Admin" items={adminNavItems} />
+          )}
         </nav>
       </aside>
 
@@ -94,6 +91,37 @@ export default async function DashboardLayout({
         </header>
         <div className="p-8">{children}</div>
       </main>
+    </div>
+  );
+}
+
+function NavSection({
+  title,
+  items,
+}: {
+  title?: string;
+  items: ReadonlyArray<NavItem>;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className={title ? "pt-4" : ""}>
+      {title && (
+        <div className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          {title}
+        </div>
+      )}
+      <div className="flex flex-col space-y-1">
+        {items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex items-center rounded-md px-4 py-2 text-gray-700 hover:bg-gray-100"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
