@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   listCrmAssignmentRules,
   listCrmCampaignSources,
+  listAllCrmTransfersForAdmin,
   listCrmLeads,
   listCrmRawInbox,
   listCrmWhatsappNumbers,
@@ -24,12 +25,13 @@ export default async function AdminCrmPage({
     redirect("/dashboard?error=Super-admin%20access%20required");
   }
 
-  const [numbers, sources, inbox, leads, rules] = await Promise.all([
+  const [numbers, sources, inbox, leads, rules, transfers] = await Promise.all([
     listCrmWhatsappNumbers(),
     listCrmCampaignSources(),
     listCrmRawInbox(),
     listCrmLeads(),
     listCrmAssignmentRules(),
+    listAllCrmTransfersForAdmin({ status: "pending" }),
   ]);
   const activeNumbers = numbers.filter((number) => number.is_active).length;
   const activeSources = sources.filter((source) => source.is_active).length;
@@ -55,7 +57,7 @@ export default async function AdminCrmPage({
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <AdminCard
           title="WhatsApp Numbers"
           href="/admin/crm/whatsapp-numbers"
@@ -85,6 +87,12 @@ export default async function AdminCrmPage({
           href="/admin/crm/assignment-rules"
           value={rules.filter((rule) => rule.is_active).length}
           hint={`${rules.length} configured`}
+        />
+        <AdminCard
+          title="Transfer Monitor"
+          href="/admin/crm/transfers"
+          value={transfers.length}
+          hint="Pending handoffs"
         />
       </section>
 
