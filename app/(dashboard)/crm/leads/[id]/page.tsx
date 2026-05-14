@@ -5,9 +5,17 @@ import {
   assignCrmLead,
   autoAssignCrmLead,
 } from "@/app/(dashboard)/admin/crm/actions";
+import { requestLeadTransfer } from "@/app/(dashboard)/crm/transfers/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDate, formatCrmDateTime } from "@/lib/crm/format";
-import { getCrmLeadDetail, listCrmAssignableEmployees } from "@/lib/db/crm";
+import {
+  getCrmLeadDetail,
+  getPendingCrmTransferForLead,
+  listCrmAssignableEmployees,
+  listCrmLeadTransfersForLead,
+  type CrmLeadTransferVM,
+} from "@/lib/db/crm";
+import type { CrmTransferStatus } from "@/lib/types/crm";
 
 type Search = { error?: string; ok?: string };
 
@@ -24,6 +32,17 @@ const STATUS_TONES = {
   converted: "green",
 } as const;
 
+const TRANSFER_STATUS_TONES: Record<
+  CrmTransferStatus,
+  "green" | "amber" | "red" | "gray" | "indigo"
+> = {
+  pending: "amber",
+  accepted: "green",
+  rejected: "red",
+  cancelled: "gray",
+  admin_override: "indigo",
+};
+
 export default async function CrmLeadDetailPage({
   params,
   searchParams,
@@ -35,13 +54,20 @@ export default async function CrmLeadDetailPage({
   const me = await getCurrentUser();
   if (!me) redirect("/login");
 
-  const [lead, employees] = await Promise.all([
+  const [lead, pendingTransfer, transferHistory, employees] = await Promise.all([
     getCrmLeadDetail(id),
-    me.appUser.role === "super_admin" ? listCrmAssignableEmployees() : Promise.resolve([]),
+    getPendingCrmTransferForLead(id),
+    listCrmLeadTransfersForLead(id),
+    listCrmAssignableEmployees(),
   ]);
   if (!lead) notFound();
 
   const canAssign = me.appUser.role === "super_admin";
+  const canRequestTransfer =
+    canAssign || Boolean(me.employee?.id && me.employee.id === lead.assigned_agent_id);
+  const transferTargetEmployees = employees.filter(
+    (employee) => employee.id !== lead.assigned_agent_id
+  );
 
   return (
     <div className="space-y-6">
@@ -212,11 +238,33 @@ export default async function CrmLeadDetailPage({
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
+        <TransferLeadPanel
+          leadId={lead.id}
+          canRequestTransfer={canRequestTransfer}
+          pendingTransfer={pendingTransfer}
+          employees={transferTargetEmployees}
+        />
+        <TransferHistory transfers={transferHistory} />
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
         <Placeholder title="Notes" text="Notes UI is a placeholder for a later Stage 1 pass." />
         <Placeholder title="Follow-up" text="Follow-up scheduling is reserved for a later Stage 1 pass." />
       </section>
     </div>
   );
+}
+
+async function requestTransferForm(formData: FormData) {
+  "use server";
+  const leadId = String(formData.get("lead_id") ?? "");
+  const result = await requestLeadTransfer(
+    leadId,
+    String(formData.get("to_employee_id") ?? ""),
+    String(formData.get("reason") ?? "")
+  );
+  const key = result.ok ? "ok" : "error";
+  redirect(`/crm/leads/${leadId}?${key}=${encodeURIComponent(result.message)}`);
 }
 
 function isFallbackOwnerAssignment(reason: string | null): boolean {
@@ -269,6 +317,122 @@ function Info({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 text-sm text-gray-900">{value}</dd>
     </div>
   );
+}
+
+function TransferLeadPanel({
+  leadId,
+  canRequestTransfer,
+  pendingTransfer,
+  employees,
+}: {
+  leadId: string;
+  canRequestTransfer: boolean;
+  pendingTransfer: CrmLeadTransferVM | null;
+  employees: Array<{ id: string; full_name: string; branch_code: string | null }>;
+}) {
+  return (
+    <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Transfer lead</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Use this when the lead belongs to another counselor or product queue. The receiving counselor must accept before ownership changes.
+          </p>
+        </div>
+        <Link
+          href="/crm/transfers"
+          className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+        >
+          View transfer inbox
+        </Link>
+      </div>
+
+      {!canRequestTransfer ? (
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+          Only the assigned counselor or super admin can request a transfer.
+        </p>
+      ) : pendingTransfer ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          A transfer request is already pending for this lead.
+        </div>
+      ) : (
+        <form action={requestTransferForm} className="mt-4 space-y-3">
+          <input type="hidden" name="lead_id" value={leadId} />
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Target counselor</span>
+            <select name="to_employee_id" required defaultValue="" className={INPUT}>
+              <option value="" disabled>
+                Choose counselor
+              </option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.full_name} ({employee.branch_code ?? "no branch"})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Transfer reason</span>
+            <textarea
+              name="reason"
+              required
+              rows={3}
+              className={INPUT}
+              placeholder="Why should this lead move to another counselor?"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+          >
+            Request transfer
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function TransferHistory({ transfers }: { transfers: CrmLeadTransferVM[] }) {
+  return (
+    <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <h2 className="text-sm font-semibold text-gray-900">Transfer history</h2>
+      {transfers.length === 0 ? (
+        <p className="mt-4 text-sm text-gray-500">No transfer history yet.</p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {transfers.map((transfer) => (
+            <li key={transfer.id} className="rounded-md border border-gray-100 p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-medium text-gray-900">
+                  {employeeLabel(transfer.from_employee_name, transfer.from_employee_branch_code)} to{" "}
+                  {employeeLabel(transfer.to_employee_name, transfer.to_employee_branch_code)}
+                </div>
+                <Chip
+                  label={transfer.status}
+                  tone={TRANSFER_STATUS_TONES[transfer.status]}
+                />
+              </div>
+              <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                <Info label="Requested by" value={transfer.requested_by_name ?? "-"} />
+                <Info label="Requested" value={formatCrmDateTime(transfer.requested_at)} />
+                <Info label="Reason" value={transfer.reason} />
+                <Info label="Decision note" value={transfer.decision_note ?? "-"} />
+                {transfer.decided_at && (
+                  <Info label="Decided" value={formatCrmDateTime(transfer.decided_at)} />
+                )}
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function employeeLabel(name: string | null, branchCode: string | null): string {
+  if (!name) return "Unassigned";
+  return branchCode ? `${name} (${branchCode})` : name;
 }
 
 function Timeline({

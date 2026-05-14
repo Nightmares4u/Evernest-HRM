@@ -996,6 +996,27 @@ export async function getPendingCrmTransferForLead(
   return enrichCrmTransfers([transfer]).then((rows) => rows[0] ?? null);
 }
 
+export async function listCrmLeadTransfersForLead(
+  leadId: string
+): Promise<CrmLeadTransferVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_lead_transfers")
+    .select("*")
+    .eq("lead_id", leadId)
+    .order("requested_at", { ascending: false });
+
+  if (error) throw new Error(`listCrmLeadTransfersForLead: ${error.message}`);
+
+  const transfers = ((data ?? []) as CrmLeadTransfer[]).filter((transfer) =>
+    canViewCrmTransfer(me, transfer)
+  );
+  return enrichCrmTransfers(transfers);
+}
+
 export function normalizeProductCategory(value: string): CrmInitialProductCategory {
   const trimmed = value.trim();
   return (trimmed || "General") as CrmInitialProductCategory;
