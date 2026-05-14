@@ -7,7 +7,8 @@ import {
 } from "@/app/(dashboard)/admin/crm/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDateTime } from "@/lib/crm/format";
-import { getCrmRawInboxDetail } from "@/lib/db/crm";
+import { isRawIntakeReadyToPromote } from "@/lib/crm/intake";
+import { getCrmParserSettings, getCrmRawInboxDetail } from "@/lib/db/crm";
 
 type Search = { error?: string; ok?: string };
 
@@ -31,10 +32,14 @@ export default async function CrmRawInboxDetailPage({
   const me = await getCurrentUser();
   if (!me) redirect("/login");
 
-  const row = await getCrmRawInboxDetail(id);
+  const [row, parserSettings] = await Promise.all([
+    getCrmRawInboxDetail(id),
+    getCrmParserSettings(),
+  ]);
   if (!row) notFound();
 
   const canMutate = me.appUser.role === "super_admin";
+  const readyToPromote = isRawIntakeReadyToPromote(row, parserSettings);
 
   return (
     <div className="space-y-6">
@@ -60,7 +65,7 @@ export default async function CrmRawInboxDetailPage({
                 type="submit"
                 className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-gray-800"
               >
-                Parse Details
+                Re-parse details
               </button>
             </form>
           )}
@@ -137,7 +142,13 @@ export default async function CrmRawInboxDetailPage({
       </section>
 
       <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-        <h2 className="text-sm font-semibold text-gray-900">Parsed/extracted fields</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-gray-900">Parsed/extracted fields</h2>
+          <Chip
+            label={readyToPromote ? "Ready to promote" : "Needs review"}
+            tone={readyToPromote ? "green" : "yellow"}
+          />
+        </div>
         <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Info label="Country interested" value={row.extracted_country ?? "-"} />
           <Info label="Last qualification" value={row.extracted_qualification ?? "-"} />
@@ -151,6 +162,9 @@ export default async function CrmRawInboxDetailPage({
             value={row.parser_confidence == null ? "-" : row.parser_confidence.toFixed(2)}
           />
         </dl>
+        <p className="mt-3 text-xs text-gray-500">
+          Ready requires confidence at or above {parserSettings.auto_promote.toFixed(2)} with country and city present.
+        </p>
         {row.missing_fields.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
             {row.missing_fields.map((field) => (

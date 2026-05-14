@@ -7,7 +7,11 @@ import {
   findCrmAssignmentRuleForLead,
   findSourceOwnerForLead,
 } from "@/lib/crm/assignment";
-import { parseSevenQuestionReply } from "@/lib/crm/parser";
+import {
+  parseRawIntakePayload,
+  parserActivityPayload,
+  parserActivityType,
+} from "@/lib/crm/intake";
 import {
   CRM_CAMPAIGN_PLATFORMS,
   normalizeProductCategory,
@@ -359,6 +363,8 @@ export async function createManualRawIntake(formData: FormData) {
     fail(INBOX_PATH, error instanceof Error ? error.message : "Received date/time is invalid.");
   }
 
+  const parsedPayload = parseRawIntakePayload(messageText);
+
   const admin = createAdminClient();
   const { data: rawRow, error: rawError } = await admin
     .from("crm_raw_inbox")
@@ -367,7 +373,7 @@ export async function createManualRawIntake(formData: FormData) {
       campaign_source_id: nullable(campaignSourceId),
       sender_phone: senderPhone,
       sender_name: nullable(senderName),
-      status: "raw_new",
+      ...parsedPayload.rawUpdate,
       first_message_text: messageText,
       last_message_text: messageText,
       last_message_at: receivedAt,
@@ -379,28 +385,41 @@ export async function createManualRawIntake(formData: FormData) {
     fail(INBOX_PATH, `Could not create raw intake: ${rawError?.message ?? "unknown error"}`);
   }
 
-  const { error: messageError } = await admin.from("crm_lead_messages").insert({
-    raw_inbox_id: rawRow.id,
-    lead_id: null,
-    direction: "inbound",
-    wa_message_id: null,
-    from_phone: senderPhone,
-    to_phone: null,
-    message_type: "text",
-    content: messageText,
-    raw_payload: {
-      source: campaignSourceId ? "whatsapp_manual" : "manual_mock",
-      created_by: me.authUserId,
-    },
-    sent_by_employee_id: null,
-    received_at: receivedAt,
-  });
+  const [{ error: messageError }, { error: activityError }] = await Promise.all([
+    admin.from("crm_lead_messages").insert({
+      raw_inbox_id: rawRow.id,
+      lead_id: null,
+      direction: "inbound",
+      wa_message_id: null,
+      from_phone: senderPhone,
+      to_phone: null,
+      message_type: "text",
+      content: messageText,
+      raw_payload: {
+        source: campaignSourceId ? "whatsapp_manual" : "manual_mock",
+        created_by: me.authUserId,
+      },
+      sent_by_employee_id: null,
+      received_at: receivedAt,
+    }),
+    admin.from("crm_lead_activities").insert({
+      lead_id: null,
+      raw_inbox_id: rawRow.id,
+      activity_type: parserActivityType(parsedPayload.parsed.confidence),
+      actor_user_id: me.authUserId,
+      description: `Rule parser confidence ${parsedPayload.parsed.confidence.toFixed(2)}`,
+      payload: parserActivityPayload(parsedPayload.parsed),
+    }),
+  ]);
 
   if (messageError) {
     fail(INBOX_PATH, `Raw intake created, but message history failed: ${messageError.message}`);
   }
+  if (activityError) {
+    fail(INBOX_PATH, `Raw intake created, but parser activity failed: ${activityError.message}`);
+  }
 
-  ok(INBOX_PATH, "Manual raw intake created.");
+  ok(INBOX_PATH, "Manual raw intake created and parsed.");
 }
 
 export async function parseRawInboxDetails(formData: FormData) {
@@ -421,22 +440,12 @@ export async function parseRawInboxDetails(formData: FormData) {
   }
 
   const text = raw.last_message_text ?? raw.first_message_text ?? "";
-  const parsed = parseSevenQuestionReply(text);
+  const parsedPayload = parseRawIntakePayload(text);
+  const parsed = parsedPayload.parsed;
 
   const { error: updateError } = await admin
     .from("crm_raw_inbox")
-    .update({
-      status: parsed.status,
-      parser_confidence: parsed.confidence,
-      extracted_country: parsed.country_interest,
-      extracted_city: parsed.city,
-      extracted_qualification: parsed.qualification,
-      extracted_marks_cgpa: parsed.marks_or_cgpa,
-      extracted_study_gap: parsed.study_gap,
-      extracted_budget_range: parsed.budget_range,
-      extracted_english_test: parsed.english_test,
-      missing_fields: parsed.missing_fields,
-    })
+    .update(parsedPayload.rawUpdate)
     .eq("id", id);
 
   if (updateError) {
@@ -446,30 +455,17 @@ export async function parseRawInboxDetails(formData: FormData) {
   const { error: activityError } = await admin.from("crm_lead_activities").insert({
     lead_id: raw.lead_id ?? null,
     raw_inbox_id: id,
-    activity_type:
-      parsed.confidence >= 0.8 ? "parser_succeeded" : "parser_low_confidence",
+    activity_type: parserActivityType(parsed.confidence),
     actor_user_id: me.authUserId,
     description: `Rule parser confidence ${parsed.confidence.toFixed(2)}`,
-    payload: {
-      parser: "structured_7_question_reply",
-      parsed_fields: {
-        country_interest: parsed.country_interest,
-        qualification: parsed.qualification,
-        marks_or_cgpa: parsed.marks_or_cgpa,
-        study_gap: parsed.study_gap,
-        city: parsed.city,
-        budget_range: parsed.budget_range,
-        english_test: parsed.english_test,
-      },
-      missing_fields: parsed.missing_fields,
-    },
+    payload: parserActivityPayload(parsed),
   });
 
   if (activityError) {
     fail(detailPath, `Parsed details saved, but activity failed: ${activityError.message}`);
   }
 
-  ok(detailPath, "Raw details parsed.");
+  ok(detailPath, "Raw details re-parsed.");
 }
 
 export async function promoteRawInboxToLead(formData: FormData) {

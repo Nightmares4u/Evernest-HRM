@@ -17,10 +17,12 @@ import type {
   CrmJsonValue,
   CrmLead,
   CrmLeadActivity,
+  CrmParserSettings,
   CrmRawInbox,
   CrmRawStatus,
   CrmWhatsappNumber,
 } from "@/lib/types/crm";
+import { DEFAULT_CRM_PARSER_SETTINGS } from "@/lib/crm/intake";
 
 export const CRM_PRODUCT_CATEGORIES = ["Italy", "Korea", "B2B", "General"] as const;
 
@@ -233,6 +235,35 @@ export async function listCrmBranches(): Promise<BranchRef[]> {
     .order("name");
   if (error) throw new Error(`listCrmBranches: ${error.message}`);
   return (data ?? []) as BranchRef[];
+}
+
+function threshold(value: unknown, fallback: number): number {
+  return typeof value === "number" && value >= 0 && value <= 1 ? value : fallback;
+}
+
+export async function getCrmParserSettings(): Promise<CrmParserSettings> {
+  if (!isSupabaseConfigured()) return DEFAULT_CRM_PARSER_SETTINGS;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("settings")
+    .select("value")
+    .eq("key", "crm_parser")
+    .maybeSingle();
+
+  if (error) throw new Error(`getCrmParserSettings: ${error.message}`);
+
+  const value = (data as { value?: Record<string, unknown> } | null)?.value;
+  return {
+    auto_promote: threshold(
+      value?.auto_promote,
+      DEFAULT_CRM_PARSER_SETTINGS.auto_promote
+    ),
+    needs_review: threshold(
+      value?.needs_review,
+      DEFAULT_CRM_PARSER_SETTINGS.needs_review
+    ),
+  };
 }
 
 export async function listCrmAssignableEmployees(): Promise<CrmEmployeeRef[]> {
