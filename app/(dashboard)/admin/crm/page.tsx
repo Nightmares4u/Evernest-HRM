@@ -41,7 +41,7 @@ export default async function AdminCrmPage({
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">CRM admin</h1>
           <p className="text-sm text-gray-500">
-            Stage 1 setup for source mapping and raw WhatsApp intake testing.
+            Stage 1: WhatsApp-number ownership, fallback routing, parser-assisted intake, and fallback rules.
           </p>
         </div>
         <Link
@@ -93,12 +93,12 @@ export default async function AdminCrmPage({
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Stage 1 status</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Phase 4 adds admin assignment rules and explicit rule-based
-              auto-assignment from lead detail. Real WhatsApp API, Gemini,
-              HRM task sync, and automatic post-promotion assignment remain pending.
+              WhatsApp number ownership drives lead routing, temporary fallback
+              counselors cover absences, raw intake is parser-assisted, and
+              fallback rules remain available for edge cases.
             </p>
           </div>
-          <Chip label="Phase 4 assignment rules" tone="indigo" />
+          <Chip label="Stage 1 active" tone="indigo" />
         </div>
       </section>
     </div>

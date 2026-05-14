@@ -76,6 +76,7 @@
 - Stage 1 Phase 4 employee-direct assignment rules UI and explicit rule-based auto-assignment
 - Stage 1 Phase 5 WhatsApp number ownership as primary assignment; rules demoted to fallback
 - Stage 1 Phase 5 temporary per-number fallback counselor routing for leave/break coverage
+- Stage 1 Phase 4.5 raw intake auto-parse, grouped CRM sidebar navigation, and fallback helper cleanup
 
 ## Assignment model (Stage 1)
 
@@ -95,6 +96,10 @@
   path.
 - The structured parser is for qualification and reporting only — never
   for primary assignment.
+- Manual/mock raw intake auto-runs the rule-based parser on creation,
+  but lead promotion remains an explicit human action.
+- CRM sidebar links are grouped separately from HRM/admin navigation;
+  raw inbox remains visible to super admins only for now.
 
 ## Risks
 

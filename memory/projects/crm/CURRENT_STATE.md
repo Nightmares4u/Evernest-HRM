@@ -69,10 +69,17 @@ to the default `assigned_employee_id`. Campaigns still inherit through
 their parent WhatsApp number. Existing assigned leads are not
 automatically reassigned.
 
+Stage 1 Phase 4.5 cleanup has also landed: manual/mock raw intake now
+auto-runs the rule-based parser on creation while promotion remains
+explicit, the sidebar groups CRM links separately from HRM/admin links
+with raw inbox hidden from non-super-admin users, and fallback-window
+evaluation now has one shared helper.
+
 ## Current Goal
 
-Review and manually test Stage 1 Phase 5 (number-owner assignment and
-per-number temporary fallback routing)
+Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner
+assignment, per-number temporary fallback routing, auto-parse on raw
+intake, and grouped CRM navigation)
 before building any real WhatsApp API, Gemini, HRM task sync, or
 downstream CRM modules.
 
@@ -102,7 +109,8 @@ Manually test the Phase 5 number-ownership CRM assignment flow:
 
 Then continue to the next Stage 1 phase only after approval. Do not
 build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
-downstream client/case/invoice/document system until Phase 4 is reviewed.
+downstream client/case/invoice/document system until current Stage 1
+manual review is complete.
 
 ## Current Stage 1 Boundary
 

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
 import type { CrmAssignmentRule, CrmLead } from "@/lib/types/crm";
 
 export type CrmAssignmentMatch =
@@ -108,13 +109,6 @@ const WHATSAPP_OWNER_SELECT = `
   fallback_ends_at
 `;
 
-function fallbackApplies(number: WhatsappNumberOwnerRow, now = new Date()): boolean {
-  if (!number.fallback_active || !number.fallback_employee_id) return false;
-  if (number.fallback_starts_at && now < new Date(number.fallback_starts_at)) return false;
-  if (number.fallback_ends_at && now > new Date(number.fallback_ends_at)) return false;
-  return true;
-}
-
 async function loadEmployeeNames(
   admin: ReturnType<typeof createAdminClient>,
   employeeIds: Array<string | null>
@@ -152,7 +146,7 @@ async function resolveWhatsappNumberOwner(
     ? employeeNames.get(number.fallback_employee_id) ?? number.fallback_employee_id
     : null;
 
-  if (fallbackApplies(number) && number.fallback_employee_id) {
+  if (isWhatsappNumberFallbackActiveNow(number) && number.fallback_employee_id) {
     return {
       matched: true,
       target_employee_id: number.fallback_employee_id,

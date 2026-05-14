@@ -23,6 +23,7 @@ import type {
   CrmWhatsappNumber,
 } from "@/lib/types/crm";
 import { DEFAULT_CRM_PARSER_SETTINGS } from "@/lib/crm/intake";
+import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
 
 export const CRM_PRODUCT_CATEGORIES = ["Italy", "Korea", "B2B", "General"] as const;
 
@@ -210,21 +211,6 @@ function canViewRawInboxRow(me: CurrentUser, row: CrmRawInboxVM): boolean {
   return false;
 }
 
-function isFallbackWindowActive(number: Pick<
-  CrmWhatsappNumber,
-  "fallback_active" | "fallback_employee_id" | "fallback_starts_at" | "fallback_ends_at"
->): boolean {
-  if (!number.fallback_active || !number.fallback_employee_id) return false;
-  const now = Date.now();
-  if (number.fallback_starts_at && now < new Date(number.fallback_starts_at).getTime()) {
-    return false;
-  }
-  if (number.fallback_ends_at && now > new Date(number.fallback_ends_at).getTime()) {
-    return false;
-  }
-  return true;
-}
-
 export async function listCrmBranches(): Promise<BranchRef[]> {
   if (!isSupabaseConfigured()) return [];
 
@@ -340,7 +326,7 @@ export async function listCrmWhatsappNumbers(): Promise<CrmWhatsappNumberVM[]> {
       assigned_employee_branch_code: employee?.branch_code ?? null,
       fallback_employee_name: fallbackEmployee?.full_name ?? null,
       fallback_employee_branch_code: fallbackEmployee?.branch_code ?? null,
-      fallback_is_currently_active: isFallbackWindowActive(number),
+      fallback_is_currently_active: isWhatsappNumberFallbackActiveNow(number),
     };
   });
 }
