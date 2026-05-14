@@ -46,7 +46,9 @@ export type CrmAssignmentMethod =
   | "auto_source_owner"
   | "manual"
   | "manager_override"
-  | "review_queue";
+  | "review_queue"
+  | "transfer_accept"
+  | "transfer_admin_override";
 
 export type CrmActivityType =
   | "raw_message_received"
@@ -61,7 +63,19 @@ export type CrmActivityType =
   | "unassigned"
   | "status_changed"
   | "note_added"
-  | "human_follow_up_started";
+  | "human_follow_up_started"
+  | "transfer_requested"
+  | "transfer_accepted"
+  | "transfer_rejected"
+  | "transfer_cancelled"
+  | "transfer_admin_override";
+
+export type CrmTransferStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "admin_override";
 
 export type CrmMessageDirection = "inbound" | "outbound";
 
@@ -218,6 +232,24 @@ export type CrmLeadAssignment = {
   matched_rule_id: string | null;
   reason: string | null;
   created_at: string;
+};
+
+// ---------- transfers / handoff ----------
+
+export type CrmLeadTransfer = {
+  id: string;
+  lead_id: string;
+  from_employee_id: string | null;
+  from_branch_id: string | null;
+  to_employee_id: string;
+  to_branch_id: string | null;
+  requested_by_user_id: string | null;
+  decided_by_user_id: string | null;
+  reason: string;
+  decision_note: string | null;
+  status: CrmTransferStatus;
+  requested_at: string;
+  decided_at: string | null;
 };
 
 // ---------- activity ----------

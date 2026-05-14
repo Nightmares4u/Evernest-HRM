@@ -75,11 +75,18 @@ explicit, the sidebar groups CRM links separately from HRM/admin links
 with raw inbox hidden from non-super-admin users, and fallback-window
 evaluation now has one shared helper.
 
+Stage 1 Phase 5 transfer/handoff foundation migration has been added:
+pending counselor-to-counselor handoff requests live in
+`crm_lead_transfers`, not `crm_lead_assignments`. Actual ownership
+changes still belong in `crm_lead_assignments` only after a transfer is
+accepted or admin-overridden. Transfer UI and server actions are not
+built yet.
+
 ## Current Goal
 
 Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner
 assignment, per-number temporary fallback routing, auto-parse on raw
-intake, and grouped CRM navigation)
+intake, grouped CRM navigation, and transfer migration readiness)
 before building any real WhatsApp API, Gemini, HRM task sync, or
 downstream CRM modules.
 
@@ -106,6 +113,7 @@ Manually test the Phase 5 number-ownership CRM assignment flow:
 - `/crm/inbox/[id]`
 - `/crm/leads`
 - `/crm/leads/[id]`
+- `supabase/migrations/0013_crm_lead_transfers.sql`
 
 Then continue to the next Stage 1 phase only after approval. Do not
 build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
