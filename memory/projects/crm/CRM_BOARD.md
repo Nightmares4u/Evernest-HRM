@@ -78,6 +78,7 @@
 - Stage 1 Phase 5 temporary per-number fallback counselor routing for leave/break coverage
 - Stage 1 Phase 4.5 raw intake auto-parse, grouped CRM sidebar navigation, and fallback helper cleanup
 - Stage 1 Phase 5 lead transfer/handoff schema foundation
+- CRM follow-up activity enum values for scheduled/completed timeline events
 
 ## Assignment model (Stage 1)
 
@@ -104,6 +105,10 @@
 - Pending transfer/handoff requests live in `crm_lead_transfers`.
   Actual assignment changes remain in `crm_lead_assignments` only after
   acceptance or admin override. Transfer UI/actions are still pending.
+- Follow-up activity types now include `followup_scheduled` and
+  `followup_completed`; follow-up scheduling/completion UI and actions
+  are still pending. `crm_leads.next_followup_at` already exists for the
+  next task.
 
 ## Risks
 

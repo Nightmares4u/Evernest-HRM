@@ -64,6 +64,8 @@ export type CrmActivityType =
   | "status_changed"
   | "note_added"
   | "human_follow_up_started"
+  | "followup_scheduled"
+  | "followup_completed"
   | "transfer_requested"
   | "transfer_accepted"
   | "transfer_rejected"

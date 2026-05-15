@@ -82,6 +82,12 @@ changes still belong in `crm_lead_assignments` only after a transfer is
 accepted or admin-overridden. Transfer UI and server actions are not
 built yet.
 
+Follow-up activity types have been added to the CRM timeline model:
+`followup_scheduled` and `followup_completed`. UI/actions for scheduling
+or completing follow-ups are not implemented yet. The existing
+`crm_leads.next_followup_at` column will be used by the next follow-up
+task.
+
 ## Current Goal
 
 Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner
