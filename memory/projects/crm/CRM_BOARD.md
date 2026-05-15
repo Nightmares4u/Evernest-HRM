@@ -61,7 +61,6 @@
 
 ## In Progress
 
-- **T10B:** Lead notes + status update + follow-up scheduling UI/actions
 - **T10C:** Due/overdue follow-up board
 - **T10D:** Activity timeline polish
 
@@ -82,6 +81,7 @@
 - Stage 1 Phase 4.5 raw intake auto-parse, grouped CRM sidebar navigation, and fallback helper cleanup
 - Stage 1 Phase 5 lead transfer/handoff schema foundation
 - CRM follow-up activity enum values for scheduled/completed timeline events
+- **T10B:** Lead notes + status update + follow-up scheduling UI/actions
 
 ## Assignment model (Stage 1)
 
@@ -109,9 +109,8 @@
   Actual assignment changes remain in `crm_lead_assignments` only after
   acceptance or admin override. Transfer UI/actions are still pending.
 - Follow-up activity types now include `followup_scheduled` and
-  `followup_completed`; follow-up scheduling/completion UI and actions
-  are still pending. `crm_leads.next_followup_at` already exists for the
-  next task.
+  `followup_completed`; the lead detail workbench can schedule and
+  complete follow-ups using `crm_leads.next_followup_at`.
 
 ## Risks
 
