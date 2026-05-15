@@ -61,10 +61,13 @@
 
 ## In Progress
 
-- Stage 1 manual testing and review on `crm-dev`
+- **T10B:** Lead notes + status update + follow-up scheduling UI/actions
+- **T10C:** Due/overdue follow-up board
+- **T10D:** Activity timeline polish
 
 ## Done
 
+- CRM AI Handoff and Reference Architecture knowledge base created
 - CRM planning directory created
 - Initial planning files drafted
 - Stage 1 WhatsApp intake plan drafted

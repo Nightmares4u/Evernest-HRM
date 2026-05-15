@@ -109,19 +109,32 @@ downstream CRM modules.
 
 ## Next Best Step
 
-Manually test the Phase 5 number-ownership CRM assignment flow:
-
-- `/admin/crm`
-- `/admin/crm/whatsapp-numbers`
-- `/admin/crm/campaign-sources`
-- `/admin/crm/assignment-rules`
-- `/crm/inbox`
-- `/crm/inbox/[id]`
-- `/crm/leads`
-- `/crm/leads/[id]`
-- `supabase/migrations/0013_crm_lead_transfers.sql`
+Execute the next implementation tasks from the AI Handoff Backlog:
+1. **T10B:** Lead notes + status update + follow-up scheduling UI/actions
+2. **T10C:** Due/overdue follow-up board
+3. **T10D:** Activity timeline polish
 
 Then continue to the next Stage 1 phase only after approval. Do not
+build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
+downstream client/case/invoice/document system until current Stage 1
+counselor workflows are complete.
+
+## Current Stage 1 Boundary
+
+Stage 1 ends at:
+
+Raw WhatsApp message -> structured intake -> parsed lead details -> assigned branch/agent -> human follow-up.
+
+Stage 1 excludes:
+
+- Full AI chatbot
+- Full Meta spend sync
+- Client portal
+- Invoice system
+- University database
+- Commission/payroll integration
+- Advanced reporting
+ phase only after approval. Do not
 build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
 downstream client/case/invoice/document system until current Stage 1
 manual review is complete.
