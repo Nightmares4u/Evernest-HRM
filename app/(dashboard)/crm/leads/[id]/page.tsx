@@ -2,6 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import {
+  addCrmLeadNote,
+  completeCrmLeadFollowup,
+  scheduleCrmLeadFollowup,
+  updateCrmLeadStatus,
+} from "@/app/(dashboard)/crm/leads/actions";
+import {
   assignCrmLead,
   autoAssignCrmLead,
 } from "@/app/(dashboard)/admin/crm/actions";
@@ -15,7 +21,7 @@ import {
   listCrmLeadTransfersForLead,
   type CrmLeadTransferVM,
 } from "@/lib/db/crm";
-import type { CrmTransferStatus } from "@/lib/types/crm";
+import type { CrmLeadStatus, CrmTransferStatus } from "@/lib/types/crm";
 
 type Search = { error?: string; ok?: string };
 
@@ -43,6 +49,16 @@ const TRANSFER_STATUS_TONES: Record<
   admin_override: "indigo",
 };
 
+const CRM_LEAD_STATUS_OPTIONS: CrmLeadStatus[] = [
+  "new",
+  "assigned",
+  "contacted",
+  "qualified",
+  "follow_up",
+  "lost",
+  "converted",
+];
+
 export default async function CrmLeadDetailPage({
   params,
   searchParams,
@@ -63,8 +79,9 @@ export default async function CrmLeadDetailPage({
   if (!lead) notFound();
 
   const canAssign = me.appUser.role === "super_admin";
-  const canRequestTransfer =
+  const canWorkLead =
     canAssign || Boolean(me.employee?.id && me.employee.id === lead.assigned_agent_id);
+  const canRequestTransfer = canWorkLead;
   const transferTargetEmployees = employees.filter(
     (employee) => employee.id !== lead.assigned_agent_id
   );
@@ -207,6 +224,13 @@ export default async function CrmLeadDetailPage({
         </div>
       </section>
 
+      <LeadWorkbench
+        leadId={lead.id}
+        canWorkLead={canWorkLead}
+        currentStatus={lead.status}
+        nextFollowupAt={lead.next_followup_at}
+      />
+
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
           <h2 className="text-sm font-semibold text-gray-900">Assignment history</h2>
@@ -246,11 +270,6 @@ export default async function CrmLeadDetailPage({
         />
         <TransferHistory transfers={transferHistory} />
       </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Placeholder title="Notes" text="Notes UI is a placeholder for a later Stage 1 pass." />
-        <Placeholder title="Follow-up" text="Follow-up scheduling is reserved for a later Stage 1 pass." />
-      </section>
     </div>
   );
 }
@@ -265,6 +284,54 @@ async function requestTransferForm(formData: FormData) {
   );
   const key = result.ok ? "ok" : "error";
   redirect(`/crm/leads/${leadId}?${key}=${encodeURIComponent(result.message)}`);
+}
+
+async function addNoteForm(formData: FormData) {
+  "use server";
+  const leadId = String(formData.get("lead_id") ?? "");
+  const result = await addCrmLeadNote(leadId, String(formData.get("note") ?? ""));
+  redirectLeadActionResult(result, leadId);
+}
+
+async function updateStatusForm(formData: FormData) {
+  "use server";
+  const leadId = String(formData.get("lead_id") ?? "");
+  const result = await updateCrmLeadStatus(
+    leadId,
+    String(formData.get("status") ?? ""),
+    String(formData.get("note") ?? "")
+  );
+  redirectLeadActionResult(result, leadId);
+}
+
+async function scheduleFollowupForm(formData: FormData) {
+  "use server";
+  const leadId = String(formData.get("lead_id") ?? "");
+  const result = await scheduleCrmLeadFollowup(
+    leadId,
+    String(formData.get("next_followup_at") ?? ""),
+    String(formData.get("note") ?? "")
+  );
+  redirectLeadActionResult(result, leadId);
+}
+
+async function completeFollowupForm(formData: FormData) {
+  "use server";
+  const leadId = String(formData.get("lead_id") ?? "");
+  const result = await completeCrmLeadFollowup(
+    leadId,
+    String(formData.get("note") ?? "")
+  );
+  redirectLeadActionResult(result, leadId);
+}
+
+function redirectLeadActionResult(
+  result: { ok: boolean; message: string; leadId?: string },
+  fallbackLeadId: string
+): never {
+  const leadId = result.leadId || fallbackLeadId;
+  const key = result.ok ? "ok" : "error";
+  redirect(`/crm/leads/${leadId || ""}?${key}=${encodeURIComponent(result.message)}`);
 }
 
 function isFallbackOwnerAssignment(reason: string | null): boolean {
@@ -317,6 +384,172 @@ function Info({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 text-sm text-gray-900">{value}</dd>
     </div>
   );
+}
+
+function LeadWorkbench({
+  leadId,
+  canWorkLead,
+  currentStatus,
+  nextFollowupAt,
+}: {
+  leadId: string;
+  canWorkLead: boolean;
+  currentStatus: CrmLeadStatus;
+  nextFollowupAt: string | null;
+}) {
+  return (
+    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Lead workbench</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Add internal context, update the lead stage, and schedule the next counselor follow-up.
+          </p>
+        </div>
+        <Chip label={formatStatusLabel(currentStatus)} tone={STATUS_TONES[currentStatus] ?? "gray"} />
+      </div>
+
+      {!canWorkLead ? (
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+          Only the assigned counselor or super admin can work this lead.
+        </p>
+      ) : (
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <form action={addNoteForm} className="rounded-md border border-gray-100 p-4">
+            <input type="hidden" name="lead_id" value={leadId} />
+            <h3 className="text-sm font-semibold text-gray-900">Internal note</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Internal note for counselors/admins. Not sent to client.
+            </p>
+            <label className="mt-3 block space-y-1 text-xs font-medium text-gray-600">
+              <span>Note</span>
+              <textarea
+                name="note"
+                required
+                rows={5}
+                className={INPUT}
+                placeholder="Add counselor context, call summary, or client preference."
+              />
+            </label>
+            <button
+              type="submit"
+              className="mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            >
+              Add note
+            </button>
+          </form>
+
+          <form action={updateStatusForm} className="rounded-md border border-gray-100 p-4">
+            <input type="hidden" name="lead_id" value={leadId} />
+            <h3 className="text-sm font-semibold text-gray-900">Status update</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Current status: {formatStatusLabel(currentStatus)}
+            </p>
+            <label className="mt-3 block space-y-1 text-xs font-medium text-gray-600">
+              <span>Status</span>
+              <select name="status" defaultValue={currentStatus} className={INPUT}>
+                {CRM_LEAD_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {formatStatusLabel(status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block space-y-1 text-xs font-medium text-gray-600">
+              <span>Note optional</span>
+              <textarea
+                name="note"
+                rows={3}
+                className={INPUT}
+                placeholder="Why is the status changing?"
+              />
+            </label>
+            <button
+              type="submit"
+              className="mt-3 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+            >
+              Update status
+            </button>
+          </form>
+
+          <div className="rounded-md border border-gray-100 p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Follow-up</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Schedule the next contact. Scheduling moves active leads into follow-up status.
+            </p>
+            {nextFollowupAt && (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Current scheduled follow-up: {formatCrmDateTime(nextFollowupAt)}
+              </div>
+            )}
+            <form action={scheduleFollowupForm} className="mt-3 space-y-3">
+              <input type="hidden" name="lead_id" value={leadId} />
+              <label className="block space-y-1 text-xs font-medium text-gray-600">
+                <span>Next follow-up date/time</span>
+                <input
+                  type="datetime-local"
+                  name="next_followup_at"
+                  required
+                  defaultValue={formatDateTimeInput(nextFollowupAt)}
+                  className={INPUT}
+                />
+              </label>
+              <label className="block space-y-1 text-xs font-medium text-gray-600">
+                <span>Note optional</span>
+                <textarea
+                  name="note"
+                  rows={2}
+                  className={INPUT}
+                  placeholder="What should happen on this follow-up?"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              >
+                Schedule follow-up
+              </button>
+            </form>
+            {nextFollowupAt && (
+              <form action={completeFollowupForm} className="mt-4 border-t border-gray-100 pt-4">
+                <input type="hidden" name="lead_id" value={leadId} />
+                <label className="block space-y-1 text-xs font-medium text-gray-600">
+                  <span>Completion note optional</span>
+                  <textarea
+                    name="note"
+                    rows={2}
+                    className={INPUT}
+                    placeholder="What happened during the follow-up?"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="mt-3 rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Mark follow-up complete
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function formatStatusLabel(status: string): string {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatDateTimeInput(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "";
+  const pakistanOffsetMs = 5 * 60 * 60 * 1000;
+  return new Date(date.getTime() + pakistanOffsetMs).toISOString().slice(0, 16);
 }
 
 function TransferLeadPanel({

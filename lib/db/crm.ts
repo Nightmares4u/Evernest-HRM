@@ -205,6 +205,29 @@ function pickOne<T>(value: T | T[] | null | undefined): T | null {
 }
 
 function activityLabel(activityType: CrmActivityType): string {
+  switch (activityType) {
+    case "note_added":
+      return "Note added";
+    case "status_changed":
+      return "Status changed";
+    case "followup_scheduled":
+      return "Follow-up scheduled";
+    case "followup_completed":
+      return "Follow-up completed";
+    case "transfer_requested":
+      return "Transfer requested";
+    case "transfer_accepted":
+      return "Transfer accepted";
+    case "transfer_rejected":
+      return "Transfer rejected";
+    case "transfer_cancelled":
+      return "Transfer cancelled";
+    case "transfer_admin_override":
+      return "Transfer admin override";
+    default:
+      break;
+  }
+
   return activityType
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
