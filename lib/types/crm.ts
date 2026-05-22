@@ -39,6 +39,23 @@ export type CrmLeadStatus =
   | "lost"
   | "converted";
 
+export type CrmClientType = "student" | "work_permit" | "b2b";
+
+export type CrmClientStatus =
+  | "onboarding"
+  | "doc_review"
+  | "uni_selection"
+  | "applying"
+  | "offer_in_hand"
+  | "offer_accepted"
+  | "visa_prep"
+  | "visa_submitted"
+  | "visa_decision"
+  | "pre_departure"
+  | "departed"
+  | "alumni"
+  | "withdrawn_refunded";
+
 export type CrmAssignmentStatus = "assigned" | "reassigned" | "unassigned";
 
 export type CrmAssignmentMethod =
@@ -182,6 +199,57 @@ export type CrmLead = {
   next_followup_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type CrmClient = {
+  id: string;
+  lead_id: string;
+  client_type: CrmClientType;
+  client_code: string;
+  status: CrmClientStatus;
+  target_country: string | null;
+  target_level: string | null;
+  agreement_signed_at: string;
+  advance_paid_at: string;
+  advance_amount: number | null;
+  total_fee: number | null;
+  currency: string;
+  assigned_agent_id: string | null;
+  branch_id: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientActivity = {
+  id: string;
+  client_id: string;
+  activity_type: string;
+  actor_user_id: string | null;
+  description: string | null;
+  payload: unknown;
+  created_at: string;
+};
+
+export type CrmClientPayment = {
+  id: string;
+  client_id: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  recorded_by_user_id: string | null;
+  created_at: string;
+};
+
+export type CrmClientVM = CrmClient & {
+  lead_customer_phone: string;
+  lead_customer_name: string | null;
+  assigned_agent_name: string | null;
+  branch_code: string | null;
+  branch_name: string | null;
 };
 
 export type CrmLeadMessage = {

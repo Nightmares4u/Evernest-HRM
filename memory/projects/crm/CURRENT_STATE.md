@@ -94,6 +94,14 @@ now provides a read-only due/overdue follow-up board grouped by
 `crm_leads.next_followup_at`, with server-side PKT bucket math, URL
 filters, counselor scoping, and no drag/drop or mutation actions.
 
+## Phase 2A Landed (2026-05-22)
+
+Conversion + client shell is implemented. New tables:
+`crm_clients`, `crm_client_activities`, `crm_client_payments`. Routes:
+`/crm/clients`, `/crm/clients/[id]`,
+`/admin/crm/clients/conversion-queue`. Migration:
+`0015_crm_clients_phase_2a.sql` (manual apply).
+
 ## Current Goal
 
 Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner

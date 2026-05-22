@@ -7,6 +7,7 @@ import {
   scheduleCrmLeadFollowup,
   updateCrmLeadStatus,
 } from "@/app/(dashboard)/crm/leads/actions";
+import { convertLeadToClient } from "@/app/(dashboard)/crm/clients/actions";
 import {
   assignCrmLead,
   autoAssignCrmLead,
@@ -15,6 +16,7 @@ import { requestLeadTransfer } from "@/app/(dashboard)/crm/transfers/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDate, formatCrmDateTime } from "@/lib/crm/format";
 import {
+  getCrmClientForLead,
   getCrmLeadDetail,
   getPendingCrmTransferForLead,
   listCrmAssignableEmployees,
@@ -70,11 +72,12 @@ export default async function CrmLeadDetailPage({
   const me = await getCurrentUser();
   if (!me) redirect("/login");
 
-  const [lead, pendingTransfer, transferHistory, employees] = await Promise.all([
+  const [lead, pendingTransfer, transferHistory, employees, existingClient] = await Promise.all([
     getCrmLeadDetail(id),
     getPendingCrmTransferForLead(id),
     listCrmLeadTransfersForLead(id),
     listCrmAssignableEmployees(),
+    getCrmClientForLead(id),
   ]);
   if (!lead) notFound();
 
@@ -230,6 +233,15 @@ export default async function CrmLeadDetailPage({
         currentStatus={lead.status}
         nextFollowupAt={lead.next_followup_at}
       />
+
+      {existingClient ? (
+        <ClientCreatedBanner
+          clientId={existingClient.id}
+          clientCode={existingClient.client_code}
+        />
+      ) : lead.status === "converted" ? (
+        <ConvertLeadPanel lead={lead} canWorkLead={canWorkLead} />
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
@@ -532,6 +544,127 @@ function LeadWorkbench({
             )}
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+function ClientCreatedBanner({
+  clientId,
+  clientCode,
+}: {
+  clientId: string;
+  clientCode: string;
+}) {
+  return (
+    <section className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <span className="font-semibold">Client created:</span> {clientCode}
+        </div>
+        <Link href={`/crm/clients/${clientId}`} className="font-medium text-green-900 hover:text-green-700">
+          View client
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function ConvertLeadPanel({
+  lead,
+  canWorkLead,
+}: {
+  lead: {
+    id: string;
+    customer_name: string | null;
+    customer_phone: string;
+    interested_country: string | null;
+  };
+  canWorkLead: boolean;
+}) {
+  return (
+    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Convert to client</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Create the Stage 2A client shell after agreement signing and advance payment.
+          </p>
+        </div>
+        <Chip label="student" tone="indigo" />
+      </div>
+
+      {!canWorkLead ? (
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+          Only the assigned counselor or super admin can convert this lead.
+        </p>
+      ) : (
+        <form action={convertLeadToClient} className="mt-5 grid gap-4 lg:grid-cols-3">
+          <input type="hidden" name="lead_id" value={lead.id} />
+          <input type="hidden" name="client_type" value="student" />
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Target country</span>
+            <input
+              name="target_country"
+              defaultValue={lead.interested_country ?? ""}
+              className={INPUT}
+              placeholder="Italy"
+            />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Target level</span>
+            <select name="target_level" defaultValue="" className={INPUT}>
+              <option value="">Choose level</option>
+              <option value="bachelors">Bachelors</option>
+              <option value="masters">Masters</option>
+              <option value="phd">PhD</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Currency</span>
+            <input name="currency" defaultValue="PKR" className={INPUT} />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Agreement signed at</span>
+            <input type="datetime-local" name="agreement_signed_at" required className={INPUT} />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Advance paid at</span>
+            <input type="datetime-local" name="advance_paid_at" required className={INPUT} />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Advance amount</span>
+            <input
+              type="number"
+              min="1"
+              step="0.01"
+              name="advance_amount"
+              required
+              className={INPUT}
+              placeholder="50000"
+            />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-gray-600">
+            <span>Total fee optional</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              name="total_fee"
+              className={INPUT}
+              placeholder="250000"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            >
+              Create client shell
+            </button>
+          </div>
+        </form>
       )}
     </section>
   );

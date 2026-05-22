@@ -12,6 +12,11 @@ import type {
   CrmAssignmentMethod,
   CrmAssignmentRule,
   CrmCampaignSource,
+  CrmClient,
+  CrmClientActivity,
+  CrmClientPayment,
+  CrmClientStatus,
+  CrmClientVM,
   CrmInitialProductCategory,
   CrmJsonObject,
   CrmJsonValue,
@@ -1170,4 +1175,227 @@ export async function listCrmLeadTransfersForLead(
 export function normalizeProductCategory(value: string): CrmInitialProductCategory {
   const trimmed = value.trim();
   return (trimmed || "General") as CrmInitialProductCategory;
+}
+
+type CrmClientJoinedRow = CrmClient & {
+  lead:
+    | { customer_phone: string | null; customer_name: string | null }
+    | { customer_phone: string | null; customer_name: string | null }[]
+    | null;
+  assigned_agent:
+    | { full_name: string | null }
+    | { full_name: string | null }[]
+    | null;
+  branch:
+    | { code: string | null; name: string | null }
+    | { code: string | null; name: string | null }[]
+    | null;
+};
+
+function clientRowToVM(row: CrmClientJoinedRow): CrmClientVM {
+  const lead = pickOne(row.lead);
+  const assignedAgent = pickOne(row.assigned_agent);
+  const branch = pickOne(row.branch);
+  return {
+    id: row.id,
+    lead_id: row.lead_id,
+    client_type: row.client_type,
+    client_code: row.client_code,
+    status: row.status,
+    target_country: row.target_country,
+    target_level: row.target_level,
+    agreement_signed_at: row.agreement_signed_at,
+    advance_paid_at: row.advance_paid_at,
+    advance_amount: row.advance_amount,
+    total_fee: row.total_fee,
+    currency: row.currency,
+    assigned_agent_id: row.assigned_agent_id,
+    branch_id: row.branch_id,
+    created_by_user_id: row.created_by_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    lead_customer_phone: lead?.customer_phone ?? "",
+    lead_customer_name: lead?.customer_name ?? null,
+    assigned_agent_name: assignedAgent?.full_name ?? null,
+    branch_code: branch?.code ?? null,
+    branch_name: branch?.name ?? null,
+  };
+}
+
+export async function listCrmClients(filters: {
+  status?: CrmClientStatus | null;
+  scopeToEmployeeId?: string | null;
+} = {}): Promise<CrmClientVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  let query = admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  }
+
+  if (me.appUser.role === "super_admin") {
+    if (filters.scopeToEmployeeId) {
+      query = query.eq("assigned_agent_id", filters.scopeToEmployeeId);
+    }
+  } else if (me.employee?.id) {
+    query = query.eq("assigned_agent_id", me.employee.id);
+  } else {
+    return [];
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listCrmClients: ${error.message}`);
+  return ((data ?? []) as CrmClientJoinedRow[]).map(clientRowToVM);
+}
+
+export async function getCrmClientDetail(id: string): Promise<{
+  client: CrmClientVM;
+  activities: CrmClientActivity[];
+  payments: CrmClientPayment[];
+} | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(`getCrmClientDetail: ${error.message}`);
+  if (!data) return null;
+
+  const client = clientRowToVM(data as CrmClientJoinedRow);
+  if (me.appUser.role !== "super_admin" && me.employee?.id !== client.assigned_agent_id) {
+    return null;
+  }
+
+  const [activitiesRes, paymentsRes] = await Promise.all([
+    admin
+      .from("crm_client_activities")
+      .select("*")
+      .eq("client_id", client.id)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("crm_client_payments")
+      .select("*")
+      .eq("client_id", client.id)
+      .order("paid_at", { ascending: false }),
+  ]);
+
+  if (activitiesRes.error) {
+    throw new Error(`getCrmClientDetail activities: ${activitiesRes.error.message}`);
+  }
+  if (paymentsRes.error) {
+    throw new Error(`getCrmClientDetail payments: ${paymentsRes.error.message}`);
+  }
+
+  return {
+    client,
+    activities: (activitiesRes.data ?? []) as CrmClientActivity[],
+    payments: (paymentsRes.data ?? []) as CrmClientPayment[],
+  };
+}
+
+export async function getCrmClientForLead(leadId: string): Promise<CrmClientVM | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .eq("lead_id", leadId)
+    .maybeSingle();
+
+  if (error) throw new Error(`getCrmClientForLead: ${error.message}`);
+  if (!data) return null;
+
+  const client = clientRowToVM(data as CrmClientJoinedRow);
+  if (me.appUser.role !== "super_admin" && me.employee?.id !== client.assigned_agent_id) {
+    return null;
+  }
+  return client;
+}
+
+export async function listCrmLeadsAwaitingConversion(): Promise<Array<{
+  lead_id: string;
+  customer_name: string | null;
+  customer_phone: string;
+  assigned_agent_name: string | null;
+  converted_at: string | null;
+}>> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  if (me.appUser.role !== "super_admin") {
+    throw new Error("Super-admin access required.");
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_leads")
+    .select(
+      `
+        id,
+        customer_name,
+        customer_phone,
+        updated_at,
+        assigned_agent:employees!crm_leads_assigned_agent_id_fkey(full_name),
+        client:crm_clients!crm_clients_lead_id_fkey(id)
+      `
+    )
+    .eq("status", "converted")
+    .is("client.id", null)
+    .order("updated_at", { ascending: false })
+    .limit(300);
+
+  if (error) throw new Error(`listCrmLeadsAwaitingConversion: ${error.message}`);
+
+  type Row = Pick<CrmLead, "id" | "customer_name" | "customer_phone" | "updated_at"> & {
+    assigned_agent:
+      | { full_name: string | null }
+      | { full_name: string | null }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((row) => {
+    const assignedAgent = pickOne(row.assigned_agent);
+    return {
+      lead_id: row.id,
+      customer_name: row.customer_name,
+      customer_phone: row.customer_phone,
+      assigned_agent_name: assignedAgent?.full_name ?? null,
+      converted_at: row.updated_at,
+    };
+  });
 }
