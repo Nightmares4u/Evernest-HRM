@@ -38,6 +38,8 @@ export type TaskStatus = "to_do" | "in_progress" | "done" | "blocked";
 
 export type TaskPriority = "low" | "normal" | "urgent";
 
+export type TaskWorkflowType = "assigned" | "self" | "request";
+
 export type HolidayType =
   | "public"
   | "office_closure"
@@ -260,6 +262,10 @@ export type Task = {
   due_time: string | null; // 'HH:MM[:SS]' or null = EOD
   priority: TaskPriority;
   status: TaskStatus;
+  workflow_type: TaskWorkflowType;
+  accepted_at: string | null;
+  declined_at: string | null;
+  declined_reason: string | null;
   origin: string;
   recurring_task_id: string | null;
   requires_approval: boolean;

@@ -128,6 +128,8 @@ async function handle(request: Request) {
         due_time: template.due_time ?? null,
         priority: template.priority,
         status: "to_do",
+        workflow_type: "assigned",
+        accepted_at: new Date().toISOString(),
         origin: "recurring",
         recurring_task_id: template.id,
         requires_approval: template.requires_approval,
