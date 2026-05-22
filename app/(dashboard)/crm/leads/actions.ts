@@ -201,30 +201,30 @@ export async function scheduleCrmLeadFollowup(
   const nextFollowupIso = parsedDate.toISOString();
 
   const admin = createAdminClient();
-  const [{ error: updateError }, { error: activityError }] = await Promise.all([
-    admin
-      .from("crm_leads")
-      .update({
-        next_followup_at: nextFollowupIso,
-        status: nextStatus,
-      })
-      .eq("id", lead.id),
-    admin.from("crm_lead_activities").insert({
-      lead_id: lead.id,
-      raw_inbox_id: lead.raw_inbox_id,
-      activity_type: "followup_scheduled",
-      actor_user_id: me.authUserId,
-      description: cleanNote || `Follow-up scheduled for ${nextFollowupIso}.`,
-      payload: {
-        next_followup_at: nextFollowupIso,
-        note: cleanNote || null,
-        from_status: lead.status,
-        to_status: nextStatus,
-      },
-    }),
-  ]);
+  const { error: updateError } = await admin
+    .from("crm_leads")
+    .update({
+      next_followup_at: nextFollowupIso,
+      status: nextStatus,
+    })
+    .eq("id", lead.id);
 
   if (updateError) return error(`Could not schedule follow-up: ${updateError.message}`, lead.id);
+
+  const { error: activityError } = await admin.from("crm_lead_activities").insert({
+    lead_id: lead.id,
+    raw_inbox_id: lead.raw_inbox_id,
+    activity_type: "followup_scheduled",
+    actor_user_id: me.authUserId,
+    description: cleanNote || `Follow-up scheduled for ${nextFollowupIso}.`,
+    payload: {
+      next_followup_at: nextFollowupIso,
+      note: cleanNote || null,
+      from_status: lead.status,
+      to_status: nextStatus,
+    },
+  });
+
   if (activityError) {
     return error(`Follow-up scheduled, but activity failed: ${activityError.message}`, lead.id);
   }
