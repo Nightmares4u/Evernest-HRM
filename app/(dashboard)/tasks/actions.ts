@@ -10,20 +10,32 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireTaskAdmin } from "@/lib/auth/require-role";
-import { actorFromCurrentUser, canAssignTask } from "@/lib/auth/permissions";
+import {
+  actorFromCurrentUser,
+  canAssignTask,
+  canCreateSelfTask,
+  canRequestFrom,
+} from "@/lib/auth/permissions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getUserNotificationTarget } from "@/lib/email/recipients";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { sendEmail, sendEmailSafely } from "@/lib/email/send";
-import { taskAssignedEmail } from "@/lib/email/templates";
+import {
+  taskAssignedEmail,
+  taskRequestAcceptedEmail,
+  taskRequestDeclinedEmail,
+  taskRequestedEmail,
+} from "@/lib/email/templates";
 import type { TaskPriority, UserRole } from "@/lib/types/hrm";
 
 function fail(path: string, msg: string): never {
-  redirect(`${path}?error=${encodeURIComponent(msg)}`);
+  const sep = path.includes("?") ? "&" : "?";
+  redirect(`${path}${sep}error=${encodeURIComponent(msg)}`);
 }
 
 function ok(path: string, msg: string): never {
-  redirect(`${path}?ok=${encodeURIComponent(msg)}`);
+  const sep = path.includes("?") ? "&" : "?";
+  redirect(`${path}${sep}ok=${encodeURIComponent(msg)}`);
 }
 
 async function logAudit(
@@ -229,12 +241,26 @@ function normaliseDueTime(raw: string): string | null {
   return null;
 }
 
+function normalisePriority(raw: string): TaskPriority {
+  return (PRIORITIES.includes(raw as TaskPriority) ? raw : "normal") as TaskPriority;
+}
+
+function assertFormMode(
+  formData: FormData,
+  expected: "assigned" | "self" | "request",
+  path: string
+) {
+  const mode = String(formData.get("mode") ?? "").trim();
+  if (mode && mode !== expected) fail(path, "Invalid task form mode.");
+}
+
 /**
  * Super-admin creates a one-off task assigned to anyone (employee or admin).
  * Optional `due_time` lets the schedule grid place it in the right hour cell.
  * `redirect_to` lets the form post from anywhere (e.g., dashboard quick-assign).
  */
 export async function createTask(formData: FormData) {
+  assertFormMode(formData, "assigned", "/tasks");
   const title = String(formData.get("title") ?? "").trim();
   const description =
     String(formData.get("description") ?? "").trim() || null;
@@ -242,13 +268,13 @@ export async function createTask(formData: FormData) {
   const due_date = String(formData.get("due_date") ?? "").trim();
   const due_time = normaliseDueTime(String(formData.get("due_time") ?? ""));
   const priorityRaw = String(formData.get("priority") ?? "normal").trim();
-  const priority = (PRIORITIES.includes(priorityRaw as TaskPriority)
-    ? priorityRaw
-    : "normal") as TaskPriority;
+  const priority = normalisePriority(priorityRaw);
   const requires_approval = formData.get("requires_approval") === "on";
   const redirectToRaw = String(formData.get("redirect_to") ?? "").trim();
   const redirectTo =
-    redirectToRaw === "/dashboard" || redirectToRaw === "/admin/tasks"
+    redirectToRaw === "/dashboard" ||
+    redirectToRaw === "/admin/tasks" ||
+    redirectToRaw === "/tasks"
       ? redirectToRaw
       : "/admin/tasks";
 
@@ -294,6 +320,8 @@ export async function createTask(formData: FormData) {
       due_time,
       priority,
       status: "to_do",
+      workflow_type: "assigned",
+      accepted_at: new Date().toISOString(),
       origin: "hrm",
       requires_approval,
     })
@@ -314,6 +342,7 @@ export async function createTask(formData: FormData) {
       due_time,
       priority,
       requires_approval,
+      workflow_type: "assigned",
     },
   });
 
@@ -350,6 +379,316 @@ export async function createTask(formData: FormData) {
   revalidatePath("/admin/tasks");
   revalidatePath("/dashboard");
   ok(redirectTo, `Task assigned (${title}).`);
+}
+
+export async function createSelfTask(formData: FormData) {
+  assertFormMode(formData, "self", "/tasks");
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const due_date = String(formData.get("due_date") ?? "").trim();
+  const due_time = normaliseDueTime(String(formData.get("due_time") ?? ""));
+  const priority = normalisePriority(String(formData.get("priority") ?? "normal").trim());
+
+  if (!title) fail("/tasks", "Title is required.");
+  if (!due_date) fail("/tasks", "Due date is required.");
+
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const actor = actorFromCurrentUser(me);
+  if (!canCreateSelfTask(actor)) fail("/tasks", "Your account is not active.");
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const { data, error } = await admin
+    .from("tasks")
+    .insert({
+      title,
+      description,
+      assigned_to: actor.id,
+      assigned_by: actor.id,
+      due_date,
+      due_time,
+      priority,
+      status: "to_do",
+      workflow_type: "self",
+      accepted_at: now,
+      requires_approval: false,
+      origin: "hrm",
+    })
+    .select("id")
+    .single();
+  if (error || !data) fail("/tasks", `Create failed: ${error?.message ?? "unknown"}`);
+
+  const { error: updateErr } = await admin.from("task_updates").insert({
+    task_id: data.id,
+    user_id: actor.id,
+    note: "self-created",
+    status_update: null,
+  });
+  if (updateErr) fail("/tasks", `Task created, but history note failed: ${updateErr.message}`);
+
+  await logAudit(admin, {
+    actor_id: actor.id,
+    target_type: "task",
+    target_id: data.id,
+    action: "create_self_task",
+    new_value: { title, due_date, due_time, priority, workflow_type: "self" },
+  });
+
+  revalidateTaskSurfaces();
+  ok("/tasks", `Task created (${title}).`);
+}
+
+export async function createRequestTask(formData: FormData) {
+  assertFormMode(formData, "request", "/tasks");
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const assigned_to = String(formData.get("assigned_to") ?? "").trim();
+  const due_date = String(formData.get("due_date") ?? "").trim();
+  const due_time = normaliseDueTime(String(formData.get("due_time") ?? ""));
+  const priority = normalisePriority(String(formData.get("priority") ?? "normal").trim());
+
+  if (!title) fail("/tasks", "Title is required.");
+  if (!assigned_to) fail("/tasks", "Pick the person you want to request from.");
+  if (!due_date) fail("/tasks", "Due date is required.");
+
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const actor = actorFromCurrentUser(me);
+  if (actor.id === assigned_to) fail("/tasks", "Use self task for your own work.");
+
+  const admin = createAdminClient();
+  const [{ data: targetUser, error: targetErr }, { data: targetEmployee }] =
+    await Promise.all([
+      admin
+        .from("app_users")
+        .select("id, role, is_active, display_name")
+        .eq("id", assigned_to)
+        .maybeSingle(),
+      admin
+        .from("employees")
+        .select("branch_id, departments ( name )")
+        .eq("user_id", assigned_to)
+        .maybeSingle(),
+    ]);
+  if (targetErr || !targetUser) fail("/tasks", "Request target not found.");
+  const departmentJoin = targetEmployee?.departments as
+    | { name: string }
+    | { name: string }[]
+    | null
+    | undefined;
+  const targetDepartment = Array.isArray(departmentJoin)
+    ? departmentJoin[0]?.name ?? null
+    : departmentJoin?.name ?? null;
+  if (
+    !canRequestFrom(actor, {
+      user_id: targetUser.id,
+      role: targetUser.role as UserRole,
+      branch_id: targetEmployee?.branch_id ?? null,
+      is_active: Boolean(targetUser.is_active),
+      department_name: targetDepartment,
+    })
+  ) {
+    fail("/tasks", "You cannot request tasks from that user.");
+  }
+
+  const { data, error } = await admin
+    .from("tasks")
+    .insert({
+      title,
+      description,
+      assigned_to,
+      assigned_by: actor.id,
+      due_date,
+      due_time,
+      priority,
+      status: "to_do",
+      workflow_type: "request",
+      accepted_at: null,
+      declined_at: null,
+      requires_approval: false,
+      origin: "hrm",
+    })
+    .select("id")
+    .single();
+  if (error || !data) fail("/tasks", `Create failed: ${error?.message ?? "unknown"}`);
+
+  const { error: updateErr } = await admin.from("task_updates").insert({
+    task_id: data.id,
+    user_id: actor.id,
+    note: "request created",
+    status_update: null,
+  });
+  if (updateErr) fail("/tasks", `Request created, but history note failed: ${updateErr.message}`);
+
+  await logAudit(admin, {
+    actor_id: actor.id,
+    target_type: "task",
+    target_id: data.id,
+    action: "create_request_task",
+    new_value: { title, assigned_to, due_date, due_time, priority, workflow_type: "request" },
+  });
+
+  await sendEmailSafely(async () => {
+    const target = await getUserNotificationTarget(admin, assigned_to);
+    if (!target?.email) return;
+    const tpl = taskRequestedEmail({
+      to_name: target.name ?? target.email,
+      title,
+      description,
+      due_date,
+      due_time,
+      priority,
+      requester_name: me.appUser.display_name,
+    });
+    await sendEmail({
+      to: target.email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
+  });
+
+  revalidateTaskSurfaces();
+  ok("/tasks?tab=requests-out", `Request sent to ${targetUser.display_name}.`);
+}
+
+export async function acceptRequest(formData: FormData) {
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) fail("/tasks?tab=requests-in", "Missing task id.");
+
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const admin = createAdminClient();
+  const { data: task, error } = await admin
+    .from("tasks")
+    .select("id, title, assigned_to, assigned_by, workflow_type, accepted_at, declined_at, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !task) fail("/tasks?tab=requests-in", "Request not found.");
+  if (
+    task.workflow_type !== "request" ||
+    task.accepted_at !== null ||
+    task.declined_at !== null ||
+    task.assigned_to !== me.authUserId
+  ) {
+    fail("/tasks?tab=requests-in", "This request cannot be accepted.");
+  }
+
+  const now = new Date().toISOString();
+  const { error: updErr } = await admin
+    .from("tasks")
+    .update({ accepted_at: now })
+    .eq("id", id);
+  if (updErr) fail("/tasks?tab=requests-in", `Accept failed: ${updErr.message}`);
+
+  const { error: updateErr } = await admin.from("task_updates").insert({
+    task_id: id,
+    user_id: me.authUserId,
+    note: "request accepted",
+    status_update: null,
+  });
+  if (updateErr)
+    fail("/tasks?tab=requests-in", `Accepted, but history note failed: ${updateErr.message}`);
+
+  await logAudit(admin, {
+    actor_id: me.authUserId,
+    target_type: "task",
+    target_id: id,
+    action: "accept_request",
+    old_value: { accepted_at: null },
+    new_value: { accepted_at: now },
+  });
+
+  await sendEmailSafely(async () => {
+    const requester = await getUserNotificationTarget(admin, task.assigned_by);
+    if (!requester?.email) return;
+    const tpl = taskRequestAcceptedEmail({
+      to_name: requester.name ?? requester.email,
+      title: task.title,
+      accepter_name: me.appUser.display_name,
+    });
+    await sendEmail({
+      to: requester.email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
+  });
+
+  revalidateTaskSurfaces();
+  ok("/tasks", `Request accepted: ${task.title}`);
+}
+
+export async function declineRequest(formData: FormData) {
+  const id = String(formData.get("id") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!id) fail("/tasks?tab=requests-in", "Missing task id.");
+  if (!reason) fail("/tasks?tab=requests-in", "Reason required.");
+
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const admin = createAdminClient();
+  const { data: task, error } = await admin
+    .from("tasks")
+    .select("id, title, assigned_to, assigned_by, workflow_type, accepted_at, declined_at, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !task) fail("/tasks?tab=requests-in", "Request not found.");
+  if (
+    task.workflow_type !== "request" ||
+    task.accepted_at !== null ||
+    task.declined_at !== null ||
+    task.assigned_to !== me.authUserId
+  ) {
+    fail("/tasks?tab=requests-in", "This request cannot be declined.");
+  }
+
+  const now = new Date().toISOString();
+  const { error: updErr } = await admin
+    .from("tasks")
+    .update({ declined_at: now, declined_reason: reason, status: "blocked" })
+    .eq("id", id);
+  if (updErr) fail("/tasks?tab=requests-in", `Decline failed: ${updErr.message}`);
+
+  const { error: updateErr } = await admin.from("task_updates").insert({
+    task_id: id,
+    user_id: me.authUserId,
+    note: reason,
+    status_update: "blocked",
+  });
+  if (updateErr)
+    fail("/tasks?tab=requests-in", `Declined, but history note failed: ${updateErr.message}`);
+
+  await logAudit(admin, {
+    actor_id: me.authUserId,
+    target_type: "task",
+    target_id: id,
+    action: "decline_request",
+    old_value: { status: task.status },
+    new_value: { status: "blocked", declined_at: now },
+    reason,
+  });
+
+  await sendEmailSafely(async () => {
+    const requester = await getUserNotificationTarget(admin, task.assigned_by);
+    if (!requester?.email) return;
+    const tpl = taskRequestDeclinedEmail({
+      to_name: requester.name ?? requester.email,
+      title: task.title,
+      decliner_name: me.appUser.display_name,
+      reason,
+    });
+    await sendEmail({
+      to: requester.email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
+  });
+
+  revalidateTaskSurfaces();
+  ok("/tasks?tab=requests-in", `Request declined: ${task.title}`);
 }
 
 /**

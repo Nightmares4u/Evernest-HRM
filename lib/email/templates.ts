@@ -113,6 +113,120 @@ ${FRAME_CLOSE}`;
   return { html, text, subject };
 }
 
+// ---------- task request workflow ----------
+
+export function taskRequestedEmail(args: {
+  to_name: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  due_time: string | null;
+  priority: string;
+  requester_name: string;
+}): { html: string; text: string; subject: string } {
+  const subject = `[EN HRM] Task request: ${args.title}`;
+  const link = `${appBaseUrl()}/tasks?tab=requests-in`;
+  const dueText = args.due_time
+    ? `${args.due_date} at ${args.due_time.slice(0, 5)}`
+    : `${args.due_date} (EOD)`;
+  const rows: Array<[string, string]> = [
+    ["Title", esc(args.title)],
+    ["Due", esc(dueText)],
+    ["Priority", esc(args.priority)],
+    ["Requested by", esc(args.requester_name)],
+  ];
+  if (args.description) rows.push(["Notes", esc(args.description)]);
+
+  const html = `${FRAME_OPEN}
+  <h2 style="margin: 0 0 16px; font-size: 20px;">New task request</h2>
+  <p style="margin: 0 0 12px;">Hi ${esc(args.to_name)},</p>
+  <p style="margin: 0 0 12px;">${esc(args.requester_name)} asked you to take on a task. Accept or decline it in EN HRM.</p>
+  ${dl(rows)}
+  <p>
+    <a href="${link}" style="display: inline-block; padding: 8px 14px; background: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Review request</a>
+  </p>
+${FRAME_CLOSE}`;
+
+  const text = [
+    `New task request`,
+    ``,
+    `Hi ${args.to_name},`,
+    `${args.requester_name} asked you to take on a task.`,
+    ``,
+    `Title: ${args.title}`,
+    `Due: ${dueText}`,
+    `Priority: ${args.priority}`,
+    args.description ? `Notes: ${args.description}` : ``,
+    ``,
+    `Review: ${link}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { html, text, subject };
+}
+
+export function taskRequestAcceptedEmail(args: {
+  to_name: string;
+  title: string;
+  accepter_name: string;
+}): { html: string; text: string; subject: string } {
+  const subject = `[EN HRM] Request accepted: ${args.title}`;
+  const link = `${appBaseUrl()}/tasks?tab=requests-out`;
+
+  const html = `${FRAME_OPEN}
+  <h2 style="margin: 0 0 16px; font-size: 20px;">Task request accepted</h2>
+  <p style="margin: 0 0 12px;">Hi ${esc(args.to_name)},</p>
+  <p style="margin: 0 0 12px;">${esc(args.accepter_name)} accepted your request for <strong>${esc(args.title)}</strong>.</p>
+  <p>
+    <a href="${link}" style="display: inline-block; padding: 8px 14px; background: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Open sent requests</a>
+  </p>
+${FRAME_CLOSE}`;
+
+  const text = [
+    `Task request accepted`,
+    ``,
+    `Hi ${args.to_name},`,
+    `${args.accepter_name} accepted your request: ${args.title}`,
+    ``,
+    `Open: ${link}`,
+  ].join("\n");
+
+  return { html, text, subject };
+}
+
+export function taskRequestDeclinedEmail(args: {
+  to_name: string;
+  title: string;
+  decliner_name: string;
+  reason: string;
+}): { html: string; text: string; subject: string } {
+  const subject = `[EN HRM] Request declined: ${args.title}`;
+  const link = `${appBaseUrl()}/tasks?tab=requests-out`;
+
+  const html = `${FRAME_OPEN}
+  <h2 style="margin: 0 0 16px; font-size: 20px;">Task request declined</h2>
+  <p style="margin: 0 0 12px;">Hi ${esc(args.to_name)},</p>
+  <p style="margin: 0 0 12px;">${esc(args.decliner_name)} declined your request for <strong>${esc(args.title)}</strong>.</p>
+  ${dl([["Reason", esc(args.reason)]])}
+  <p>
+    <a href="${link}" style="display: inline-block; padding: 8px 14px; background: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Open sent requests</a>
+  </p>
+${FRAME_CLOSE}`;
+
+  const text = [
+    `Task request declined`,
+    ``,
+    `Hi ${args.to_name},`,
+    `${args.decliner_name} declined your request: ${args.title}`,
+    `Reason: ${args.reason}`,
+    ``,
+    `Open: ${link}`,
+  ].join("\n");
+
+  return { html, text, subject };
+}
+
 // ---------- check-in ----------
 
 export function checkInEmail(args: {

@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   actorFromCurrentUser,
   canAssignTask,
+  canRequestFrom,
   canSeeEmployee,
   isBranchManagerOrAboveRole,
   isGlobalAdminRole,
@@ -25,6 +26,7 @@ export type TaskRowVM = Task & {
   assignee_email: string;
   assignee_role: UserRole;
   assigner_name: string;
+  assigner_email: string;
   branch_name: string | null;
   branch_code: string | null;
   department_name: string | null;
@@ -38,6 +40,7 @@ export type AssignableUser = {
   employee_id: string | null; // null for system-only users (e.g. Sir Raza)
   branch_id: string | null;
   branch_code: string | null;
+  department_name?: string | null;
 };
 
 function pickOne<T>(value: T | T[] | null | undefined): T | null {
@@ -64,11 +67,12 @@ async function visibleUserIdsForCurrentActor(): Promise<string[] | null> {
 
 const TASK_SELECT = `
   id, title, description, assigned_to, assigned_by,
-  branch_id, department_id, due_date, due_time, priority, status, origin,
+  branch_id, department_id, due_date, due_time, priority, status,
+  workflow_type, accepted_at, declined_at, declined_reason, origin,
   recurring_task_id, requires_approval, approved_by, approved_at,
   created_at, completed_at,
   assignee:app_users!tasks_assigned_to_fkey ( display_name, email, role ),
-  assigner:app_users!tasks_assigned_by_fkey ( display_name ),
+  assigner:app_users!tasks_assigned_by_fkey ( display_name, email ),
   branches ( name, code ),
   departments ( name )
 `;
@@ -79,8 +83,8 @@ type TaskRowRaw = Task & {
     | { display_name: string; email: string; role: UserRole }[]
     | null;
   assigner:
-    | { display_name: string }
-    | { display_name: string }[]
+    | { display_name: string; email: string }
+    | { display_name: string; email: string }[]
     | null;
   branches: { name: string; code: string } | { name: string; code: string }[] | null;
   departments: { name: string } | { name: string }[] | null;
@@ -103,6 +107,10 @@ function rowToVM(row: TaskRowRaw): TaskRowVM {
     due_time: row.due_time ?? null,
     priority: row.priority,
     status: row.status,
+    workflow_type: row.workflow_type,
+    accepted_at: row.accepted_at,
+    declined_at: row.declined_at,
+    declined_reason: row.declined_reason,
     origin: row.origin,
     recurring_task_id: row.recurring_task_id,
     requires_approval: row.requires_approval,
@@ -114,6 +122,7 @@ function rowToVM(row: TaskRowRaw): TaskRowVM {
     assignee_email: assignee?.email ?? "",
     assignee_role: assignee?.role ?? "employee",
     assigner_name: assigner?.display_name ?? "?",
+    assigner_email: assigner?.email ?? "",
     branch_name: branch?.name ?? null,
     branch_code: branch?.code ?? null,
     department_name: dept?.name ?? null,
@@ -201,6 +210,8 @@ export async function listTasksInRange(
   let query = supabase
     .from("tasks")
     .select(TASK_SELECT)
+    .or("workflow_type.neq.request,accepted_at.not.is.null")
+    .is("declined_at", null)
     .gte("due_date", startDate)
     .lte("due_date", endDate)
     .order("due_date", { ascending: true })
@@ -249,7 +260,13 @@ export async function listMyTasks(): Promise<MyTasksGrouped> {
     .limit(200);
   if (error) throw new Error(`listMyTasks: ${error.message}`);
 
-  const all = ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
+  const all = ((data ?? []) as unknown as TaskRowRaw[])
+    .map(rowToVM)
+    .filter(
+      (row) =>
+        !(row.workflow_type === "request" && row.accepted_at === null) &&
+        row.declined_at === null
+    );
 
   for (const t of all) {
     if (t.status === "done") {
@@ -324,6 +341,57 @@ export async function listTasksForEmployeeAdmin(
     .order("due_date", { ascending: false })
     .limit(limit);
   if (error) throw new Error(`listTasksForEmployeeAdmin: ${error.message}`);
+  return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
+}
+
+export type RequestRowVM = TaskRowVM & {
+  requester_name: string;
+  requester_email: string;
+};
+
+export async function listRequestsToMe(): Promise<RequestRowVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = await getCurrentUser();
+  if (!me) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("assigned_to", me.authUserId)
+    .eq("workflow_type", "request")
+    .is("accepted_at", null)
+    .is("declined_at", null)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`listRequestsToMe: ${error.message}`);
+
+  return ((data ?? []) as unknown as TaskRowRaw[]).map((row) => {
+    const vm = rowToVM(row);
+    return {
+      ...vm,
+      requester_name: vm.assigner_name,
+      requester_email: vm.assigner_email,
+    };
+  });
+}
+
+export async function listRequestsISent(): Promise<TaskRowVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = await getCurrentUser();
+  if (!me) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("assigned_by", me.authUserId)
+    .eq("workflow_type", "request")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`listRequestsISent: ${error.message}`);
   return ((data ?? []) as unknown as TaskRowRaw[]).map(rowToVM);
 }
 
@@ -406,6 +474,84 @@ export async function listAssignableUsers(): Promise<AssignableUser[]> {
         employee_id: emp?.id ?? null,
         branch_id: emp?.branch_id ?? null,
         branch_code: branch?.code ?? null,
+      };
+    });
+}
+
+export async function listUsersICanRequestFrom(): Promise<AssignableUser[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
+
+  const supabase = createAdminClient();
+  const [{ data: users, error: usersError }, { data: employees, error: employeesError }] =
+    await Promise.all([
+      supabase
+        .from("app_users")
+        .select("id, display_name, email, role, is_active")
+        .eq("is_active", true)
+        .order("display_name"),
+      supabase
+        .from("employees")
+        .select("id, user_id, branch_id, branches ( code ), departments ( name )")
+        .eq("employment_status", "active"),
+    ]);
+
+  if (usersError) {
+    throw new Error(`listUsersICanRequestFrom: ${usersError.message}`);
+  }
+  if (employeesError) {
+    throw new Error(`listUsersICanRequestFrom: ${employeesError.message}`);
+  }
+
+  type UserRow = {
+    id: string;
+    display_name: string;
+    email: string;
+    role: UserRole;
+    is_active: boolean;
+  };
+  type EmployeeRow = {
+    id: string;
+    user_id: string;
+    branch_id: string | null;
+    branches: { code: string } | { code: string }[] | null;
+    departments: { name: string } | { name: string }[] | null;
+  };
+
+  const employeeByUserId = new Map(
+    ((employees ?? []) as EmployeeRow[]).map((employee) => [
+      employee.user_id,
+      employee,
+    ])
+  );
+
+  return ((users ?? []) as UserRow[])
+    .filter((user) => {
+      const employee = employeeByUserId.get(user.id);
+      return canRequestFrom(actor, {
+        user_id: user.id,
+        role: user.role,
+        branch_id: employee?.branch_id ?? null,
+        is_active: user.is_active,
+        department_name: employee ? pickOne(employee.departments)?.name ?? null : null,
+      });
+    })
+    .map((user) => {
+      const employee = employeeByUserId.get(user.id);
+      const branch = employee ? pickOne(employee.branches) : null;
+      const department = employee ? pickOne(employee.departments) : null;
+      return {
+        id: user.id,
+        display_name: user.display_name,
+        email: user.email,
+        role: user.role,
+        employee_id: employee?.id ?? null,
+        branch_id: employee?.branch_id ?? null,
+        branch_code: branch?.code ?? null,
+        department_name: department?.name ?? null,
       };
     });
 }

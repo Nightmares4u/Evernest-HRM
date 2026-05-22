@@ -334,6 +334,8 @@ export async function generateTasksForToday() {
       due_time: t.due_time ?? null,
       priority: t.priority,
       status: "to_do",
+      workflow_type: "assigned",
+      accepted_at: new Date().toISOString(),
       origin: "recurring",
       recurring_task_id: t.id,
       requires_approval: t.requires_approval,

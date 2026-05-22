@@ -99,6 +99,12 @@ All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-s
 - `supabase/migrations/0005_attendance_system_mode.sql` — pending/apply next. Adds `attendance_mode = 'system'` for cron-created attendance rows.
 - `supabase/migrations/0008_employee_personal_payroll_details.sql` — pending/apply next. Adds employee self-profile/payroll forwarding fields: first/middle/last name, contact number, CNIC, emergency contact, bank name, bank branch, and account/IBAN.
 
+### Task workflow expansion (2026-05-21)
+- New additive migration: `supabase/migrations/0010_task_workflow.sql`.
+- `tasks.workflow_type` distinguishes `assigned`, `self`, and `request` rows without changing the existing `task_status` enum.
+- Employees can create self tasks, request work from eligible same-branch users or global admins, and managers can still assign subordinate tasks through the existing flow.
+- Request tasks start with `accepted_at = NULL`; they stay out of the receiver's My tasks, schedule grid, and overdue counts until accepted. Declining sets `declined_at`, `declined_reason`, and `status = 'blocked'`.
+
 ### Seed
 - `scripts/seed-users.ts` — applied. 13 users now in `auth.users` + `app_users` (+ 12 in `employees`). Two-pass FK resolution for `manager_email`.
 - `memory/projects/hrm/seed/users.csv` — local only, gitignored, contains plaintext temp passwords. Pattern: `EN-2026-{firstname}`.

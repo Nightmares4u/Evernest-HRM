@@ -341,6 +341,7 @@ function AdminTaskRow({ t, today }: { t: TaskRowVM; today: string }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-gray-900">{t.title}</span>
+            <Chip label={`type: ${t.workflow_type}`} tone="gray" />
             <Chip label={t.priority} tone={priorityTone(t.priority)} />
             <Chip label={t.status} tone={statusTone(t.status)} />
             {t.requires_approval && (

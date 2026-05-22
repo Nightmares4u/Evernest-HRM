@@ -152,6 +152,26 @@ export function canAssignTask(
   return roleRank(actor.role) > roleRank(target.user_role) || actor.id === target.user_id;
 }
 
+export function canCreateSelfTask(actor: ActorForPermissions): boolean {
+  return actor.is_active;
+}
+
+// For request workflow. Target is identified by user_id + role + branch.
+export function canRequestFrom(
+  actor: ActorForPermissions,
+  target: {
+    user_id: string;
+    role: UserRole;
+    branch_id: string | null;
+    is_active: boolean;
+    department_name?: string | null;
+  }
+): boolean {
+  if (!actor.is_active || !target.is_active) return false;
+  if (actor.id === target.user_id) return false;
+  return true;
+}
+
 export function canApproveLeave(
   actor: ActorForPermissions,
   target: TargetEmployeeForPermissions
