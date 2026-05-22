@@ -89,6 +89,11 @@ follow-up scheduling, and follow-up completion. These actions write to
 `followup_scheduled`, and `followup_completed`, and follow-up scheduling
 uses the existing `crm_leads.next_followup_at` column.
 
+Stage 1 T10C has been implemented on `crm-dev`: `/crm/leads/follow-ups`
+now provides a read-only due/overdue follow-up board grouped by
+`crm_leads.next_followup_at`, with server-side PKT bucket math, URL
+filters, counselor scoping, and no drag/drop or mutation actions.
+
 ## Current Goal
 
 Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner

@@ -16,6 +16,7 @@ import type {
   CrmJsonObject,
   CrmJsonValue,
   CrmLead,
+  CrmLeadStatus,
   CrmLeadActivity,
   CrmLeadTransfer,
   CrmParserSettings,
@@ -127,6 +128,19 @@ export type CrmLeadVM = CrmLead & {
   campaign_platform: string | null;
   latest_activity_at: string | null;
   latest_activity_label: string | null;
+};
+
+export type CrmFollowupBoardLeadVM = {
+  id: string;
+  customer_name: string | null;
+  customer_phone: string;
+  status: CrmLeadStatus;
+  next_followup_at: string | null;
+  interested_country: string | null;
+  assigned_agent_id: string | null;
+  assigned_agent_name: string | null;
+  source_whatsapp_label: string | null;
+  branch_code: string | null;
 };
 
 export type CrmRawInboxDetailVM = CrmRawInboxVM & {
@@ -638,12 +652,41 @@ async function enrichCrmLeads(leads: CrmLead[]): Promise<CrmLeadVM[]> {
   const campaignsById = byId(campaignSources);
 
   const activitiesByLead = new Map<string, CrmActivityVM>();
-  await Promise.all(
-    leads.map(async (lead) => {
-      const activities = await listCrmActivities({ lead_id: lead.id });
-      if (activities[0]) activitiesByLead.set(lead.id, activities[0]);
-    })
-  );
+  if (leads.length > 0) {
+    const leadIds = leads.map((lead) => lead.id);
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("crm_lead_activities")
+      .select("*, app_users:actor_user_id ( display_name, email )")
+      .in("lead_id", leadIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`enrichCrmLeads.activities: ${error.message}`);
+
+    type Row = CrmLeadActivity & {
+      app_users:
+        | { display_name: string | null; email: string | null }
+        | { display_name: string | null; email: string | null }[]
+        | null;
+    };
+
+    for (const row of (data ?? []) as Row[]) {
+      if (!row.lead_id || activitiesByLead.has(row.lead_id)) continue;
+      const actor = pickOne(row.app_users);
+      activitiesByLead.set(row.lead_id, {
+        id: row.id,
+        lead_id: row.lead_id,
+        raw_inbox_id: row.raw_inbox_id,
+        activity_type: row.activity_type,
+        actor_user_id: row.actor_user_id,
+        description: row.description,
+        payload: row.payload,
+        created_at: row.created_at,
+        activity_label: activityLabel(row.activity_type),
+        actor_name: actor?.display_name ?? actor?.email ?? null,
+      });
+    }
+  }
 
   return leads.map((lead) => {
     const employee = lead.assigned_agent_id
@@ -722,6 +765,90 @@ export async function listCrmLeads(filters: { assignment?: string } = {}): Promi
     return true;
   });
   return enrichCrmLeads(leads);
+}
+
+export async function listCrmLeadsForFollowupBoard(opts: {
+  scopeToEmployeeId?: string | null;
+  statusFilter?: CrmLeadStatus | null;
+  countryFilter?: string | null;
+}): Promise<CrmFollowupBoardLeadVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const admin = createAdminClient();
+  let query = admin
+    .from("crm_leads")
+    .select(
+      `
+        id,
+        customer_name,
+        customer_phone,
+        status,
+        next_followup_at,
+        interested_country,
+        assigned_agent_id,
+        assigned_agent:employees!crm_leads_assigned_agent_id_fkey(full_name),
+        source_whatsapp:crm_whatsapp_numbers!crm_leads_source_whatsapp_number_id_fkey(label),
+        branch:branches!crm_leads_branch_id_fkey(code)
+      `
+    )
+    .or("next_followup_at.not.is.null,status.not.in.(lost,converted)")
+    .order("next_followup_at", { ascending: true, nullsFirst: false });
+
+  if (opts.scopeToEmployeeId) {
+    query = query.eq("assigned_agent_id", opts.scopeToEmployeeId);
+  }
+  if (opts.statusFilter) {
+    query = query.eq("status", opts.statusFilter);
+  }
+  const country = opts.countryFilter?.trim();
+  if (country) {
+    query = query.ilike("interested_country", `%${country}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listCrmLeadsForFollowupBoard: ${error.message}`);
+
+  type Row = Pick<
+    CrmLead,
+    | "id"
+    | "customer_name"
+    | "customer_phone"
+    | "status"
+    | "next_followup_at"
+    | "interested_country"
+    | "assigned_agent_id"
+  > & {
+    assigned_agent:
+      | { full_name: string | null }
+      | { full_name: string | null }[]
+      | null;
+    source_whatsapp:
+      | { label: string | null }
+      | { label: string | null }[]
+      | null;
+    branch:
+      | { code: string | null }
+      | { code: string | null }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((row) => {
+    const assignedAgent = pickOne(row.assigned_agent);
+    const sourceWhatsapp = pickOne(row.source_whatsapp);
+    const branch = pickOne(row.branch);
+    return {
+      id: row.id,
+      customer_name: row.customer_name,
+      customer_phone: row.customer_phone,
+      status: row.status,
+      next_followup_at: row.next_followup_at,
+      interested_country: row.interested_country,
+      assigned_agent_id: row.assigned_agent_id,
+      assigned_agent_name: assignedAgent?.full_name ?? null,
+      source_whatsapp_label: sourceWhatsapp?.label ?? null,
+      branch_code: branch?.code ?? null,
+    };
+  });
 }
 
 export async function getCrmLeadDetail(id: string): Promise<CrmLeadDetailVM | null> {
