@@ -1,6 +1,21 @@
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import type { CrmClient } from "@/lib/types/crm";
+import type { CrmClient, CrmClientStatus } from "@/lib/types/crm";
+
+/**
+ * Terminal client statuses. Once a client reaches one of these, normal
+ * workflow actions (doc upload, milestone updates, application changes,
+ * status transitions) must refuse to mutate. Only super_admin escape
+ * hatches (currently absent — would be a future task) can move out.
+ */
+export const CRM_CLIENT_TERMINAL_STATUSES: ReadonlyArray<CrmClientStatus> = [
+  "alumni",
+  "withdrawn_refunded",
+];
+
+export function isClientTerminal(client: Pick<CrmClient, "status">): boolean {
+  return CRM_CLIENT_TERMINAL_STATUSES.includes(client.status);
+}
 
 // Resolved from supabase/migrations/0001_init.sql:
 //   INSERT INTO departments (name) VALUES (..., ('Operations'), ...);

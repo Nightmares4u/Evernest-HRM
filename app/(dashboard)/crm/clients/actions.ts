@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { createAdminClient } from "@/lib/supabase/server";
+import { isClientTerminal } from "@/lib/crm/permissions-clients";
 import type { CrmClient, CrmLead } from "@/lib/types/crm";
 
 function readString(formData: FormData, key: string): string {
@@ -163,7 +164,15 @@ export async function convertLeadToClient(formData: FormData): Promise<void> {
   });
 
   if (paymentError) {
-    redirectLead(lead.id, "error", `Client created, but advance payment failed: ${paymentError.message}`);
+    // Compensation: delete the just-created client so the user can retry.
+    // crm_client_payments has ON DELETE CASCADE so any partial payment
+    // row would also be cleared — defensive against future schema changes.
+    await admin.from("crm_clients").delete().eq("id", client.id);
+    redirectLead(
+      lead.id,
+      "error",
+      `Client created, but advance payment failed (rolled back): ${paymentError.message}`
+    );
   }
 
   const { error: activityError } = await admin.from("crm_client_activities").insert({
@@ -180,7 +189,14 @@ export async function convertLeadToClient(formData: FormData): Promise<void> {
   });
 
   if (activityError) {
-    redirectLead(lead.id, "error", `Client created, but activity failed: ${activityError.message}`);
+    // Compensation: delete the client; cascades wipe the payment row and
+    // any orphan activity rows would be cleared too. User can retry.
+    await admin.from("crm_clients").delete().eq("id", client.id);
+    redirectLead(
+      lead.id,
+      "error",
+      `Client created, but activity log failed (rolled back): ${activityError.message}`
+    );
   }
 
   revalidatePath("/crm/clients");
@@ -209,6 +225,25 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
   if (!method) redirectClient(clientId, "error", "Payment method is required.");
 
   const admin = createAdminClient();
+
+  // Terminal state guard: do NOT allow new payments against alumni or
+  // withdrawn clients. Refunds for withdrawn clients go through the
+  // closure refund flow, not this action.
+  const { data: clientRow } = await admin
+    .from("crm_clients")
+    .select("status")
+    .eq("id", clientId)
+    .maybeSingle();
+  if (!clientRow) {
+    redirectClient(clientId, "error", "Client not found.");
+  }
+  if (isClientTerminal(clientRow as Pick<CrmClient, "status">)) {
+    redirectClient(
+      clientId,
+      "error",
+      `Cannot record a payment against a ${(clientRow as Pick<CrmClient, "status">).status} client.`
+    );
+  }
   const { data: paymentRow, error: paymentError } = await admin
     .from("crm_client_payments")
     .insert({

@@ -6,6 +6,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import {
   canEditClientMilestone,
   canEditClientStatus,
+  isClientTerminal,
 } from "@/lib/crm/permissions-clients";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
@@ -131,6 +132,13 @@ export async function setMilestoneStatus(formData: FormData): Promise<void> {
   const { milestone, client } = loaded;
   if (!canEditClientMilestone(me, client, meDepartmentName)) {
     redirectVisa(client.id, "error", "Only the assigned counselor, Operations, or super admin can update milestones.");
+  }
+  if (isClientTerminal(client)) {
+    redirectVisa(
+      client.id,
+      "error",
+      `Cannot modify milestones on a ${client.status} client.`
+    );
   }
 
   // Snapshot the original milestone state for A-8 rollback compensation

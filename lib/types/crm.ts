@@ -118,7 +118,32 @@ export type CrmActivityType =
   | "transfer_accepted"
   | "transfer_rejected"
   | "transfer_cancelled"
-  | "transfer_admin_override";
+  | "transfer_admin_override"
+  // Stage 2 client lifecycle activity types
+  | "client_created"
+  | "payment_recorded"
+  | "doc_uploaded"
+  | "doc_claimed_for_review"
+  | "doc_approved"
+  | "doc_rejected"
+  | "application_created"
+  | "application_fields_updated"
+  | "application_status_changed"
+  | "application_deleted"
+  | "client_status_auto_bumped"
+  | "milestones_seeded"
+  | "milestone_status_changed"
+  | "client_status_changed"
+  | "client_status_rolled_back"
+  // Stage 2E closure activity types
+  | "visa_decision_recorded"
+  | "client_transitioned_to_pre_departure"
+  | "client_status_rolled_back_to_visa_prep"
+  | "pre_departure_fields_updated"
+  | "client_transitioned_to_departed"
+  | "client_transitioned_to_alumni"
+  | "client_withdrawn"
+  | "client_refund_recorded";
 
 export type CrmTransferStatus =
   | "pending"

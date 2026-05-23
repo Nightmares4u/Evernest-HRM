@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
-import { canVerifyClientDoc } from "@/lib/crm/permissions-clients";
+import { canVerifyClientDoc, isClientTerminal } from "@/lib/crm/permissions-clients";
 import { getSignedDocumentDownloadUrl } from "@/lib/db/crm";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
@@ -139,6 +139,17 @@ async function assertCanManageClientDocument(
 
   if (!canVerifyClientDoc(me, client, meDepartmentName)) {
     return { ok: false, result: forbidden(clientId) };
+  }
+
+  if (isClientTerminal(client)) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        clientId,
+        message: `Cannot modify documents on a ${client.status} client.`,
+      },
+    };
   }
 
   return { ok: true, client };

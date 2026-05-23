@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
-import { canEditClientApplication } from "@/lib/crm/permissions-clients";
+import { canEditClientApplication, isClientTerminal } from "@/lib/crm/permissions-clients";
 import { createAdminClient } from "@/lib/supabase/server";
 import type {
   CrmClient,
@@ -122,7 +122,24 @@ async function assertCanEditApplication(
   if (!canEditClientApplication(me, client)) {
     redirectClientApplications(clientId, "error", "Only the assigned counselor or super admin can edit applications.");
   }
+  if (isClientTerminal(client)) {
+    redirectClientApplications(
+      client.id,
+      "error",
+      `Cannot modify applications on a ${client.status} client.`
+    );
+  }
   return client;
+}
+
+function rejectIfTerminalApplication(client: CrmClient): void {
+  if (isClientTerminal(client)) {
+    redirectClientApplications(
+      client.id,
+      "error",
+      `Cannot modify applications on a ${client.status} client.`
+    );
+  }
 }
 
 export async function createApplication(formData: FormData): Promise<void> {
@@ -200,6 +217,7 @@ export async function updateApplicationFields(formData: FormData): Promise<void>
   if (!canEditClientApplication(me, client)) {
     redirectClientApplications(client.id, "error", "Only the assigned counselor or super admin can edit applications.");
   }
+  rejectIfTerminalApplication(client);
 
   const universityName = readString(formData, "university_name");
   const programName = readString(formData, "program_name") || null;
@@ -266,6 +284,7 @@ export async function transitionApplicationStatus(formData: FormData): Promise<v
   if (!canEditClientApplication(me, client)) {
     redirectClientApplications(client.id, "error", "Only the assigned counselor or super admin can update application status.");
   }
+  rejectIfTerminalApplication(client);
 
   if (!isValidTransition(application.status, toStatus)) {
     redirectClientApplications(client.id, "error", `Invalid transition: ${application.status} -> ${toStatus}`);
@@ -346,6 +365,7 @@ export async function deleteApplication(formData: FormData): Promise<void> {
   const loaded = await loadApplicationWithClient(admin, applicationId);
   if (!loaded) redirect("/crm/clients?error=Application%20not%20found");
   const { application, client } = loaded;
+  rejectIfTerminalApplication(client);
   if (application.status !== "draft") {
     redirectClientApplications(client.id, "error", "Only draft applications can be deleted.");
   }
