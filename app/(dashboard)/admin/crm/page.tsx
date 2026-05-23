@@ -57,7 +57,7 @@ export default async function AdminCrmPage({
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <AdminCard
           title="WhatsApp Numbers"
           href="/admin/crm/whatsapp-numbers"
@@ -81,6 +81,18 @@ export default async function AdminCrmPage({
           href="/crm/leads"
           value={leads.length}
           hint="Promoted leads"
+        />
+        <AdminCard
+          title="CRM Clients"
+          href="/crm/clients"
+          value="Open"
+          hint="Stage 2A client shell"
+        />
+        <AdminCard
+          title="Conversion Queue"
+          href="/admin/crm/clients/conversion-queue"
+          value="Open"
+          hint="Converted leads awaiting client shell"
         />
         <AdminCard
           title="Assignment Rules"

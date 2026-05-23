@@ -239,9 +239,13 @@ export default async function CrmLeadDetailPage({
           clientId={existingClient.id}
           clientCode={existingClient.client_code}
         />
-      ) : lead.status === "converted" ? (
-        <ConvertLeadPanel lead={lead} canWorkLead={canWorkLead} />
-      ) : null}
+      ) : (
+        <ConvertLeadPanel
+          lead={lead}
+          canWorkLead={canWorkLead}
+          currentStatus={lead.status}
+        />
+      )}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
@@ -573,6 +577,7 @@ function ClientCreatedBanner({
 function ConvertLeadPanel({
   lead,
   canWorkLead,
+  currentStatus,
 }: {
   lead: {
     id: string;
@@ -581,23 +586,32 @@ function ConvertLeadPanel({
     interested_country: string | null;
   };
   canWorkLead: boolean;
+  currentStatus: CrmLeadStatus;
 }) {
+  const isReadyToConvert = currentStatus === "converted";
+
   return (
     <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Convert to client</h2>
+          <h2 className="text-sm font-semibold text-gray-900">Conversion readiness</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Create the Stage 2A client shell after agreement signing and advance payment.
+            A client shell can be created once the lead is marked converted and both gates are recorded.
           </p>
         </div>
-        <Chip label="student" tone="indigo" />
+        <Chip label={isReadyToConvert ? "ready" : formatStatusLabel(currentStatus)} tone={isReadyToConvert ? "green" : "gray"} />
       </div>
 
       {!canWorkLead ? (
         <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
           Only the assigned counselor or super admin can convert this lead.
         </p>
+      ) : !isReadyToConvert ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This lead is currently {formatStatusLabel(currentStatus)}. In the Lead workbench above,
+          change the status to Converted first. After that, this panel will show the agreement
+          and advance payment form.
+        </div>
       ) : (
         <form action={convertLeadToClient} className="mt-5 grid gap-4 lg:grid-cols-3">
           <input type="hidden" name="lead_id" value={lead.id} />
