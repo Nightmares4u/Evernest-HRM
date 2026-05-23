@@ -82,6 +82,11 @@ export type CrmClientMilestoneStatus =
   | "done"
   | "not_applicable";
 
+export type CrmClientVisaDecisionOutcome =
+  | "granted"
+  | "refused"
+  | "additional_info_requested";
+
 export type CrmAssignmentStatus = "assigned" | "reassigned" | "unassigned";
 
 export type CrmAssignmentMethod =
@@ -243,6 +248,17 @@ export type CrmClient = {
   assigned_agent_id: string | null;
   branch_id: string | null;
   created_by_user_id: string | null;
+  flight_date: string | null;
+  flight_details: string | null;
+  accommodation_details: string | null;
+  briefing_completed_at: string | null;
+  briefing_notes: string | null;
+  departure_date: string | null;
+  arrival_date: string | null;
+  alumni_started_at: string | null;
+  alumni_notes: string | null;
+  withdrawn_at: string | null;
+  withdrawn_reason: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -319,6 +335,27 @@ export type CrmClientApplicationVM = CrmClientApplication & {
   offer_letter_file_name: string | null;
 };
 
+export type CrmClientVisaDecision = {
+  id: string;
+  client_id: string;
+  outcome: CrmClientVisaDecisionOutcome;
+  decided_at: string;
+  note: string | null;
+  recorded_by_user_id: string | null;
+  created_at: string;
+};
+
+export type CrmClientRefund = {
+  id: string;
+  client_id: string;
+  amount: number;
+  currency: string;
+  refunded_at: string;
+  reason: string;
+  recorded_by_user_id: string | null;
+  created_at: string;
+};
+
 export type CrmClientCountryMilestone = {
   id: string;
   client_id: string;
@@ -370,6 +407,13 @@ export const CRM_APPLICATION_STATUS_GROUPS = {
   outcomes: ["offer", "accepted", "declined", "rejected"] as const,
   closed: ["withdrawn"] as const,
 };
+
+export const CRM_CLIENT_VISA_DECISION_LABELS:
+  Record<CrmClientVisaDecisionOutcome, string> = {
+    granted: "Granted",
+    refused: "Refused",
+    additional_info_requested: "Additional info requested",
+  };
 
 export const CRM_SUPPORTED_TARGET_COUNTRIES = [
   "italy",

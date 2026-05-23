@@ -89,3 +89,15 @@ export function canEditClientStatus(
   if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
   return false;
 }
+
+export function canWithdrawClient(me: CurrentUser): boolean {
+  // → clients.withdraw
+  if (!me.appUser.is_active) return false;
+  return me.appUser.role === "super_admin";
+}
+
+export function canRecordClientRefund(me: CurrentUser): boolean {
+  // → clients.refunds.record
+  if (!me.appUser.is_active) return false;
+  return me.appUser.role === "super_admin";
+}

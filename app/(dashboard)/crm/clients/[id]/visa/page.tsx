@@ -6,16 +6,25 @@ import { formatCrmDateTime } from "@/lib/crm/format";
 import {
   ensureClientMilestonesSeeded,
   getCrmClientForVisaPage,
+  listCrmClientVisaDecisions,
 } from "@/lib/db/crm";
 import {
+  CRM_CLIENT_VISA_DECISION_LABELS,
   CRM_COUNTRY_MILESTONES,
   CRM_DOC_CODE_LABELS,
+  type CrmClientVisaDecision,
+  type CrmClientVisaDecisionOutcome,
   type CrmClientDocState,
   type CrmClientMilestoneStatus,
   type CrmClientStatus,
   type CrmClientCountryMilestoneVM,
   type CrmClientDocumentVM,
 } from "@/lib/types/crm";
+import {
+  moveToPreDepartureAction,
+  recordVisaDecisionAction,
+  rollbackToVisaPrepAction,
+} from "../../closure/actions";
 import {
   rollbackClientStatus,
   setMilestoneStatus,
@@ -78,7 +87,10 @@ export default async function ClientVisaPage({
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
   await ensureClientMilestonesSeeded(id);
-  const data = await getCrmClientForVisaPage(id);
+  const [data, visaDecisions] = await Promise.all([
+    getCrmClientForVisaPage(id),
+    listCrmClientVisaDecisions(id),
+  ]);
   if (!data) notFound();
 
   const requiredMilestones = data.milestones.filter((milestone) => milestone.definition?.required);
@@ -183,6 +195,12 @@ export default async function ClientVisaPage({
       )}
 
       <VisaDocsCard clientId={data.client.id} docs={data.visaDocs} />
+      <VisaDecisionCard
+        clientId={data.client.id}
+        clientStatus={data.client.status}
+        decisions={visaDecisions}
+        canTransitionStatus={data.canTransitionStatus}
+      />
       <TransitionCard
         clientId={data.client.id}
         clientStatus={data.client.status}
@@ -327,6 +345,148 @@ function VisaDocsCard({
   );
 }
 
+function VisaDecisionCard({
+  clientId,
+  clientStatus,
+  decisions,
+  canTransitionStatus,
+}: {
+  clientId: string;
+  clientStatus: CrmClientStatus;
+  decisions: CrmClientVisaDecision[];
+  canTransitionStatus: boolean;
+}) {
+  if (clientStatus !== "visa_submitted" && clientStatus !== "visa_decision") {
+    return null;
+  }
+
+  const latestDecision = decisions[0] ?? null;
+  return (
+    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Record visa decision</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Capture embassy decisions and move the client into the next closure stage.
+          </p>
+        </div>
+        {latestDecision && (
+          <Chip
+            label={CRM_CLIENT_VISA_DECISION_LABELS[latestDecision.outcome]}
+            tone={visaDecisionTone(latestDecision.outcome)}
+          />
+        )}
+      </div>
+
+      {canTransitionStatus ? (
+        <form action={recordVisaDecisionAction} className="mt-4 grid gap-3 md:grid-cols-[14rem_12rem_1fr_auto]">
+          <input type="hidden" name="client_id" value={clientId} />
+          <label className="space-y-1 text-xs font-medium text-gray-600">
+            <span>Outcome</span>
+            <select
+              name="outcome"
+              defaultValue="granted"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+            >
+              <option value="granted">Granted</option>
+              <option value="refused">Refused</option>
+              <option value="additional_info_requested">Additional info requested</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-xs font-medium text-gray-600">
+            <span>Decision date</span>
+            <input
+              name="decided_at"
+              type="date"
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-gray-600">
+            <span>Note</span>
+            <input
+              name="note"
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+            />
+          </label>
+          <div className="flex items-end">
+            <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+              Record
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p className="mt-4 text-sm text-gray-500">
+          Only the assigned counselor or super admin can record visa decisions.
+        </p>
+      )}
+
+      {decisions.length > 0 && (
+        <div className="mt-5 overflow-hidden rounded-md border border-gray-100">
+          <table className="min-w-full divide-y divide-gray-100 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <Th>Outcome</Th>
+                <Th>Decided</Th>
+                <Th>Note</Th>
+                <Th>Recorded by</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {decisions.map((decision) => (
+                <tr key={decision.id}>
+                  <Td>
+                    <Chip
+                      label={CRM_CLIENT_VISA_DECISION_LABELS[decision.outcome]}
+                      tone={visaDecisionTone(decision.outcome)}
+                    />
+                  </Td>
+                  <Td>{formatCrmDateTime(decision.decided_at)}</Td>
+                  <Td>{decision.note ?? "-"}</Td>
+                  <Td>{decision.recorded_by_user_id ?? "-"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {canTransitionStatus && clientStatus === "visa_decision" && latestDecision && (
+        <div className="mt-5 border-t border-gray-100 pt-4">
+          {latestDecision.outcome === "granted" ? (
+            <form action={moveToPreDepartureAction} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="client_id" value={clientId} />
+              <label className="min-w-64 flex-1 space-y-1 text-xs font-medium text-gray-600">
+                <span>Note</span>
+                <input
+                  name="note"
+                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+                />
+              </label>
+              <button className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500">
+                Move to pre-departure
+              </button>
+            </form>
+          ) : (
+            <form action={rollbackToVisaPrepAction} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="client_id" value={clientId} />
+              <label className="min-w-64 flex-1 space-y-1 text-xs font-medium text-gray-600">
+                <span>Re-application note</span>
+                <input
+                  name="note"
+                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+                />
+              </label>
+              <button className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500">
+                Roll back to visa prep
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TransitionCard({
   clientId,
   clientStatus,
@@ -421,6 +581,14 @@ function TransitionCard({
   );
 }
 
+function visaDecisionTone(
+  outcome: CrmClientVisaDecisionOutcome
+): "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal" {
+  if (outcome === "granted") return "green";
+  if (outcome === "refused") return "red";
+  return "amber";
+}
+
 function milestoneStats(milestones: CrmClientCountryMilestoneVM[]) {
   return {
     done: milestones.filter((milestone) => milestone.status === "done").length,
@@ -452,6 +620,18 @@ function Stat({ label, value }: { label: string; value: number }) {
       <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
     </div>
   );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+      {children}
+    </th>
+  );
+}
+
+function Td({ children }: { children: React.ReactNode }) {
+  return <td className="px-4 py-3 align-top">{children}</td>;
 }
 
 function Notice({

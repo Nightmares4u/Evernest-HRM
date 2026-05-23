@@ -264,3 +264,23 @@ Gemini audits of Phases 2A–2D surfaced repeat "orphan row on partial failure" 
 - Existing 2A actions (A-1, A-2) still leak; backlog in `CRM_BOARD.md` flagged URGENT.
 - Existing 2D actions (A-8, A-9, A-10) have compensation patches; backlog flagged as technical debt.
 - Phase 2E and beyond will be RPC-first from the start.
+
+## Stage 2 — Phase 2E landed (2026-05-23)
+
+Closure flow shipped.
+
+- Tables added: `crm_client_visa_decisions`, `crm_client_refunds`.
+- Columns added to `crm_clients`: 11 new columns for flight/accommodation/briefing, departure/arrival, alumni, and withdrawal metadata.
+- Migration: `0020_crm_client_closure_phase_2e.sql` with 8 Postgres RPCs.
+- First RPC-first phase per Plan §14 transaction policy. Zero compensation patches introduced; partial-failure atomicity now enforced at the DB level for all new closure mutations.
+- Routes: `/crm/clients/[id]/closure` (new), `/crm/clients/[id]/visa` (extended with decision recording).
+- Permissions added: `canWithdrawClient`, `canRecordClientRefund` (both super_admin only).
+- Status transitions added:
+  - `visa_submitted | visa_decision` → `visa_decision` (record visa decision)
+  - `visa_decision` (granted) → `pre_departure`
+  - `visa_decision` (refused | additional_info_requested) → `visa_prep`
+  - `pre_departure` → `departed`
+  - `departed` → `alumni`
+  - any non-terminal → `withdrawn_refunded` (super_admin only)
+
+Stage 2 is now feature-complete from conversion to alumni / withdrawn. Stage 3 = client portal.

@@ -21,7 +21,9 @@ import type {
   CrmClientDocument,
   CrmClientDocumentVM,
   CrmClientPayment,
+  CrmClientRefund,
   CrmClientStatus,
+  CrmClientVisaDecision,
   CrmClientVM,
   CrmInitialProductCategory,
   CrmJsonObject,
@@ -47,8 +49,10 @@ import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
 import {
   canEditClientMilestone,
   canEditClientStatus,
+  canRecordClientRefund,
   canVerifyClientDoc,
   canViewCrmClient,
+  canWithdrawClient,
 } from "@/lib/crm/permissions-clients";
 
 export const CRM_PRODUCT_CATEGORIES = ["Italy", "Korea", "B2B", "General"] as const;
@@ -814,7 +818,7 @@ export async function listCrmLeadsForFollowupBoard(opts: {
         branch:branches!crm_leads_branch_id_fkey(code)
       `
     )
-    .or("next_followup_at.not.is.null,status.not.in.(lost,converted)")
+    .not("status", "in", "(lost,converted)")
     .order("next_followup_at", { ascending: true, nullsFirst: false });
 
   if (opts.scopeToEmployeeId) {
@@ -1230,6 +1234,17 @@ function clientRowToVM(row: CrmClientJoinedRow): CrmClientVM {
     assigned_agent_id: row.assigned_agent_id,
     branch_id: row.branch_id,
     created_by_user_id: row.created_by_user_id,
+    flight_date: row.flight_date,
+    flight_details: row.flight_details,
+    accommodation_details: row.accommodation_details,
+    briefing_completed_at: row.briefing_completed_at,
+    briefing_notes: row.briefing_notes,
+    departure_date: row.departure_date,
+    arrival_date: row.arrival_date,
+    alumni_started_at: row.alumni_started_at,
+    alumni_notes: row.alumni_notes,
+    withdrawn_at: row.withdrawn_at,
+    withdrawn_reason: row.withdrawn_reason,
     created_at: row.created_at,
     updated_at: row.updated_at,
     lead_customer_phone: lead?.customer_phone ?? "",
@@ -2007,6 +2022,89 @@ export async function getCrmClientForVisaPage(clientId: string): Promise<{
       blocked: missing.length > 0,
       missing,
     },
+  };
+}
+
+export async function listCrmClientVisaDecisions(
+  clientId: string
+): Promise<CrmClientVisaDecision[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return [];
+
+  const { data, error } = await admin
+    .from("crm_client_visa_decisions")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("decided_at", { ascending: false });
+
+  if (error) throw new Error(`listCrmClientVisaDecisions: ${error.message}`);
+  return (data ?? []) as CrmClientVisaDecision[];
+}
+
+export async function listCrmClientRefunds(clientId: string): Promise<CrmClientRefund[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return [];
+
+  const { data, error } = await admin
+    .from("crm_client_refunds")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("refunded_at", { ascending: false });
+
+  if (error) throw new Error(`listCrmClientRefunds: ${error.message}`);
+  return (data ?? []) as CrmClientRefund[];
+}
+
+export async function getCrmClientForClosurePage(clientId: string): Promise<{
+  client: CrmClientVM;
+  visaDecisions: CrmClientVisaDecision[];
+  refunds: CrmClientRefund[];
+  canTransitionStatus: boolean;
+  canWithdraw: boolean;
+  canRecordRefund: boolean;
+} | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return null;
+
+  const [decisionsRes, refundsRes] = await Promise.all([
+    admin
+      .from("crm_client_visa_decisions")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("decided_at", { ascending: false }),
+    admin
+      .from("crm_client_refunds")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("refunded_at", { ascending: false }),
+  ]);
+
+  if (decisionsRes.error) {
+    throw new Error(`getCrmClientForClosurePage decisions: ${decisionsRes.error.message}`);
+  }
+  if (refundsRes.error) {
+    throw new Error(`getCrmClientForClosurePage refunds: ${refundsRes.error.message}`);
+  }
+
+  return {
+    client,
+    visaDecisions: (decisionsRes.data ?? []) as CrmClientVisaDecision[],
+    refunds: (refundsRes.data ?? []) as CrmClientRefund[],
+    canTransitionStatus: canEditClientStatus(me, client),
+    canWithdraw: canWithdrawClient(me),
+    canRecordRefund: canRecordClientRefund(me),
   };
 }
 

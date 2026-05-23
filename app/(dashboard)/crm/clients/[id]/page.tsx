@@ -71,6 +71,11 @@ export default async function CrmClientDetailPage({
       client.status === "visa_prep" ||
       client.status === "visa_submitted");
   const visaMilestonesRemaining = visaData?.isBlockedFromVisaSubmitted.missing.length ?? 0;
+  const closureBadgeCount =
+    client.status === "pre_departure" &&
+    (!client.flight_date || !client.accommodation_details || !client.briefing_completed_at)
+      ? 1
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -127,6 +132,17 @@ export default async function CrmClientDetailPage({
           {showVisaBadge && visaMilestonesRemaining > 0 && (
             <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
               {visaMilestonesRemaining}
+            </span>
+          )}
+        </Link>
+        <Link
+          href={`/crm/clients/${client.id}/closure`}
+          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+        >
+          Closure
+          {closureBadgeCount > 0 && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              {closureBadgeCount}
             </span>
           )}
         </Link>
