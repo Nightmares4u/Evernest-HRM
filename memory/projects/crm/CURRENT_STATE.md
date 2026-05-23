@@ -94,50 +94,12 @@ now provides a read-only due/overdue follow-up board grouped by
 `crm_leads.next_followup_at`, with server-side PKT bucket math, URL
 filters, counselor scoping, and no drag/drop or mutation actions.
 
-## Phase 2A Landed (2026-05-22)
-
-Conversion + client shell is implemented. New tables:
-`crm_clients`, `crm_client_activities`, `crm_client_payments`. Routes:
-`/crm/clients`, `/crm/clients/[id]`,
-`/admin/crm/clients/conversion-queue`. Migration:
-`0015_crm_clients_phase_2a.sql` (manual apply).
-
-## Phase 2B Landed (2026-05-23)
-
-Document registry + upload + review is implemented. Tables:
-`crm_client_documents`. Storage bucket: `crm-client-docs` (private,
-signed URLs only). Routes: `/crm/clients/[id]/documents`,
-`/admin/crm/clients/doc-review`. Migration:
-`0017_crm_client_documents_phase_2b.sql` (manual apply).
-
-## Phase 2C Landed (2026-05-23)
-
-Per-university applications are implemented. Table:
-`crm_client_applications`. Status transitions auto-bump `client.status`
-(`applying`, `offer_in_hand`, `offer_accepted`) per Plan §4. Route:
-`/crm/clients/[id]/applications`. Migration:
-`0018_crm_client_applications_phase_2c.sql` (manual apply).
-
-## Phase 2D Landed (2026-05-23)
-
-Country milestones + visa-stage gate are implemented. Table:
-`crm_client_country_milestones` (unique on `client_id` +
-`milestone_code`). Registry: `CRM_COUNTRY_MILESTONES` in
-`lib/types/crm.ts` for 11 countries. Route:
-`/crm/clients/[id]/visa`. Gate: client cannot move to
-`visa_submitted` while any required milestone is unfinished. Transitions
-added: `offer_accepted` -> `visa_prep`, `visa_prep` ->
-`visa_submitted`, plus super_admin rollbacks. Migration:
-`0019_crm_client_country_milestones_phase_2d.sql` (manual apply).
-
 ## Current Goal
 
-Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner
-assignment, per-number temporary fallback routing, auto-parse on raw
-intake, grouped CRM navigation, and transfer migration readiness)
-before building any real WhatsApp API, Gemini, HRM task sync, or
-downstream CRM modules.
-
+Stage 2 is feature-complete from lead conversion through alumni /
+withdrawn closure. Next work should focus on manual end-to-end testing,
+RPC migration of older multi-table Stage 2A-2D actions, T10D activity
+timeline polish, and Stage 3 client portal planning.
 
 ## Working Philosophy
 
@@ -148,38 +110,6 @@ downstream CRM modules.
 - Avoid chatbot logic.
 - Avoid overengineering.
 - Plan before implementation.
-
-## Next Best Step
-
-Execute the next implementation tasks from the AI Handoff Backlog:
-1. **T10C:** Due/overdue follow-up board
-2. **T10D:** Activity timeline polish
-3. **T11:** Lead board / pipeline UI
-
-Then continue to the next Stage 1 phase only after approval. Do not
-build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
-downstream client/case/invoice/document system until current Stage 1
-counselor workflows are complete.
-
-## Current Stage 1 Boundary
-
-Stage 1 ends at:
-
-Raw WhatsApp message -> structured intake -> parsed lead details -> assigned branch/agent -> human follow-up.
-
-Stage 1 excludes:
-
-- Full AI chatbot
-- Full Meta spend sync
-- Client portal
-- Invoice system
-- University database
-- Commission/payroll integration
-- Advanced reporting
- phase only after approval. Do not
-build the WhatsApp API/webhook, Gemini integration, HRM task sync, or
-downstream client/case/invoice/document system until current Stage 1
-manual review is complete.
 
 ## Current Stage 1 Boundary
 
@@ -261,8 +191,7 @@ Gemini audits of Phases 2A–2D surfaced repeat "orphan row on partial failure" 
 
 > Any server action that mutates more than one table — or mutates one table and then writes to a `crm_*_activities` table — MUST be implemented as a Postgres function (RPC) and invoked via `admin.rpc(...)`.
 
-- Existing 2A actions (A-1, A-2) still leak; backlog in `CRM_BOARD.md` flagged URGENT.
-- Existing 2D actions (A-8, A-9, A-10) have compensation patches; backlog flagged as technical debt.
+- Older 2A-2D multi-table actions still need future RPC/transaction hardening; backlog in `CRM_BOARD.md` tracks the open items.
 - Phase 2E and beyond will be RPC-first from the start.
 
 ## Stage 2 — Phase 2E landed (2026-05-23)
@@ -273,6 +202,7 @@ Closure flow shipped.
 - Columns added to `crm_clients`: 11 new columns for flight/accommodation/briefing, departure/arrival, alumni, and withdrawal metadata.
 - Migration: `0020_crm_client_closure_phase_2e.sql` with 8 Postgres RPCs.
 - First RPC-first phase per Plan §14 transaction policy. Zero compensation patches introduced; partial-failure atomicity now enforced at the DB level for all new closure mutations.
+- RPCs: `crm_record_visa_decision`, `crm_transition_to_pre_departure`, `crm_rollback_to_visa_prep`, `crm_update_pre_departure_fields`, `crm_transition_to_departed`, `crm_transition_to_alumni`, `crm_withdraw_client`, `crm_record_client_refund`.
 - Routes: `/crm/clients/[id]/closure` (new), `/crm/clients/[id]/visa` (extended with decision recording).
 - Permissions added: `canWithdrawClient`, `canRecordClientRefund` (both super_admin only).
 - Status transitions added:

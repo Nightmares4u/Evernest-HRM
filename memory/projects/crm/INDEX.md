@@ -52,6 +52,7 @@
 |---|---|
 | **`REFERENCE_CODE_EXTRACTION_MAP.md`** | You need UI/UX patterns from open-source CRMs. Lists C-01 through C-14 candidates (Atomic CRM MIT, Krayin MIT, Frappe AGPL inspiration-only, etc.). |
 | **`REFERENCE_CRM_INTEGRATION_AUDIT.md`** | Companion to the extraction map — license verification + architectural notes. |
+| **`GEMINI_AUDIT_2026_05_23.md`** | Historical Gemini audit of Stage 2A-2E. Use for known risks/backlog only; verify against current code before treating findings as active. |
 
 ### Agent continuity
 
@@ -78,6 +79,7 @@
 | "Adapt UI from external CRMs" | `REFERENCE_CODE_EXTRACTION_MAP.md` + `REFERENCE_CRM_INTEGRATION_AUDIT.md` |
 | "Add WhatsApp webhook handling" | `WHATSAPP_META_PIPELINE.md` + `WHATSAPP_STAGE_1_INTAKE.md` |
 | "Onboard onto the CRM project" | `CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md` then this INDEX |
+| "Audit CRM documentation consistency" | `CURRENT_STATE.md` + `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` + `CRM_BOARD.md` + `CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md` + latest `GEMINI_AUDIT_*.md` |
 
 ---
 

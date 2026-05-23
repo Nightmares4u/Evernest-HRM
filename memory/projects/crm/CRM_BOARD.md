@@ -61,7 +61,6 @@
 
 ## In Progress
 
-- **T10C:** Due/overdue follow-up board
 - **T10D:** Activity timeline polish
 
 ## Done
@@ -82,6 +81,12 @@
 - Stage 1 Phase 5 lead transfer/handoff schema foundation
 - CRM follow-up activity enum values for scheduled/completed timeline events
 - **T10B:** Lead notes + status update + follow-up scheduling UI/actions
+- **T10C:** Due/overdue follow-up board
+- Stage 2A: conversion + client shell
+- Stage 2B: document registry + upload + review
+- Stage 2C: per-university applications
+- Stage 2D: country milestones + visa gate
+- Stage 2E: closure, visa decisions, pre-departure, departed, alumni, withdrawals/refunds
 
 ## Assignment model (Stage 1)
 
@@ -135,8 +140,9 @@ low-impact at current scale. Tackle when capacity allows.
 - **A-1** `convertLeadToClient` — three inserts (client / payment / activity)
   not wrapped in a transaction. Partial failure can leave an orphan client
   row without an initial payment. File: `app/(dashboard)/crm/clients/actions.ts`.
-- **A-2** `recordClientPayment` — payment + activity inserts not transactional.
-  Partial failure can record payment without an audit trail. Same file.
+- **A-2** `recordClientPayment` — payment + activity writes pre-date the
+  RPC policy. A compensation delete exists if activity insert fails, but
+  it should still be converted to RPC for true atomicity. Same file.
 
 **Fix path:** wrap each in a Postgres RPC function (Supabase JS client has
 no native transactions). One RPC per multi-table operation.
@@ -166,19 +172,24 @@ no native transactions). One RPC per multi-table operation.
 ### Transaction integrity (RPC migration)
 
 The transaction policy in `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14
-mandates Postgres RPC for any multi-table mutation. Existing actions
-that pre-date the rule have either compensation patches (a stopgap) or
-nothing (still leaking on partial failure). Convert opportunistically.
+mandates Postgres RPC for any multi-table mutation. Existing Stage 2A-2D
+actions that pre-date the rule have either compensation patches (a
+stopgap) or direct multi-table writes. Convert opportunistically. Phase
+2E is RPC-first and does not introduce new compensation patches.
 
-**Still leaking, no compensation (URGENT):**
+**Still leaking / highest priority:**
 - A-1 `convertLeadToClient` in `app/(dashboard)/crm/clients/actions.ts`
   — three sequential inserts (client / payment / activity). Failure of
   payment or activity insert leaves an orphan client row that blocks
   re-conversion.
 - A-2 `recordClientPayment` in same file — payment + activity insert
-  sequence. Failure of activity insert leaves a silent payment row.
+  sequence. Compensation exists, but RPC is still the target pattern.
 
 **Compensation patched (technical debt, less urgent):**
+- Phase 2B document upload/decision paths in
+  `app/(dashboard)/crm/clients/documents/actions.ts`.
+- Phase 2C application create/status/delete paths in
+  `app/(dashboard)/crm/clients/applications/actions.ts`.
 - A-8 `setMilestoneStatus` in `app/(dashboard)/crm/clients/visa/actions.ts`
 - A-9 `updateClientStatusWithActivity` in same file
 - A-10 `ensureClientMilestonesSeeded` in `lib/db/crm.ts`

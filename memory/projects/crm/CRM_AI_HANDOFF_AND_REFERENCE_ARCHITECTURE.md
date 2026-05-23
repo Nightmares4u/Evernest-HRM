@@ -7,7 +7,7 @@ This document serves as the persistent handoff and continuity layer for Codex, C
 - **Implementation Repo:** `~/EN HRM`
 - **Branch:** `crm-dev`
 - **Note:** The old `evernest-crm-starter` repo is for reference only. Do not treat its status as the current implementation status.
-- **Current Implementation Status:** The CRM is built natively as a module inside the EN HRM repository. The core foundation (raw inbox, parser, lead models, WhatsApp number ownership assignment, and transfer workflow) is already implemented and functioning on `crm-dev`.
+- **Current Implementation Status:** The CRM is built natively as a module inside the EN HRM repository. Stage 1 lead intake/assignment/follow-up workflows are implemented, and Stage 2A-2E is feature-complete from conversion through alumni / withdrawn closure on `crm-dev`. Stage 3 client portal is not built.
 
 ## 3. Business Context
 EN Consultants operates primarily in the Pakistani market, which relies heavily on a **WhatsApp-first** communication model. Leads prefer texting or calling directly rather than filling out web forms. As a result, generic CRMs that assume a form-first funnel fail here. The EN CRM acts as a control tower for incoming WhatsApp messages, utilizing a counselor-led workflow where the receiving WhatsApp number (and associated campaign) dictates lead ownership.
@@ -47,18 +47,29 @@ EN Consultants operates primarily in the Pakistani market, which relies heavily 
 - CRM sidebar grouping (separating CRM navigation from HRM).
 - Follow-up activity enum groundwork (`followup_scheduled`, `followup_completed`).
 - Domain-specific study-abroad fields (country, city, qualification, marks/CGPA, study gap, budget, English test).
+- Stage 2 client lifecycle: conversion to `crm_clients`, document registry/review, per-university applications, country milestones, visa decision capture, closure, withdrawal, and refunds.
+- RPC-first closure mutations in Phase 2E for atomic multi-table writes.
 
 ## 6. Current Implemented Routes
 - `/crm/inbox`: Shows the raw WhatsApp intake queue (currently visible to super-admins).
 - `/crm/inbox/[id]`: Detail view of a raw message, parser results, and manual promotion trigger.
 - `/crm/leads`: Main list view of qualified CRM leads.
 - `/crm/leads/[id]`: Detail view of a lead, showing timeline, transfer history, and assignment controls.
+- `/crm/leads/follow-ups`: Read-only due/overdue follow-up board.
 - `/crm/transfers`: Counselor inbox for pending incoming transfer requests.
+- `/crm/clients`: Client list.
+- `/crm/clients/[id]`: Client detail shell with payments and client activity.
+- `/crm/clients/[id]/documents`: Client document registry, upload, review, download, and history.
+- `/crm/clients/[id]/applications`: Per-university application list and status controls.
+- `/crm/clients/[id]/visa`: Country milestones, visa-stage documents, visa submission gate, and visa decision recording.
+- `/crm/clients/[id]/closure`: Pre-departure, departed, alumni, withdrawal, and refunds.
 - `/admin/crm`: Super-admin CRM dashboard.
 - `/admin/crm/whatsapp-numbers`: Manage WhatsApp numbers, default owners, and temporary fallbacks.
 - `/admin/crm/campaign-sources`: Manage campaigns and their parent WhatsApp numbers.
 - `/admin/crm/assignment-rules`: Manage the fallback assignment rules engine.
 - `/admin/crm/transfers`: Admin monitor for all system transfers with override capabilities.
+- `/admin/crm/clients/conversion-queue`: Leads ready for client conversion.
+- `/admin/crm/clients/doc-review`: Document review queue.
 
 ## 7. Current DB/Migration Map
 - `0009_crm_stage_1_foundation.sql`: Sets up raw inbox, leads, activities, campaigns, and WhatsApp numbers.
@@ -67,6 +78,11 @@ EN Consultants operates primarily in the Pakistani market, which relies heavily 
 - `0012_crm_whatsapp_number_fallback.sql`: Adds temporary fallback routing columns to WhatsApp numbers.
 - `0013_crm_lead_transfers.sql`: Creates `crm_lead_transfers` table and implements counselor handoff workflow.
 - `0014_crm_followup_activity_types.sql`: Adds `followup_scheduled` and `followup_completed` to the activity types enum.
+- `0015_crm_clients_phase_2a.sql`: Adds `crm_clients`, `crm_client_activities`, `crm_client_payments`, client status enum, and conversion foundation.
+- `0017_crm_client_documents_phase_2b.sql`: Adds `crm_client_documents` and private Supabase Storage bucket `crm-client-docs`.
+- `0018_crm_client_applications_phase_2c.sql`: Adds `crm_client_applications`, application status/intake enums, and one-accepted-per-client constraint.
+- `0019_crm_client_country_milestones_phase_2d.sql`: Adds `crm_client_country_milestones` and milestone status enum.
+- `0020_crm_client_closure_phase_2e.sql`: Adds `crm_client_visa_decisions`, `crm_client_refunds`, 11 closure columns on `crm_clients`, and 8 closure RPCs.
 
 ## 8. Current Core Data Model
 - `crm_raw_inbox`: Holds raw incoming WhatsApp payloads before they are qualified.
@@ -77,10 +93,18 @@ EN Consultants operates primarily in the Pakistani market, which relies heavily 
 - `crm_whatsapp_numbers`: The physical numbers receiving messages, mapping to counselors.
 - `crm_campaign_sources`: Marketing campaigns that route through specific WhatsApp numbers.
 - `crm_lead_transfers`: Pending state for counselor-to-counselor handoffs.
+- `crm_clients`: Converted clients served through onboarding, applications, visa, closure, alumni, or withdrawal.
+- `crm_client_activities`: Client lifecycle audit trail.
+- `crm_client_payments`: Client payment records.
+- `crm_client_documents`: Client document registry rows backed by private Supabase Storage.
+- `crm_client_applications`: Per-university application rows.
+- `crm_client_country_milestones`: Country-specific visa preparation checklist rows.
+- `crm_client_visa_decisions`: Visa decision history.
+- `crm_client_refunds`: Refund history.
 
 **Key Distinctions:**
 - **Raw Intake vs. Lead:** Intake is the unstructured, raw message. A Lead is a qualified entity assigned to a person.
-- **Lead vs. Client/Case:** A lead is pre-sale. Once a lead converts/pays, it becomes an Active Case (not built yet).
+- **Lead vs. Client:** A lead is pre-sale. Once a lead converts/pays, it becomes a `crm_clients` row and enters the Stage 2 lifecycle. Do not call this an "Active Case" in current docs/code.
 - **Assignment History vs. Transfer Workflow:** Transfers handle the pending *request* state. Assignment history records the actual ownership change *after* a transfer is accepted.
 - **Activity Timeline:** A sequential log of user notes, system events, and follow-ups.
 
@@ -109,23 +133,20 @@ The CRM uses a strict assignment waterfall. **The customer's phone number, reque
 - **Gemini AI is NOT active yet.** The system relies entirely on the rule-based parser for now.
 
 ## 12. What Is Missing Next (Ranked)
-1. **Lead notes:** UI for counselors to drop internal context manually.
-2. **Lead status transition UI:** UI to move leads through the sales pipeline.
-3. **Follow-up scheduling UI:** Explicit tools to set the next contact date (`next_followup_at`).
-4. **Due/overdue follow-up board:** A daily dashboard for counselors to see who they must contact today.
-5. **Activity timeline polish:** Cleanly styling the timeline based on the Atomic CRM reference.
-6. **Lead board/pipeline UI:** Visual Kanban or grouped list based on Frappe CRM references.
-7. **KPI/reporting dashboard:** Manager visibility into branch/counselor performance.
-8. **RLS/permission hardening:** Ensuring standard counselors only see their assigned leads.
-9. **WhatsApp webhook:** Real Meta webhook integration.
-10. **Gemini parser fallback:** AI assistance for complex messages.
-11. **Later client/case layer:** Invoices, document portals, etc.
+1. **Older Stage 2A-2D RPC hardening:** migrate remaining multi-table direct-write actions to Postgres RPCs.
+2. **Activity timeline polish:** Cleanly styling the timeline based on the Atomic CRM reference.
+3. **Lead board/pipeline UI:** Visual Kanban or grouped list based on Frappe CRM references.
+4. **KPI/reporting dashboard:** Manager visibility into branch/counselor performance.
+5. **RLS/permission hardening:** Ensuring standard counselors only see their assigned leads/clients.
+6. **WhatsApp webhook:** Real Meta webhook integration.
+7. **Gemini parser fallback:** AI assistance for complex messages.
+8. **Stage 3 client portal:** Client-side auth, status view, document upload/re-upload.
 
 ## 13. What Should NOT Be Built Yet
 - Real WhatsApp API implementation (wait until lead-working tools are stable).
 - Gemini-first parser (rule-based parser stays default).
 - Chatbots attempting to "sell" or "close" leads.
-- Invoices, document portals, or client portals.
+- Invoices or client portals. Stage 2 document handling is staff-side only; Stage 3 client portal is not built.
 - HRM task sync.
 - Payroll or commission synchronization.
 - Generic round-robin or form-first routing.
@@ -142,16 +163,6 @@ The CRM uses a strict assignment waterfall. **The customer's phone number, reque
 - **Migration needed:** No.
 - **Test cases:** Add note, change status, schedule follow-up. Verify timeline updates and `next_followup_at` changes.
 - **Dependencies:** None.
-- **Risk level:** Low.
-
-### T10C: Due/Overdue Follow-up Board
-- **Purpose:** Create a daily dashboard for counselors.
-- **User-facing behavior:** New page at `/crm/leads/follow-ups` showing assigned leads where `next_followup_at` is today or in the past.
-- **Routes affected:** `/crm/leads/follow-ups`
-- **Files likely affected:** Follow-up board page, query utilities.
-- **Migration needed:** No.
-- **Test cases:** Verify past/today leads appear; future leads hide. Complete a follow-up and verify it disappears.
-- **Dependencies:** T10B.
 - **Risk level:** Low.
 
 ### T10D: Activity Timeline Polish
@@ -202,14 +213,14 @@ The CRM uses a strict assignment waterfall. **The customer's phone number, reque
 - **Purpose:** AI parsing for messages the rule engine fails on.
 - **Risk level:** Medium.
 
-### T16: Client/Case Conversion Planning
-- **Purpose:** Design the transition from CRM Lead to HRM Case.
+### Stage 3: Client Portal Planning
+- **Purpose:** Design client-side access after Stage 2 staff-side lifecycle.
 - **Risk level:** High.
 
 ## 15. Immediate Next 3 Tasks
-1. **T10B:** Lead notes + status update + follow-up scheduling UI/actions
-2. **T10C:** Due/overdue follow-up board
-3. **T10D:** Activity timeline polish
+1. RPC hardening for older Stage 2A-2D multi-table actions.
+2. **T10D:** Activity timeline polish.
+3. Stage 3 client portal planning.
 
 ## 16. Testing Matrix Still Needed
 Future implementation must include rigorous testing for:
@@ -230,4 +241,4 @@ Future implementation must include rigorous testing for:
 - **Security:** NEVER bypass permission checks. Ensure RLS is respected and applied carefully.
 
 ## 18. Final Recommendation
-The CRM core routing and transfer workflows are complete. The immediate priority is building the tools the human counselors need to actually work the leads (T10B, T10C, T10D). All webhook and AI features must remain paused until these counselor workflow tools are fully operational.
+The CRM now covers Stage 1 lead work and Stage 2 client lifecycle through alumni / withdrawn closure. The immediate priority is hardening older Stage 2A-2D multi-table writes into RPCs, then timeline polish and Stage 3 client portal planning. Real WhatsApp API/webhook and Gemini fallback remain paused.

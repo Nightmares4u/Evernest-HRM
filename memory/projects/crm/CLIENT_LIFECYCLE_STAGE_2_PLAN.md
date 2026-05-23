@@ -9,6 +9,9 @@
 > - [REFERENCE_CODE_EXTRACTION_MAP.md](REFERENCE_CODE_EXTRACTION_MAP.md)
 > - [../hrm/SYSTEM_SETTINGS_MASTER_PLAN.md](../hrm/SYSTEM_SETTINGS_MASTER_PLAN.md)
 > **Mode:** Vibe-build — locked decisions below, schema sketches will drift.
+> **Implementation note:** Stage 2A-2E has landed on `crm-dev`. Treat
+> §8 schema sketches as historical unless confirmed against migrations
+> `0015`, `0017`, `0018`, `0019`, and `0020`.
 
 ---
 
@@ -57,8 +60,8 @@ financial/legal event:
 LEAD (Stage 1, existing):
   new → contacted → qualified → follow_up → converted | lost
 
-CONVERSION GATE (new):
-  agreement_pending → agreement_signed → advance_paid → CLIENT CREATED
+CONVERSION GATE (conceptual):
+  converted lead + agreement_signed_at + advance_paid_at → CLIENT CREATED
 ```
 
 A `crm_clients` row gets created when **both** of these are true on the
@@ -67,14 +70,15 @@ parent lead:
 - `agreement_signed_at IS NOT NULL`
 - `advance_paid_at IS NOT NULL`
 
-Until both gates clear, the lead can sit in `agreement_pending` /
-`agreement_signed` indefinitely without becoming a client. This is the
-natural choke-point for finance/ops to enforce policy.
+Until both gates clear, the converted lead remains in the conversion
+queue without becoming a client. This is the natural choke-point for
+finance/ops to enforce policy.
 
-The `crm_clients` row uses the same UUID as the parent `crm_leads` row
-(or carries `lead_id` as a unique FK — pick during implementation;
-same-UUID is cleaner for joins but loses the lead↔client boundary in
-audit logs).
+Implementation drift: `agreement_signed_at` and `advance_paid_at` live
+on `crm_clients`, not `crm_leads`, and the conversion form enforces that
+both are present before insertion. The implemented UUID strategy is
+FK-link: `crm_clients.id` is its own uuid and `crm_clients.lead_id` is a
+NOT NULL UNIQUE FK to `crm_leads.id`.
 
 ---
 
@@ -144,7 +148,8 @@ Each row tracks:
 - `intake_year`, `intake_term` (Fall/Spring/Summer)
 - `submitted_at`, `decision_at`
 - `notes`
-- offer-specific: `offer_letter_path` (Supabase Storage), `offer_amount_currency`,
+- offer-specific: `offer_letter_document_id` (FK to `crm_client_documents`),
+  `offer_amount_currency`,
   `tuition_total`, `scholarship_amount`
 
 ---
@@ -305,7 +310,7 @@ Directional. Names will drift.
 
 ```text
 crm_clients
-  id                          uuid PK (= crm_leads.id, or unique FK)
+  id                          uuid PK
   lead_id                     uuid FK → crm_leads.id (unique)
   client_type                 text CHECK ('student','work_permit','b2b')
   client_code                 text unique     -- human-readable, e.g., EN-2026-0142
@@ -319,6 +324,17 @@ crm_clients
   currency                    text default 'PKR'
   assigned_agent_id           uuid FK → employees.id (counselor)
   branch_id                   uuid FK → branches.id
+  flight_date                 timestamptz
+  flight_details              text
+  accommodation_details       text
+  briefing_completed_at       timestamptz
+  briefing_notes              text
+  departure_date              timestamptz
+  arrival_date                timestamptz
+  alumni_started_at           timestamptz
+  alumni_notes                text
+  withdrawn_at                timestamptz
+  withdrawn_reason            text
   created_at, updated_at      timestamptz
 
 crm_client_documents
@@ -345,8 +361,9 @@ crm_client_applications
   intake_year, intake_term    int/text
   status                      text            -- §5 sub-state machine
   submitted_at, decision_at   timestamptz
-  offer_letter_path           text
-  tuition_total, scholarship_amount, currency
+  offer_letter_document_id    uuid FK → crm_client_documents.id
+  offer_amount_currency       text
+  tuition_total, scholarship_amount
   notes                       text
   created_at, updated_at      timestamptz
 
@@ -382,6 +399,25 @@ crm_client_payments
   notes                       text
   recorded_by_user_id         uuid
   created_at                  timestamptz
+
+crm_client_visa_decisions
+  id                          uuid PK
+  client_id                   uuid FK
+  outcome                     granted|refused|additional_info_requested
+  decided_at                  timestamptz
+  note                        text
+  recorded_by_user_id         uuid
+  created_at                  timestamptz
+
+crm_client_refunds
+  id                          uuid PK
+  client_id                   uuid FK
+  amount                      numeric(12,2)
+  currency                    text default 'PKR'
+  refunded_at                 timestamptz
+  reason                      text
+  recorded_by_user_id         uuid
+  created_at                  timestamptz
 ```
 
 ### 8.2 Supporting (later)
@@ -389,7 +425,7 @@ crm_client_payments
 - `crm_universities` — once free-text university names stabilize.
 - `crm_country_milestone_definitions` — when ops wants to edit the
   seed list without code changes (lines up with Settings Phase G).
-- `crm_client_refunds` — refund records, tied to `withdrawn_refunded`.
+- `crm_client_refunds` — implemented in Phase 2E.
 
 ### 8.3 Storage
 
@@ -410,10 +446,9 @@ Server-rendered, same style as existing CRM pages. No client portal yet.
 /crm/clients/[id]/documents        doc registry tab
 /crm/clients/[id]/applications     per-uni applications tab
 /crm/clients/[id]/visa             visa-stage docs + milestone checklist
-/crm/clients/[id]/payments         payments tab
-/crm/clients/[id]/timeline         activity feed
-/admin/crm/clients                 admin overview
-/admin/crm/clients/conversion-queue  agreement_pending / agreement_signed list (operations queue)
+/crm/clients/[id]/closure          pre-departure, departed, alumni, withdrawal/refund
+/admin/crm/clients/conversion-queue  converted leads awaiting client creation
+/admin/crm/clients/doc-review      document review queue
 ```
 
 Conversion path UX:
@@ -441,7 +476,10 @@ unchanged.
 | Create application row | Assigned counselor OR super_admin |
 | Decide application status | Assigned counselor OR super_admin |
 | Mark country milestone done | Assigned counselor OR Ops dept OR super_admin |
+| Record visa decision | Assigned counselor OR super_admin |
+| Move to pre_departure / departed / alumni | Assigned counselor OR super_admin |
 | Record payment | Super_admin only (or finance role later) |
+| Record refund | Super_admin only |
 | Transition to `withdrawn_refunded` | Super_admin only |
 | Transition out of terminal states | Super_admin only |
 | Transfer client (re-assign counselor) | Same rules as lead transfer today |
@@ -495,9 +533,20 @@ independent status; client main status reflects the rollup.
 until APS milestone is `done`.
 
 ### Phase 2E — Closure (0.5 week)
+- Migration `0020_crm_client_closure_phase_2e.sql`.
+- Tables: `crm_client_visa_decisions`, `crm_client_refunds`.
+- New `crm_clients` closure metadata columns for flight, accommodation,
+  briefing, departure, arrival, alumni, and withdrawal.
+- Visa decision capture: `granted | refused | additional_info_requested`.
 - `pre_departure`, `departed`, `alumni`, `withdrawn_refunded` transitions.
 - Refund tracking (super_admin only).
-- KPI capture stub for `alumni`.
+- Route: `/crm/clients/[id]/closure`.
+- `/crm/clients/[id]/visa` extended with decision recording.
+- RPC-first implementation per §14: `crm_record_visa_decision`,
+  `crm_transition_to_pre_departure`, `crm_rollback_to_visa_prep`,
+  `crm_update_pre_departure_fields`, `crm_transition_to_departed`,
+  `crm_transition_to_alumni`, `crm_withdraw_client`,
+  `crm_record_client_refund`.
 
 **Exit criteria:** A full lifecycle from conversion to alumni can be
 walked end-to-end.
@@ -537,11 +586,11 @@ walked end-to-end.
 
 ## 13. Open questions (revisit during build)
 
-- **Same-UUID vs FK-link** for `crm_clients` vs `crm_leads`. Decide in Phase 2A.
-- **Client code format.** `EN-{year}-{seq}`, or `EN-{branch}-{seq}`? Pick before Phase 2A migration.
-- **Department code/name for "Operations"** — confirm the exact value in `departments.name` so the permission check is correct.
+- **Same-UUID vs FK-link** for `crm_clients` vs `crm_leads`. Resolved in Phase 2A: FK-link.
+- **Client code format.** Resolved in Phase 2A: `EN-{YYYY}-{4-digit sequence}`.
+- **Department code/name for "Operations"** — resolved for Stage 2 as hardcoded `Operations`; move to settings/RBAC later.
 - **Multiple counselors per client?** Today, one. Some cases need a primary (counselor) + a docs reviewer in tandem. Defer unless real cases appear.
-- **Refund policy enforcement** — is it codified, or is it a free-text decision by super_admin? Phase 2E should at minimum capture the amount; policy logic can be added later.
+- **Refund policy enforcement** — Phase 2E captures free-text reason and amount; policy logic can be added later.
 - **English test re-tests.** If a client takes IELTS twice, do we keep both? Yes — `superseded_by` handles it. Confirm UX shows only the latest.
 - **B2B and Work Permit state machines.** Sketched but not detailed. Both should get their own short planning docs once Stage 2 student flow is in pilot.
 - **Webhooks/notifications when status changes.** Email to client? Stage 3 (portal) — out of scope here.
@@ -669,13 +718,16 @@ if (error) {
 
 Tracked in `CRM_BOARD.md`:
 
-- Phase 2A: `convertLeadToClient`, `recordClientPayment` (A-1, A-2 — no
-  compensation yet, urgent-ish)
+- Phase 2A: `convertLeadToClient`, `recordClientPayment` (A-1, A-2)
+- Phase 2B: document upload/decision paths have compensation patches but
+  still pre-date the RPC policy.
+- Phase 2C: application create/status/delete paths write activity and
+  client status from TypeScript; audit and migrate opportunistically.
 - Phase 2D: `setMilestoneStatus`, `updateClientStatusWithActivity`,
   `ensureClientMilestonesSeeded` (A-8, A-9, A-10 — compensation in place)
 
-Five RPCs total. Each is ~30 lines of SQL + a 3-line action refactor.
-Convert opportunistically when an action is touched for any other reason.
+Convert opportunistically when an older Stage 2A-2D action is touched
+for any other reason.
 
 ### Phase 2E onwards
 
