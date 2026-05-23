@@ -3,7 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDateTime } from "@/lib/crm/format";
-import { getCrmClientDetail, listCrmClientDocuments } from "@/lib/db/crm";
+import {
+  getCrmClientDetail,
+  getCrmClientForVisaPage,
+  listCrmClientApplications,
+  listCrmClientDocuments,
+} from "@/lib/db/crm";
 import type {
   CrmClientActivity,
   CrmClientPayment,
@@ -47,10 +52,25 @@ export default async function CrmClientDetailPage({
   if (!detail) notFound();
 
   const { client, payments, activities } = detail;
-  const documents = await listCrmClientDocuments(client.id);
+  const [documents, applications, visaData] = await Promise.all([
+    listCrmClientDocuments(client.id),
+    listCrmClientApplications(client.id),
+    getCrmClientForVisaPage(client.id),
+  ]);
   const docsAwaitingReview = documents.filter((document) =>
     document.doc_state === "uploaded" || document.doc_state === "under_review"
   ).length;
+  const applicationsInFlight = applications.filter((application) =>
+    application.status === "submitted" ||
+    application.status === "under_review" ||
+    application.status === "waitlisted"
+  ).length;
+  const showVisaBadge =
+    Boolean(visaData?.country) &&
+    (client.status === "offer_accepted" ||
+      client.status === "visa_prep" ||
+      client.status === "visa_submitted");
+  const visaMilestonesRemaining = visaData?.isBlockedFromVisaSubmitted.missing.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -85,6 +105,28 @@ export default async function CrmClientDetailPage({
           {docsAwaitingReview > 0 && (
             <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
               {docsAwaitingReview}
+            </span>
+          )}
+        </Link>
+        <Link
+          href={`/crm/clients/${client.id}/applications`}
+          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+        >
+          Applications
+          {applicationsInFlight > 0 && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+              {applicationsInFlight}
+            </span>
+          )}
+        </Link>
+        <Link
+          href={`/crm/clients/${client.id}/visa`}
+          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+        >
+          Visa stage
+          {showVisaBadge && visaMilestonesRemaining > 0 && (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+              {visaMilestonesRemaining}
             </span>
           )}
         </Link>

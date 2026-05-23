@@ -548,7 +548,143 @@ walked end-to-end.
 
 ---
 
-## 14. Pointers
+## 14. Transaction policy — when to use RPC vs direct Supabase
+
+> **Locked 2026-05-23 after Gemini audits of Phases 2A–2D revealed
+> repeat "orphan row on partial failure" bugs (A-1, A-2, A-8, A-9, A-10).**
+
+### The rule
+
+**Any server action that mutates more than one table — or mutates one table
+and then writes to a `crm_*_activities` table — MUST be implemented as a
+Postgres function (RPC) and invoked via `admin.rpc("function_name", { ... })`.**
+
+Single-table mutations (e.g., updating one field on `crm_clients`,
+inserting one row into `crm_client_documents`) are fine via the standard
+`admin.from(...).update(...)` / `.insert(...)` pattern. No RPC needed.
+
+### Why
+
+The Supabase JS client has no `BEGIN ... COMMIT`. Each call is its own
+HTTP request and its own implicit transaction. Chaining writes in TypeScript
+means partial failure leaves the DB broken: the first write committed,
+the second failed, the action throws, the user sees an error, the first
+write is still there.
+
+Postgres functions run inside an implicit transaction. If any statement
+inside the function raises, the entire function rolls back atomically.
+One HTTP call, one transaction, no compensation code to forget.
+
+### The compensation pattern (deprecated for new code)
+
+Phases 2A–2D shipped without this rule. To avoid an emergency rewrite,
+the affected actions use "compensation": capture the original row, do
+the writes, on failure manually revert. See:
+
+- `app/(dashboard)/crm/clients/visa/actions.ts` —
+  `setMilestoneStatus`, `updateClientStatusWithActivity`
+- `lib/db/crm.ts` — `ensureClientMilestonesSeeded`
+- `app/(dashboard)/crm/clients/actions.ts` —
+  `convertLeadToClient`, `recordClientPayment` (no compensation yet — still A-1, A-2)
+
+**Compensation is a stopgap, not a fix.** The compensation itself can
+fail (the same network drop that killed the original write can kill the
+compensation), and concurrent writes can race the snapshot. Treat
+compensation patches as carrying technical debt; backfill them into
+RPCs when you next touch them.
+
+### The RPC template
+
+```sql
+-- supabase/migrations/00NN_<name>.sql
+CREATE OR REPLACE FUNCTION crm_<verb_object>(
+  p_client_id     uuid,
+  p_actor_user_id uuid,
+  p_to_status     text,
+  p_note          text
+) RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+  v_from_status text;
+BEGIN
+  SELECT status INTO v_from_status
+    FROM crm_clients
+    WHERE id = p_client_id
+    FOR UPDATE;  -- row lock to serialize concurrent transitions
+
+  IF v_from_status IS NULL THEN
+    RAISE EXCEPTION 'Client % not found', p_client_id USING ERRCODE = 'P0002';
+  END IF;
+
+  -- 1. Mutation
+  UPDATE crm_clients
+    SET status = p_to_status, updated_at = now()
+    WHERE id = p_client_id;
+
+  -- 2. Activity log
+  INSERT INTO crm_client_activities
+    (client_id, activity_type, actor_user_id, description, payload)
+  VALUES (
+    p_client_id,
+    'client_status_changed',
+    p_actor_user_id,
+    format('Client status changed from %s to %s.', v_from_status, p_to_status),
+    jsonb_build_object('from', v_from_status, 'to', p_to_status, 'note', p_note)
+  );
+
+  RETURN p_client_id;
+END;
+$$;
+```
+
+```ts
+// In the TypeScript server action:
+const { error } = await admin.rpc("crm_<verb_object>", {
+  p_client_id: client.id,
+  p_actor_user_id: me.authUserId,
+  p_to_status: "visa_submitted",
+  p_note: note,
+});
+if (error) {
+  redirectClient(client.id, "error", error.message);
+}
+```
+
+### Conventions
+
+- **Function naming**: `crm_<verb>_<object>` — e.g. `crm_record_visa_decision`,
+  `crm_transition_client_closure`, `crm_record_client_refund`.
+- **Parameter prefix**: `p_` for all input parameters. Avoids accidental
+  column-name collision inside the function body.
+- **Permission checks** stay in the TypeScript caller. RPCs focus on data
+  integrity, not policy.
+- **Errors**: `RAISE EXCEPTION` with a helpful message. The Supabase
+  client surfaces it on `{ error }`.
+- **Row locks**: use `SELECT ... FOR UPDATE` on the parent row before
+  writing if the action could race with other transitions. Particularly
+  important for status changes and auto-bump logic.
+- **Return value**: return what the caller needs (usually the affected
+  row id, or `void`). Don't over-design.
+
+### Backlog (existing compensation patches → RPC migrations)
+
+Tracked in `CRM_BOARD.md`:
+
+- Phase 2A: `convertLeadToClient`, `recordClientPayment` (A-1, A-2 — no
+  compensation yet, urgent-ish)
+- Phase 2D: `setMilestoneStatus`, `updateClientStatusWithActivity`,
+  `ensureClientMilestonesSeeded` (A-8, A-9, A-10 — compensation in place)
+
+Five RPCs total. Each is ~30 lines of SQL + a 3-line action refactor.
+Convert opportunistically when an action is touched for any other reason.
+
+### Phase 2E onwards
+
+Every multi-table action in Phase 2E and beyond is built RPC-first.
+Phase 2E's Codex prompt mandates this explicitly.
+
+---
+
+## 15. Pointers
 
 - [STAGE_1_DECISIONS.md](STAGE_1_DECISIONS.md) — what's already locked.
 - [REFERENCE_CODE_EXTRACTION_MAP.md](REFERENCE_CODE_EXTRACTION_MAP.md) —

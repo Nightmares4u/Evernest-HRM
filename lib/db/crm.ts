@@ -14,6 +14,10 @@ import type {
   CrmCampaignSource,
   CrmClient,
   CrmClientActivity,
+  CrmClientApplication,
+  CrmClientApplicationVM,
+  CrmClientCountryMilestone,
+  CrmClientCountryMilestoneVM,
   CrmClientDocument,
   CrmClientDocumentVM,
   CrmClientPayment,
@@ -29,12 +33,23 @@ import type {
   CrmParserSettings,
   CrmRawInbox,
   CrmRawStatus,
+  CrmSupportedTargetCountry,
   CrmTransferStatus,
   CrmWhatsappNumber,
 } from "@/lib/types/crm";
+import {
+  CRM_COUNTRY_MILESTONES,
+  CRM_DOC_CODE_CATEGORY,
+  normalizeTargetCountry,
+} from "@/lib/types/crm";
 import { DEFAULT_CRM_PARSER_SETTINGS } from "@/lib/crm/intake";
 import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
-import { canVerifyClientDoc, canViewCrmClient } from "@/lib/crm/permissions-clients";
+import {
+  canEditClientMilestone,
+  canEditClientStatus,
+  canVerifyClientDoc,
+  canViewCrmClient,
+} from "@/lib/crm/permissions-clients";
 
 export const CRM_PRODUCT_CATEGORIES = ["Italy", "Korea", "B2B", "General"] as const;
 
@@ -1322,6 +1337,117 @@ function documentRowToVM(row: CrmClientDocumentJoinedRow): CrmClientDocumentVM {
   };
 }
 
+type CrmClientApplicationJoinedRow = CrmClientApplication & {
+  offer_letter_document:
+    | { file_name: string | null }
+    | { file_name: string | null }[]
+    | null;
+};
+
+function applicationRowToVM(row: CrmClientApplicationJoinedRow): CrmClientApplicationVM {
+  const offerLetterDocument = pickOne(row.offer_letter_document);
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    university_name: row.university_name,
+    program_name: row.program_name,
+    intake_year: row.intake_year,
+    intake_term: row.intake_term,
+    status: row.status,
+    submitted_at: row.submitted_at,
+    decision_at: row.decision_at,
+    offer_letter_document_id: row.offer_letter_document_id,
+    offer_amount_currency: row.offer_amount_currency,
+    tuition_total: row.tuition_total,
+    scholarship_amount: row.scholarship_amount,
+    notes: row.notes,
+    created_by_user_id: row.created_by_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    offer_letter_file_name: offerLetterDocument?.file_name ?? null,
+  };
+}
+
+type CrmClientCountryMilestoneJoinedRow = CrmClientCountryMilestone & {
+  completed_by:
+    | { display_name: string | null }
+    | { display_name: string | null }[]
+    | null;
+};
+
+function milestoneDefinition(
+  country: CrmSupportedTargetCountry | null,
+  milestoneCode: string
+) {
+  if (!country) return null;
+  return CRM_COUNTRY_MILESTONES[country].find((definition) => definition.code === milestoneCode) ?? null;
+}
+
+function milestoneOrder(
+  country: CrmSupportedTargetCountry | null,
+  milestoneCode: string
+): number {
+  if (!country) return 10_000;
+  const index = CRM_COUNTRY_MILESTONES[country].findIndex((definition) => definition.code === milestoneCode);
+  return index === -1 ? 10_000 : index;
+}
+
+function milestoneRowToVM(
+  row: CrmClientCountryMilestoneJoinedRow,
+  country: CrmSupportedTargetCountry | null
+): CrmClientCountryMilestoneVM {
+  const completedBy = pickOne(row.completed_by);
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    milestone_code: row.milestone_code,
+    status: row.status,
+    due_at: row.due_at,
+    completed_at: row.completed_at,
+    completed_by_user_id: row.completed_by_user_id,
+    notes: row.notes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    definition: milestoneDefinition(country, row.milestone_code),
+    completed_by_name: completedBy?.display_name ?? null,
+  };
+}
+
+async function loadClientVM(
+  admin: ReturnType<typeof createAdminClient>,
+  clientId: string
+): Promise<CrmClientVM | null> {
+  const { data, error } = await admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (error) throw new Error(`loadClientVM: ${error.message}`);
+  return data ? clientRowToVM(data as CrmClientJoinedRow) : null;
+}
+
+function visaSubmitBlockers(
+  country: CrmSupportedTargetCountry | null,
+  milestones: CrmClientCountryMilestoneVM[]
+): string[] {
+  if (!country) return [];
+  return CRM_COUNTRY_MILESTONES[country]
+    .filter((definition) => definition.required)
+    .filter((definition) => {
+      const row = milestones.find((milestone) => milestone.milestone_code === definition.code);
+      return !row || (row.status !== "done" && row.status !== "not_applicable");
+    })
+    .map((definition) => definition.label);
+}
+
 export async function listCrmClients(filters: {
   status?: CrmClientStatus | null;
   scopeToEmployeeId?: string | null;
@@ -1600,6 +1726,288 @@ export async function getSignedDocumentDownloadUrl(documentId: string): Promise<
 
   if (error) throw new Error(`getSignedDocumentDownloadUrl storage: ${error.message}`);
   return data.signedUrl;
+}
+
+export async function listCrmClientApplications(clientId: string): Promise<CrmClientApplicationVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data: clientData, error: clientError } = await admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (clientError) throw new Error(`listCrmClientApplications client: ${clientError.message}`);
+  if (!clientData) return [];
+
+  const client = clientRowToVM(clientData as CrmClientJoinedRow);
+  if (!canViewCrmClient(me, client)) return [];
+
+  const { data, error } = await admin
+    .from("crm_client_applications")
+    .select(
+      `
+        *,
+        offer_letter_document:crm_client_documents!crm_client_applications_offer_letter_document_id_fkey(file_name)
+      `
+    )
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`listCrmClientApplications: ${error.message}`);
+  return ((data ?? []) as CrmClientApplicationJoinedRow[]).map(applicationRowToVM);
+}
+
+export async function getCrmClientApplication(applicationId: string): Promise<{
+  application: CrmClientApplicationVM;
+  client: CrmClientVM;
+} | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const { data: appData, error: appError } = await admin
+    .from("crm_client_applications")
+    .select(
+      `
+        *,
+        offer_letter_document:crm_client_documents!crm_client_applications_offer_letter_document_id_fkey(file_name)
+      `
+    )
+    .eq("id", applicationId)
+    .maybeSingle();
+
+  if (appError) throw new Error(`getCrmClientApplication application: ${appError.message}`);
+  if (!appData) return null;
+
+  const application = applicationRowToVM(appData as CrmClientApplicationJoinedRow);
+  const { data: clientData, error: clientError } = await admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .eq("id", application.client_id)
+    .maybeSingle();
+
+  if (clientError) throw new Error(`getCrmClientApplication client: ${clientError.message}`);
+  if (!clientData) return null;
+
+  const client = clientRowToVM(clientData as CrmClientJoinedRow);
+  if (!canViewCrmClient(me, client)) return null;
+
+  return { application, client };
+}
+
+export async function listClientDocumentsForApplicationPicker(clientId: string): Promise<Array<{
+  id: string;
+  doc_code: string;
+  file_name: string;
+}>> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const meDepartmentName = await getActorDepartmentName(admin, me);
+  const access = await getClientDocumentAccess(admin, me, clientId, meDepartmentName);
+  if (!access) return [];
+
+  const { data, error } = await admin
+    .from("crm_client_documents")
+    .select("id, doc_code, file_name")
+    .eq("client_id", clientId)
+    .eq("doc_state", "approved")
+    .is("superseded_by_id", null)
+    .order("uploaded_at", { ascending: false });
+
+  if (error) throw new Error(`listClientDocumentsForApplicationPicker: ${error.message}`);
+  return (data ?? []) as Array<{ id: string; doc_code: string; file_name: string }>;
+}
+
+export async function ensureClientMilestonesSeeded(clientId: string): Promise<{
+  country: CrmSupportedTargetCountry | null;
+  inserted: number;
+}> {
+  if (!isSupabaseConfigured()) return { country: null, inserted: 0 };
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return { country: null, inserted: 0 };
+
+  const country = normalizeTargetCountry(client.target_country);
+  if (!country) return { country: null, inserted: 0 };
+
+  const definitions = CRM_COUNTRY_MILESTONES[country];
+  const { data: existingData, error: existingError } = await admin
+    .from("crm_client_country_milestones")
+    .select("milestone_code")
+    .eq("client_id", clientId);
+
+  if (existingError) throw new Error(`ensureClientMilestonesSeeded existing: ${existingError.message}`);
+
+  const existingCodes = new Set(((existingData ?? []) as { milestone_code: string }[]).map((row) => row.milestone_code));
+  const missing = definitions.filter((definition) => !existingCodes.has(definition.code));
+  if (missing.length === 0) return { country, inserted: 0 };
+
+  const { data: insertedData, error: insertError } = await admin
+    .from("crm_client_country_milestones")
+    .upsert(
+      missing.map((definition) => ({
+        client_id: clientId,
+        milestone_code: definition.code,
+      })),
+      { onConflict: "client_id,milestone_code", ignoreDuplicates: true }
+    )
+    .select("milestone_code");
+
+  if (insertError) throw new Error(`ensureClientMilestonesSeeded insert: ${insertError.message}`);
+
+  const insertedCodes = ((insertedData ?? []) as { milestone_code: string }[]).map((row) => row.milestone_code);
+  if (insertedCodes.length > 0) {
+    const { error: activityError } = await admin.from("crm_client_activities").insert({
+      client_id: clientId,
+      activity_type: "milestones_seeded",
+      actor_user_id: me.authUserId,
+      description: `Country milestones seeded for ${country}.`,
+      payload: {
+        country,
+        codes: insertedCodes,
+      },
+    });
+
+    if (activityError) {
+      await admin
+        .from("crm_client_country_milestones")
+        .delete()
+        .eq("client_id", clientId)
+        .in("milestone_code", insertedCodes);
+      throw new Error(`ensureClientMilestonesSeeded activity: ${activityError.message} (rolled back)`);
+    }
+  }
+
+  return { country, inserted: insertedCodes.length };
+}
+
+export async function listClientCountryMilestones(
+  clientId: string
+): Promise<CrmClientCountryMilestoneVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return [];
+
+  const country = normalizeTargetCountry(client.target_country);
+  const { data, error } = await admin
+    .from("crm_client_country_milestones")
+    .select(
+      `
+        *,
+        completed_by:app_users!crm_client_country_milestones_completed_by_user_id_fkey(display_name)
+      `
+    )
+    .eq("client_id", clientId);
+
+  if (error) throw new Error(`listClientCountryMilestones: ${error.message}`);
+
+  return ((data ?? []) as CrmClientCountryMilestoneJoinedRow[])
+    .map((row) => milestoneRowToVM(row, country))
+    .sort((a, b) => {
+      const order = milestoneOrder(country, a.milestone_code) - milestoneOrder(country, b.milestone_code);
+      return order || a.milestone_code.localeCompare(b.milestone_code);
+    });
+}
+
+export async function getCrmClientForVisaPage(clientId: string): Promise<{
+  client: CrmClientVM;
+  country: CrmSupportedTargetCountry | null;
+  milestones: CrmClientCountryMilestoneVM[];
+  visaDocs: CrmClientDocumentVM[];
+  canManage: boolean;
+  canTransitionStatus: boolean;
+  isBlockedFromVisaSubmitted: { blocked: boolean; missing: string[] };
+} | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const meDepartmentName = await getActorDepartmentName(admin, me);
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return null;
+
+  const country = normalizeTargetCountry(client.target_country);
+  const [milestonesRes, docsRes] = await Promise.all([
+    admin
+      .from("crm_client_country_milestones")
+      .select(
+        `
+          *,
+          completed_by:app_users!crm_client_country_milestones_completed_by_user_id_fkey(display_name)
+        `
+      )
+      .eq("client_id", clientId),
+    admin
+      .from("crm_client_documents")
+      .select(
+        `
+          *,
+          uploader:app_users!crm_client_documents_uploaded_by_user_id_fkey(display_name),
+          reviewer:app_users!crm_client_documents_reviewed_by_user_id_fkey(display_name)
+        `
+      )
+      .eq("client_id", clientId)
+      .is("superseded_by_id", null)
+      .order("uploaded_at", { ascending: false }),
+  ]);
+
+  if (milestonesRes.error) {
+    throw new Error(`getCrmClientForVisaPage milestones: ${milestonesRes.error.message}`);
+  }
+  if (docsRes.error) {
+    throw new Error(`getCrmClientForVisaPage documents: ${docsRes.error.message}`);
+  }
+
+  const milestones = ((milestonesRes.data ?? []) as CrmClientCountryMilestoneJoinedRow[])
+    .map((row) => milestoneRowToVM(row, country))
+    .sort((a, b) => {
+      const order = milestoneOrder(country, a.milestone_code) - milestoneOrder(country, b.milestone_code);
+      return order || a.milestone_code.localeCompare(b.milestone_code);
+    });
+  const visaDocs = ((docsRes.data ?? []) as CrmClientDocumentJoinedRow[])
+    .map(documentRowToVM)
+    .filter((document) =>
+      Object.prototype.hasOwnProperty.call(CRM_DOC_CODE_CATEGORY, document.doc_code) &&
+      CRM_DOC_CODE_CATEGORY[document.doc_code as keyof typeof CRM_DOC_CODE_CATEGORY] === "visa"
+    );
+  const missing = visaSubmitBlockers(country, milestones);
+
+  return {
+    client,
+    country,
+    milestones,
+    visaDocs,
+    canManage: canEditClientMilestone(me, client, meDepartmentName),
+    canTransitionStatus: canEditClientStatus(me, client),
+    isBlockedFromVisaSubmitted: {
+      blocked: missing.length > 0,
+      missing,
+    },
+  };
 }
 
 export async function getCrmClientForLead(leadId: string): Promise<CrmClientVM | null> {

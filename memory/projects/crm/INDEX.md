@@ -71,6 +71,8 @@
 | "Build Phase 2B (documents)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §6, §11 + `CURRENT_STATE.md` |
 | "Build Phase 2C (applications)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §5, §11 + `CURRENT_STATE.md` |
 | "Build Phase 2D (country milestones / visa)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §7, §11 + `CURRENT_STATE.md` |
+| "Build Phase 2E (closure / pre-departure / alumni / refund)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §4, §11, §14 + `CURRENT_STATE.md` |
+| "Any server action that touches >1 table" | **MANDATORY:** `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14 (RPC pattern) |
 | "Add a new permission check" | `CRM_SETTINGS_INTEGRATION_NOTES.md` + `STAGE_1_DECISIONS.md` |
 | "Anything that touches HRM employees/branches/roles" | `CRM_HRM_INTEGRATION.md` |
 | "Adapt UI from external CRMs" | `REFERENCE_CODE_EXTRACTION_MAP.md` + `REFERENCE_CRM_INTEGRATION_AUDIT.md` |

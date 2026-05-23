@@ -158,3 +158,35 @@ no native transactions). One RPC per multi-table operation.
 - D-1 (storage path sanitization) — verified safe in
   `app/(dashboard)/crm/clients/documents/actions.ts`.
 - E-1 (client code format doc) — documented in CURRENT_STATE.md.
+
+---
+
+## Backlog from Gemini 2C/2D audit (2026-05-23)
+
+### Transaction integrity (RPC migration)
+
+The transaction policy in `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14
+mandates Postgres RPC for any multi-table mutation. Existing actions
+that pre-date the rule have either compensation patches (a stopgap) or
+nothing (still leaking on partial failure). Convert opportunistically.
+
+**Still leaking, no compensation (URGENT):**
+- A-1 `convertLeadToClient` in `app/(dashboard)/crm/clients/actions.ts`
+  — three sequential inserts (client / payment / activity). Failure of
+  payment or activity insert leaves an orphan client row that blocks
+  re-conversion.
+- A-2 `recordClientPayment` in same file — payment + activity insert
+  sequence. Failure of activity insert leaves a silent payment row.
+
+**Compensation patched (technical debt, less urgent):**
+- A-8 `setMilestoneStatus` in `app/(dashboard)/crm/clients/visa/actions.ts`
+- A-9 `updateClientStatusWithActivity` in same file
+- A-10 `ensureClientMilestonesSeeded` in `lib/db/crm.ts`
+
+**Fix path:** one RPC per action. Template in Plan §14. Each = ~30 lines
+SQL + 3-line action refactor.
+
+### Performance polish (Phase 2B Gemini audit)
+
+- C-1 `listDocsAwaitingReview` in `lib/db/crm.ts` — two reads run
+  sequentially instead of `Promise.all`. Trivial perf fix.

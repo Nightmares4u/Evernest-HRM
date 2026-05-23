@@ -110,6 +110,26 @@ signed URLs only). Routes: `/crm/clients/[id]/documents`,
 `/admin/crm/clients/doc-review`. Migration:
 `0017_crm_client_documents_phase_2b.sql` (manual apply).
 
+## Phase 2C Landed (2026-05-23)
+
+Per-university applications are implemented. Table:
+`crm_client_applications`. Status transitions auto-bump `client.status`
+(`applying`, `offer_in_hand`, `offer_accepted`) per Plan §4. Route:
+`/crm/clients/[id]/applications`. Migration:
+`0018_crm_client_applications_phase_2c.sql` (manual apply).
+
+## Phase 2D Landed (2026-05-23)
+
+Country milestones + visa-stage gate are implemented. Table:
+`crm_client_country_milestones` (unique on `client_id` +
+`milestone_code`). Registry: `CRM_COUNTRY_MILESTONES` in
+`lib/types/crm.ts` for 11 countries. Route:
+`/crm/clients/[id]/visa`. Gate: client cannot move to
+`visa_submitted` while any required milestone is unfinished. Transitions
+added: `offer_accepted` -> `visa_prep`, `visa_prep` ->
+`visa_submitted`, plus super_admin rollbacks. Migration:
+`0019_crm_client_country_milestones_phase_2d.sql` (manual apply).
+
 ## Current Goal
 
 Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner
@@ -209,3 +229,38 @@ Document registry + upload + review shipped.
 - View clients: super_admin + assigned counselor + **branch_manager / assistant_manager / manager / admin_hr in same branch** (`canViewCrmClient`).
 - Verify documents (upload / claim / approve / reject): super_admin + assigned counselor + **Operations department** (`canVerifyClientDoc`). Branch managers may view but cannot verify unless also the assigned counselor.
 - The "Operations" department name is hardcoded in `lib/crm/permissions-clients.ts` (`OPS_DEPARTMENT_NAME`). Move to settings table when RBAC migration lands.
+
+## Stage 2 — Phase 2C landed (2026-05-23)
+
+Per-university applications shipped.
+
+- Table added: `crm_client_applications` (migration `0018_crm_client_applications_phase_2c.sql`).
+- Enums: `crm_client_application_status` (draft → submitted → under_review → offer | rejected | waitlisted → accepted | declined | withdrawn), `crm_client_application_intake_term` (fall | spring | summer).
+- Partial unique index: at most one application per client may be in `accepted` status.
+- Routes added: `/crm/clients/[id]/applications`.
+- Server actions: createApplication, updateApplicationFields, transitionApplicationStatus, deleteApplication.
+- Auto-bump rules per Plan §4: an app moving to `submitted` bumps client `onboarding|doc_review|uni_selection` → `applying`; any app in `offer` while client is `applying` bumps to `offer_in_hand`; moving an app to `accepted` bumps client to `offer_accepted` (one accepted per client enforced).
+- Permission predicate added: `canEditClientApplication`.
+
+## Stage 2 — Phase 2D landed (2026-05-23)
+
+Country milestone overlay + visa-stage gate shipped.
+
+- Table added: `crm_client_country_milestones` (migration `0019_crm_client_country_milestones_phase_2d.sql`).
+- Enum: `crm_client_milestone_status` (not_started | in_progress | done | not_applicable).
+- Registry: `CRM_COUNTRY_MILESTONES` in `lib/types/crm.ts` covering 11 countries (italy, south_korea, russia, germany, hungary, us, canada, france, cyprus, turkey, azerbaijan).
+- Route added: `/crm/clients/[id]/visa`.
+- Lazy idempotent seeding via `ensureClientMilestonesSeeded` on first visit.
+- Gate: client cannot transition to `visa_submitted` while any required milestone is unfinished.
+- Status transitions: offer_accepted → visa_prep (forward), visa_prep → visa_submitted (forward, gated), plus super_admin rollbacks both directions.
+- Permission predicates added: `canEditClientMilestone`, `canEditClientStatus`.
+
+### Transaction policy locked (2026-05-23)
+
+Gemini audits of Phases 2A–2D surfaced repeat "orphan row on partial failure" bugs from chaining multiple Supabase writes in a single server action. Locked rule in `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14:
+
+> Any server action that mutates more than one table — or mutates one table and then writes to a `crm_*_activities` table — MUST be implemented as a Postgres function (RPC) and invoked via `admin.rpc(...)`.
+
+- Existing 2A actions (A-1, A-2) still leak; backlog in `CRM_BOARD.md` flagged URGENT.
+- Existing 2D actions (A-8, A-9, A-10) have compensation patches; backlog flagged as technical debt.
+- Phase 2E and beyond will be RPC-first from the start.

@@ -244,7 +244,8 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
   });
 
   if (activityError) {
-    redirectClient(clientId, "error", `Payment recorded, but activity failed: ${activityError.message}`);
+    await admin.from("crm_client_payments").delete().eq("id", paymentRow.id);
+    redirectClient(clientId, "error", `Payment recorded, but activity failed (rolled back): ${activityError.message}`);
   }
 
   revalidatePath("/crm/clients");

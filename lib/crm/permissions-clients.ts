@@ -54,3 +54,38 @@ export function canVerifyClientDoc(
   if (meDepartmentName === OPS_DEPARTMENT_NAME) return true;
   return false;
 }
+
+export function canEditClientApplication(
+  me: CurrentUser,
+  client: Pick<CrmClient, "assigned_agent_id">
+): boolean {
+  // → clients.applications.edit
+  if (!me.appUser.is_active) return false;
+  if (me.appUser.role === "super_admin") return true;
+  if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
+  return false;
+}
+
+export function canEditClientMilestone(
+  me: CurrentUser,
+  client: Pick<CrmClient, "assigned_agent_id">,
+  meDepartmentName: string | null
+): boolean {
+  // → clients.milestones.edit
+  if (!me.appUser.is_active) return false;
+  if (me.appUser.role === "super_admin") return true;
+  if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
+  if (meDepartmentName === OPS_DEPARTMENT_NAME) return true;
+  return false;
+}
+
+export function canEditClientStatus(
+  me: CurrentUser,
+  client: Pick<CrmClient, "assigned_agent_id">
+): boolean {
+  // → clients.status.edit
+  if (!me.appUser.is_active) return false;
+  if (me.appUser.role === "super_admin") return true;
+  if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
+  return false;
+}

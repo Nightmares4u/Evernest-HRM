@@ -173,7 +173,7 @@ export async function uploadClientDocument(formData: FormData): Promise<ActionRe
   }
 
   const fileName = sanitizeFileName(file.name);
-  const storagePath = `clients/${clientId}/${docCodeRaw}/${Date.now()}_${fileName}`;
+  const storagePath = `clients/${clientId}/${docCodeRaw}/${crypto.randomUUID()}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
   const { error: uploadError } = await admin.storage
     .from(STORAGE_BUCKET)
@@ -217,6 +217,10 @@ export async function uploadClientDocument(formData: FormData): Promise<ActionRe
     return { ok: false, clientId, message: `Could not record document: ${insertError?.message ?? "No row returned."}` };
   }
 
+  const rollbackUpload = async () => {
+    await admin.from("crm_client_documents").delete().eq("id", (newDoc as CrmClientDocument).id);
+  };
+
   const oldDocumentIds = ((oldDocs as { id: string }[] | null) ?? []).map(d => d.id);
   if (oldDocumentIds.length > 0) {
     const { error: supersedeError } = await admin
@@ -225,7 +229,8 @@ export async function uploadClientDocument(formData: FormData): Promise<ActionRe
       .in("id", oldDocumentIds);
 
     if (supersedeError) {
-      return { ok: false, clientId, message: `Document uploaded, but history update failed: ${supersedeError.message}` };
+      await rollbackUpload();
+      return { ok: false, clientId, message: `Document uploaded, but history update failed (rolled back): ${supersedeError.message}` };
     }
   }
 
@@ -246,7 +251,11 @@ export async function uploadClientDocument(formData: FormData): Promise<ActionRe
   });
 
   if (activityError) {
-    return { ok: false, clientId, message: `Document uploaded, but activity failed: ${activityError.message}` };
+    if (oldDocumentIds.length > 0) {
+      await admin.from("crm_client_documents").update({ superseded_by_id: null }).in("id", oldDocumentIds);
+    }
+    await rollbackUpload();
+    return { ok: false, clientId, message: `Document uploaded, but activity failed (rolled back): ${activityError.message}` };
   }
 
   revalidateClientDocumentPaths(clientId);
@@ -377,24 +386,16 @@ async function decideClientDocument(
   });
 
   if (activityError) {
-    return { ok: false, clientId: document.client_id, message: `Document updated, but activity failed: ${activityError.message}` };
-  }
-
-  revalidateClientDocumentPaths(document.client_id);
-  return {
-    ok: true,
-    clientId: document.client_id,
-    message: decision === "approved" ? "Document approved." : "Document rejected for resubmission.",
-  };
-}
-
-function revalidateClientDocumentPaths(clientId: string): void {
-  revalidatePath("/crm/clients");
-  revalidatePath(`/crm/clients/${clientId}`);
-  revalidatePath(`/crm/clients/${clientId}/documents`);
-  revalidatePath("/admin/crm/clients/doc-review");
-}
-ed, but activity failed: ${activityError.message}` };
+    await admin
+      .from("crm_client_documents")
+      .update({
+        doc_state: document.doc_state,
+        reviewed_by_user_id: document.reviewed_by_user_id,
+        reviewed_at: document.reviewed_at,
+        decision_note: document.decision_note,
+      })
+      .eq("id", document.id);
+    return { ok: false, clientId: document.client_id, message: `Document updated, but activity failed (rolled back): ${activityError.message}` };
   }
 
   revalidateClientDocumentPaths(document.client_id);

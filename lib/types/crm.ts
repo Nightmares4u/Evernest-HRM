@@ -63,6 +63,25 @@ export type CrmClientDocState =
   | "rejected_resubmit"
   | "expired";
 
+export type CrmClientApplicationStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "offer"
+  | "rejected"
+  | "waitlisted"
+  | "accepted"
+  | "declined"
+  | "withdrawn";
+
+export type CrmClientApplicationIntakeTerm = "fall" | "spring" | "summer";
+
+export type CrmClientMilestoneStatus =
+  | "not_started"
+  | "in_progress"
+  | "done"
+  | "not_applicable";
+
 export type CrmAssignmentStatus = "assigned" | "reassigned" | "unassigned";
 
 export type CrmAssignmentMethod =
@@ -276,6 +295,55 @@ export type CrmClientDocumentVM = CrmClientDocument & {
   reviewer_name: string | null;
 };
 
+export type CrmClientApplication = {
+  id: string;
+  client_id: string;
+  university_name: string;
+  program_name: string | null;
+  intake_year: number | null;
+  intake_term: CrmClientApplicationIntakeTerm | null;
+  status: CrmClientApplicationStatus;
+  submitted_at: string | null;
+  decision_at: string | null;
+  offer_letter_document_id: string | null;
+  offer_amount_currency: string;
+  tuition_total: number | null;
+  scholarship_amount: number | null;
+  notes: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientApplicationVM = CrmClientApplication & {
+  offer_letter_file_name: string | null;
+};
+
+export type CrmClientCountryMilestone = {
+  id: string;
+  client_id: string;
+  milestone_code: string;
+  status: CrmClientMilestoneStatus;
+  due_at: string | null;
+  completed_at: string | null;
+  completed_by_user_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmCountryMilestoneDefinition = {
+  code: string;
+  label: string;
+  required: boolean;
+  description?: string;
+};
+
+export type CrmClientCountryMilestoneVM = CrmClientCountryMilestone & {
+  definition: CrmCountryMilestoneDefinition | null;
+  completed_by_name: string | null;
+};
+
 export type CrmClientVM = CrmClient & {
   lead_customer_phone: string;
   lead_customer_name: string | null;
@@ -283,6 +351,168 @@ export type CrmClientVM = CrmClient & {
   branch_code: string | null;
   branch_name: string | null;
 };
+
+export const CRM_APPLICATION_STATUS_LABELS: Record<CrmClientApplicationStatus, string> = {
+  draft: "Draft",
+  submitted: "Submitted",
+  under_review: "Under review",
+  offer: "Offer",
+  rejected: "Rejected",
+  waitlisted: "Waitlisted",
+  accepted: "Accepted",
+  declined: "Declined",
+  withdrawn: "Withdrawn",
+};
+
+export const CRM_APPLICATION_STATUS_GROUPS = {
+  draft: ["draft"] as const,
+  in_flight: ["submitted", "under_review", "waitlisted"] as const,
+  outcomes: ["offer", "accepted", "declined", "rejected"] as const,
+  closed: ["withdrawn"] as const,
+};
+
+export const CRM_SUPPORTED_TARGET_COUNTRIES = [
+  "italy",
+  "south_korea",
+  "russia",
+  "germany",
+  "hungary",
+  "us",
+  "canada",
+  "france",
+  "cyprus",
+  "turkey",
+  "azerbaijan",
+] as const;
+
+export type CrmSupportedTargetCountry =
+  (typeof CRM_SUPPORTED_TARGET_COUNTRIES)[number];
+
+export const CRM_COUNTRY_MILESTONES: Record<
+  CrmSupportedTargetCountry,
+  CrmCountryMilestoneDefinition[]
+> = {
+  italy: [
+    {
+      code: "italy_dov",
+      label: "Declaration of Value (DOV)",
+      required: true,
+      description: "CIMEA-issued statement of equivalence.",
+    },
+    { code: "italy_cimea", label: "CIMEA verification", required: true },
+    { code: "italy_embassy_slot", label: "Embassy slot booked", required: true },
+    {
+      code: "italy_language_a2_b1",
+      label: "Italian A2/B1",
+      required: false,
+      description: "Only if program requires Italian-language proficiency.",
+    },
+  ],
+  south_korea: [
+    {
+      code: "korea_topik_or_english",
+      label: "TOPIK or English-medium proof",
+      required: true,
+    },
+    {
+      code: "korea_niied_paperwork",
+      label: "NIIED scholarship paperwork",
+      required: false,
+      description: "Only for government scholarship variants.",
+    },
+  ],
+  russia: [
+    { code: "russia_invitation_letter", label: "University invitation letter", required: true },
+    { code: "russia_apostille", label: "Apostille of academic documents", required: true },
+    { code: "russia_medical_certificate", label: "Medical certificate", required: true },
+    { code: "russia_hiv_test", label: "HIV test certificate", required: true },
+  ],
+  germany: [
+    {
+      code: "germany_aps",
+      label: "APS certificate",
+      required: true,
+      description: "Mandatory for Pakistani students.",
+    },
+    {
+      code: "germany_blocked_account",
+      label: "Blocked account (Sperrkonto)",
+      required: true,
+      description: "Approximately EUR 11,208 for one year.",
+    },
+    {
+      code: "germany_studienkolleg",
+      label: "Studienkolleg path (if needed)",
+      required: false,
+    },
+  ],
+  hungary: [
+    {
+      code: "hungary_stipendium_paperwork",
+      label: "Stipendium Hungaricum paperwork",
+      required: false,
+    },
+    { code: "hungary_criminal_record", label: "Criminal record certificate", required: true },
+  ],
+  us: [
+    { code: "us_sevis_paid", label: "SEVIS I-901 fee paid", required: true },
+    { code: "us_i20_received", label: "I-20 received", required: true },
+    { code: "us_f1_interview_booked", label: "F1 interview slot booked", required: true },
+  ],
+  canada: [
+    {
+      code: "canada_sds_proof",
+      label: "SDS path proof",
+      required: false,
+      description: "Skip if using non-SDS route.",
+    },
+    { code: "canada_gic", label: "GIC certificate (CAD ~20k)", required: true },
+    { code: "canada_biometrics_booked", label: "Biometrics booked", required: true },
+  ],
+  france: [
+    { code: "france_campus_france", label: "Campus France procedure", required: true },
+    {
+      code: "france_language_a2_b1",
+      label: "French A2/B1",
+      required: false,
+      description: "Only if program requires French.",
+    },
+  ],
+  cyprus: [
+    { code: "cyprus_english_proof", label: "English-taught program proof", required: true },
+    { code: "cyprus_financial_proof", label: "Financial proof", required: true },
+  ],
+  turkey: [
+    { code: "turkey_ytb_paperwork", label: "YTB scholarship paperwork", required: false },
+    { code: "turkey_equivalence", label: "Equivalence document", required: true },
+  ],
+  azerbaijan: [
+    {
+      code: "azerbaijan_acceptance_letter",
+      label: "University acceptance letter",
+      required: true,
+    },
+  ],
+};
+
+export function normalizeTargetCountry(
+  value: string | null
+): CrmSupportedTargetCountry | null {
+  const normalized = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (!normalized) return null;
+  if (normalized === "usa" || normalized === "united_states" || normalized === "u_s") return "us";
+  if (normalized === "south_korea" || normalized === "korea") return "south_korea";
+  if ((CRM_SUPPORTED_TARGET_COUNTRIES as readonly string[]).includes(normalized)) {
+    return normalized as CrmSupportedTargetCountry;
+  }
+  return null;
+}
 
 export const CRM_DOC_CODES = [
   "cnic_front",
