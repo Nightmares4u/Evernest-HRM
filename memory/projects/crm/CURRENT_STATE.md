@@ -102,6 +102,14 @@ Conversion + client shell is implemented. New tables:
 `/admin/crm/clients/conversion-queue`. Migration:
 `0015_crm_clients_phase_2a.sql` (manual apply).
 
+## Phase 2B Landed (2026-05-23)
+
+Document registry + upload + review is implemented. Tables:
+`crm_client_documents`. Storage bucket: `crm-client-docs` (private,
+signed URLs only). Routes: `/crm/clients/[id]/documents`,
+`/admin/crm/clients/doc-review`. Migration:
+`0017_crm_client_documents_phase_2b.sql` (manual apply).
+
 ## Current Goal
 
 Review and manually test Stage 1 Phase 5 / 4.5 cleanup (number-owner
@@ -168,3 +176,36 @@ Stage 1 excludes:
 - University database
 - Commission/payroll integration
 - Advanced reporting
+
+---
+
+## Stage 2 — Phase 2A landed (2026-05-22)
+
+Conversion event + client shell + admin conversion queue shipped.
+
+- Tables added: `crm_clients`, `crm_client_activities`, `crm_client_payments` (migration `0015_crm_clients_phase_2a.sql`).
+- Routes added: `/crm/clients`, `/crm/clients/[id]`, `/admin/crm/clients/conversion-queue`.
+- Conversion panel added to `/crm/leads/[id]` (visible to assigned counselor + super_admin).
+
+### Schema decisions resolved during 2A
+
+- **Lead → Client UUID strategy: FK-link.** `crm_clients.id` is its own uuid; `crm_clients.lead_id` is a NOT NULL UNIQUE FK to `crm_leads.id`. (Plan §13 open Q resolved.)
+- **Client code format: `EN-{YYYY}-{4-digit zero-padded sequence}`** generated via a global Postgres sequence `crm_client_code_seq`. The year prefix is the creation year in Asia/Karachi. Example: `EN-2026-0001`. (Plan §13 open Q resolved.)
+- **Conversion gate location:** `agreement_signed_at` and `advance_paid_at` live on the **client** row, not the lead. The conversion form is the only way to populate them; this implicitly enforces the gate. (Resolves contradiction between Plan §3 and Plan §8.1.)
+
+## Stage 2 — Phase 2B landed (2026-05-23)
+
+Document registry + upload + review shipped.
+
+- Table added: `crm_client_documents` (migration `0017_crm_client_documents_phase_2b.sql`).
+- Storage bucket: `crm-client-docs` (private, signed URLs, 15-min TTL).
+- Routes added: `/crm/clients/[id]/documents`, `/admin/crm/clients/doc-review`.
+- Doc state machine: `uploaded → under_review → approved | rejected_resubmit | expired`.
+- Re-upload supported via `superseded_by_id`; old file kept in Storage for audit.
+- Doc registry codes locked in `lib/types/crm.ts` (`CRM_DOC_CODES`), including `apostille_academic_docs` and `apostille_visa_docs` for country-specific visa stage docs.
+
+### Permission model for clients + documents
+
+- View clients: super_admin + assigned counselor + **branch_manager / assistant_manager / manager / admin_hr in same branch** (`canViewCrmClient`).
+- Verify documents (upload / claim / approve / reject): super_admin + assigned counselor + **Operations department** (`canVerifyClientDoc`). Branch managers may view but cannot verify unless also the assigned counselor.
+- The "Operations" department name is hardcoded in `lib/crm/permissions-clients.ts` (`OPS_DEPARTMENT_NAME`). Move to settings table when RBAC migration lands.

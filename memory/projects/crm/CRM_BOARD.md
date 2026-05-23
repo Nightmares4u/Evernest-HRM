@@ -122,3 +122,39 @@
 - Duplicate HRM employee/branch tables would create long-term data drift.
 - Using Gemini on every message may create avoidable cost.
 - Treating every "hi/details?" as a qualified lead will pollute CRM metrics.
+
+---
+
+## Backlog from Gemini audit 2026-05-23
+
+These are real findings, parked because they're either non-trivial or
+low-impact at current scale. Tackle when capacity allows.
+
+### Multi-table write atomicity (HIGH per Gemini, LOW probability at 14-person scale)
+
+- **A-1** `convertLeadToClient` — three inserts (client / payment / activity)
+  not wrapped in a transaction. Partial failure can leave an orphan client
+  row without an initial payment. File: `app/(dashboard)/crm/clients/actions.ts`.
+- **A-2** `recordClientPayment` — payment + activity inserts not transactional.
+  Partial failure can record payment without an audit trail. Same file.
+
+**Fix path:** wrap each in a Postgres RPC function (Supabase JS client has
+no native transactions). One RPC per multi-table operation.
+
+### Performance polish
+
+- **C-1** `listDocsAwaitingReview` — two reads run sequentially instead of
+  `Promise.all`. Trivial. File: `lib/db/crm.ts` (around the
+  `listDocsAwaitingReview` function).
+
+### Closed by 2026-05-23 fix-up commit
+
+- A-3 (branch manager visibility) — fixed via `canViewCrmClient` predicate.
+- A-4 (document view access cascade) — fixed in `getClientDocumentAccess`.
+- A-5 (payment_id in activity payload) — fixed in `recordClientPayment`.
+- B-1 (conversion gate location) — clarified in CURRENT_STATE.md.
+- B-2 (UUID strategy doc) — documented in CURRENT_STATE.md.
+- B-3 (apostille doc code) — added to `CRM_DOC_CODES`.
+- D-1 (storage path sanitization) — verified safe in
+  `app/(dashboard)/crm/clients/documents/actions.ts`.
+- E-1 (client code format doc) — documented in CURRENT_STATE.md.

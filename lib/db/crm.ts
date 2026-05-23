@@ -14,6 +14,8 @@ import type {
   CrmCampaignSource,
   CrmClient,
   CrmClientActivity,
+  CrmClientDocument,
+  CrmClientDocumentVM,
   CrmClientPayment,
   CrmClientStatus,
   CrmClientVM,
@@ -32,6 +34,7 @@ import type {
 } from "@/lib/types/crm";
 import { DEFAULT_CRM_PARSER_SETTINGS } from "@/lib/crm/intake";
 import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
+import { canVerifyClientDoc, canViewCrmClient } from "@/lib/crm/permissions-clients";
 
 export const CRM_PRODUCT_CATEGORIES = ["Italy", "Korea", "B2B", "General"] as const;
 
@@ -1222,6 +1225,103 @@ function clientRowToVM(row: CrmClientJoinedRow): CrmClientVM {
   };
 }
 
+type DepartmentJoinRow = {
+  department:
+    | { name: string | null }
+    | { name: string | null }[]
+    | null;
+};
+
+async function getActorDepartmentName(
+  admin: ReturnType<typeof createAdminClient>,
+  me: CurrentUser
+): Promise<string | null> {
+  if (!me.employee?.id) return null;
+
+  const { data, error } = await admin
+    .from("employees")
+    .select("department:departments(name)")
+    .eq("id", me.employee.id)
+    .maybeSingle();
+
+  if (error) throw new Error(`getActorDepartmentName: ${error.message}`);
+  const department = pickOne((data as DepartmentJoinRow | null)?.department);
+  return department?.name ?? null;
+}
+
+type CrmClientDocumentAccess = {
+  client: CrmClientVM;
+  canManageDocuments: boolean;
+};
+
+async function getClientDocumentAccess(
+  admin: ReturnType<typeof createAdminClient>,
+  me: CurrentUser,
+  clientId: string,
+  meDepartmentName: string | null
+): Promise<CrmClientDocumentAccess | null> {
+  const { data, error } = await admin
+    .from("crm_clients")
+    .select(
+      `
+        *,
+        lead:crm_leads!crm_clients_lead_id_fkey(customer_phone, customer_name),
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name),
+        branch:branches!crm_clients_branch_id_fkey(code, name)
+      `
+    )
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (error) throw new Error(`getClientDocumentAccess: ${error.message}`);
+  if (!data) return null;
+
+  const client = clientRowToVM(data as CrmClientJoinedRow);
+  // Gate on broad view permission (Plan §10 — branch managers may view but not verify).
+  if (!canViewCrmClient(me, client)) return null;
+  // Action buttons (claim / approve / reject / upload) gated on narrow predicate.
+  const canManageDocuments = canVerifyClientDoc(me, client, meDepartmentName);
+
+  return { client, canManageDocuments };
+}
+
+type CrmClientDocumentJoinedRow = CrmClientDocument & {
+  uploader:
+    | { display_name: string | null }
+    | { display_name: string | null }[]
+    | null;
+  reviewer:
+    | { display_name: string | null }
+    | { display_name: string | null }[]
+    | null;
+};
+
+function documentRowToVM(row: CrmClientDocumentJoinedRow): CrmClientDocumentVM {
+  const uploader = pickOne(row.uploader);
+  const reviewer = pickOne(row.reviewer);
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    doc_code: row.doc_code,
+    doc_state: row.doc_state,
+    storage_path: row.storage_path,
+    file_name: row.file_name,
+    file_size: row.file_size,
+    mime_type: row.mime_type,
+    uploaded_by_user_id: row.uploaded_by_user_id,
+    uploaded_at: row.uploaded_at,
+    reviewed_by_user_id: row.reviewed_by_user_id,
+    reviewed_at: row.reviewed_at,
+    decision_note: row.decision_note,
+    superseded_by_id: row.superseded_by_id,
+    expires_at: row.expires_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    uploader_name: uploader?.display_name ?? null,
+    reviewer_name: reviewer?.display_name ?? null,
+  };
+}
+
 export async function listCrmClients(filters: {
   status?: CrmClientStatus | null;
   scopeToEmployeeId?: string | null;
@@ -1248,6 +1348,13 @@ export async function listCrmClients(filters: {
   }
 
   if (me.appUser.role === "super_admin") {
+    if (filters.scopeToEmployeeId) {
+      query = query.eq("assigned_agent_id", filters.scopeToEmployeeId);
+    }
+  } else if (isBranchManagerOrAboveRole(me.appUser.role) && me.employee?.branch_id) {
+    // Branch manager / assistant_manager / manager / admin_hr: see whole branch.
+    // → clients.view (scope=branch)
+    query = query.eq("branch_id", me.employee.branch_id);
     if (filters.scopeToEmployeeId) {
       query = query.eq("assigned_agent_id", filters.scopeToEmployeeId);
     }
@@ -1288,7 +1395,7 @@ export async function getCrmClientDetail(id: string): Promise<{
   if (!data) return null;
 
   const client = clientRowToVM(data as CrmClientJoinedRow);
-  if (me.appUser.role !== "super_admin" && me.employee?.id !== client.assigned_agent_id) {
+  if (!canViewCrmClient(me, client)) {
     return null;
   }
 
@@ -1319,6 +1426,182 @@ export async function getCrmClientDetail(id: string): Promise<{
   };
 }
 
+export async function getCrmClientDocumentPageData(
+  clientId: string
+): Promise<CrmClientDocumentAccess | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const meDepartmentName = await getActorDepartmentName(admin, me);
+  return getClientDocumentAccess(admin, me, clientId, meDepartmentName);
+}
+
+export async function listCrmClientDocuments(
+  clientId: string,
+  opts: { includeSuperseded?: boolean } = {}
+): Promise<CrmClientDocumentVM[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const meDepartmentName = await getActorDepartmentName(admin, me);
+  const access = await getClientDocumentAccess(admin, me, clientId, meDepartmentName);
+  if (!access) return [];
+
+  let query = admin
+    .from("crm_client_documents")
+    .select(
+      `
+        *,
+        uploader:app_users!crm_client_documents_uploaded_by_user_id_fkey(display_name),
+        reviewer:app_users!crm_client_documents_reviewed_by_user_id_fkey(display_name)
+      `
+    )
+    .eq("client_id", clientId)
+    .order("uploaded_at", { ascending: false });
+
+  if (!opts.includeSuperseded) {
+    query = query.is("superseded_by_id", null);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`listCrmClientDocuments: ${error.message}`);
+  return ((data ?? []) as CrmClientDocumentJoinedRow[]).map(documentRowToVM);
+}
+
+export async function listDocsAwaitingReview(opts: {
+  scopeToBranchId?: string | null;
+} = {}): Promise<Array<{
+  document: CrmClientDocumentVM;
+  client_id: string;
+  client_code: string;
+  client_assigned_agent_name: string | null;
+}>> {
+  if (!isSupabaseConfigured()) return [];
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const meDepartmentName = await getActorDepartmentName(admin, me);
+  let clientsQuery = admin
+    .from("crm_clients")
+    .select(
+      `
+        id,
+        client_code,
+        assigned_agent_id,
+        branch_id,
+        assigned_agent:employees!crm_clients_assigned_agent_id_fkey(full_name)
+      `
+    )
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  // Super admins + Operations dept see the whole queue (all branches).
+  // Branch managers see their branch's queue.
+  // Everyone else sees only docs on clients assigned to them.
+  const canSeeAllBranches =
+    me.appUser.role === "super_admin" ||
+    canVerifyClientDoc(me, { assigned_agent_id: null }, meDepartmentName);
+  const canSeeOwnBranch =
+    isBranchManagerOrAboveRole(me.appUser.role) && Boolean(me.employee?.branch_id);
+
+  if (opts.scopeToBranchId) {
+    clientsQuery = clientsQuery.eq("branch_id", opts.scopeToBranchId);
+  }
+  if (!canSeeAllBranches) {
+    if (canSeeOwnBranch && me.employee?.branch_id) {
+      clientsQuery = clientsQuery.eq("branch_id", me.employee.branch_id);
+    } else if (me.employee?.id) {
+      clientsQuery = clientsQuery.eq("assigned_agent_id", me.employee.id);
+    } else {
+      return [];
+    }
+  }
+
+  const { data: clientsData, error: clientsError } = await clientsQuery;
+  if (clientsError) throw new Error(`listDocsAwaitingReview clients: ${clientsError.message}`);
+
+  type ReviewClientRow = Pick<CrmClient, "id" | "client_code" | "assigned_agent_id" | "branch_id"> & {
+    assigned_agent:
+      | { full_name: string | null }
+      | { full_name: string | null }[]
+      | null;
+  };
+
+  const clients = (clientsData ?? []) as ReviewClientRow[];
+  if (clients.length === 0) return [];
+
+  const clientIds = clients.map((client) => client.id);
+  const clientById = new Map(
+    clients.map((client) => {
+      const assignedAgent = pickOne(client.assigned_agent);
+      return [
+        client.id,
+        {
+          client_code: client.client_code,
+          client_assigned_agent_name: assignedAgent?.full_name ?? null,
+        },
+      ];
+    })
+  );
+
+  const { data: docsData, error: docsError } = await admin
+    .from("crm_client_documents")
+    .select(
+      `
+        *,
+        uploader:app_users!crm_client_documents_uploaded_by_user_id_fkey(display_name),
+        reviewer:app_users!crm_client_documents_reviewed_by_user_id_fkey(display_name)
+      `
+    )
+    .in("client_id", clientIds)
+    .is("superseded_by_id", null)
+    .in("doc_state", ["uploaded", "under_review"])
+    .order("uploaded_at", { ascending: false })
+    .limit(500);
+
+  if (docsError) throw new Error(`listDocsAwaitingReview documents: ${docsError.message}`);
+
+  return ((docsData ?? []) as CrmClientDocumentJoinedRow[]).flatMap((row) => {
+    const client = clientById.get(row.client_id);
+    if (!client) return [];
+    return [{
+      document: documentRowToVM(row),
+      client_id: row.client_id,
+      client_code: client.client_code,
+      client_assigned_agent_name: client.client_assigned_agent_name,
+    }];
+  });
+}
+
+export async function getSignedDocumentDownloadUrl(documentId: string): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const meDepartmentName = await getActorDepartmentName(admin, me);
+  const { data: documentData, error: documentError } = await admin
+    .from("crm_client_documents")
+    .select("*")
+    .eq("id", documentId)
+    .maybeSingle();
+
+  if (documentError) throw new Error(`getSignedDocumentDownloadUrl document: ${documentError.message}`);
+  if (!documentData) return null;
+
+  const document = documentData as CrmClientDocument;
+  const access = await getClientDocumentAccess(admin, me, document.client_id, meDepartmentName);
+  if (!access) return null;
+
+  const { data, error } = await admin.storage
+    .from("crm-client-docs")
+    .createSignedUrl(document.storage_path, 900);
+
+  if (error) throw new Error(`getSignedDocumentDownloadUrl storage: ${error.message}`);
+  return data.signedUrl;
+}
+
 export async function getCrmClientForLead(leadId: string): Promise<CrmClientVM | null> {
   if (!isSupabaseConfigured()) return null;
 
@@ -1341,7 +1624,7 @@ export async function getCrmClientForLead(leadId: string): Promise<CrmClientVM |
   if (!data) return null;
 
   const client = clientRowToVM(data as CrmClientJoinedRow);
-  if (me.appUser.role !== "super_admin" && me.employee?.id !== client.assigned_agent_id) {
+  if (!canViewCrmClient(me, client)) {
     return null;
   }
   return client;

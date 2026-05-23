@@ -56,6 +56,13 @@ export type CrmClientStatus =
   | "alumni"
   | "withdrawn_refunded";
 
+export type CrmClientDocState =
+  | "uploaded"
+  | "under_review"
+  | "approved"
+  | "rejected_resubmit"
+  | "expired";
+
 export type CrmAssignmentStatus = "assigned" | "reassigned" | "unassigned";
 
 export type CrmAssignmentMethod =
@@ -244,6 +251,31 @@ export type CrmClientPayment = {
   created_at: string;
 };
 
+export type CrmClientDocument = {
+  id: string;
+  client_id: string;
+  doc_code: string;
+  doc_state: CrmClientDocState;
+  storage_path: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_by_user_id: string | null;
+  uploaded_at: string;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  decision_note: string | null;
+  superseded_by_id: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientDocumentVM = CrmClientDocument & {
+  uploader_name: string | null;
+  reviewer_name: string | null;
+};
+
 export type CrmClientVM = CrmClient & {
   lead_customer_phone: string;
   lead_customer_name: string | null;
@@ -251,6 +283,205 @@ export type CrmClientVM = CrmClient & {
   branch_code: string | null;
   branch_name: string | null;
 };
+
+export const CRM_DOC_CODES = [
+  "cnic_front",
+  "cnic_back",
+  "passport_data_page",
+  "passport_photo",
+  "en_agreement_signed",
+  "matric_transcript",
+  "matric_certificate",
+  "olevel_statement_of_result",
+  "olevel_certificates",
+  "inter_transcript",
+  "inter_certificate",
+  "alevel_certificates",
+  "english_test_result",
+  "birth_certificate",
+  "character_certificate",
+  "bachelors_transcript",
+  "bachelors_degree",
+  "hec_equivalency",
+  "sop",
+  "lor_1",
+  "lor_2",
+  "lor_3",
+  "cv",
+  "work_experience_letter",
+  "research_proposal",
+  "supervisor_correspondence",
+  "publications_list",
+  "trade_certificate",
+  "experience_letter",
+  "language_certificate",
+  "job_offer_letter",
+  "driving_license",
+  "bank_statement_6m",
+  "sponsor_affidavit",
+  "sponsor_cnic",
+  "sponsor_bank_statement",
+  "gic_proof",
+  "blocked_account_proof",
+  "medical_certificate",
+  "hiv_test",
+  "apostille_academic_docs",
+  "apostille_visa_docs",
+  "visa_appointment_proof",
+] as const;
+
+export type CrmDocCode = (typeof CRM_DOC_CODES)[number];
+
+export const CRM_DOC_CODE_LABELS: Record<CrmDocCode, string> = {
+  cnic_front: "CNIC front",
+  cnic_back: "CNIC back",
+  passport_data_page: "Passport data page",
+  passport_photo: "Passport-size photo",
+  en_agreement_signed: "EN agreement (signed)",
+  matric_transcript: "Matric transcript",
+  matric_certificate: "Matric certificate",
+  olevel_statement_of_result: "O Level statement of result",
+  olevel_certificates: "O Level certificates",
+  inter_transcript: "Intermediate transcript",
+  inter_certificate: "Intermediate certificate",
+  alevel_certificates: "A Level certificates",
+  english_test_result: "English test result",
+  birth_certificate: "Birth certificate",
+  character_certificate: "Character certificate",
+  bachelors_transcript: "Bachelor's transcript",
+  bachelors_degree: "Bachelor's degree",
+  hec_equivalency: "HEC equivalency",
+  sop: "Statement of Purpose",
+  lor_1: "Letter of recommendation 1",
+  lor_2: "Letter of recommendation 2",
+  lor_3: "Letter of recommendation 3",
+  cv: "CV",
+  work_experience_letter: "Work experience letter",
+  research_proposal: "Research proposal",
+  supervisor_correspondence: "Supervisor correspondence",
+  publications_list: "Publications list",
+  trade_certificate: "Trade certificate",
+  experience_letter: "Experience letter",
+  language_certificate: "Language certificate",
+  job_offer_letter: "Job offer letter",
+  driving_license: "Driving license",
+  bank_statement_6m: "Bank statement - 6 months",
+  sponsor_affidavit: "Sponsor affidavit",
+  sponsor_cnic: "Sponsor CNIC",
+  sponsor_bank_statement: "Sponsor bank statement",
+  gic_proof: "GIC proof",
+  blocked_account_proof: "Blocked account proof",
+  medical_certificate: "Medical certificate",
+  hiv_test: "HIV test",
+  apostille_academic_docs: "Apostille - academic documents",
+  apostille_visa_docs: "Apostille - visa documents",
+  visa_appointment_proof: "Visa appointment proof",
+};
+
+// Document categories — groups codes into sections for the UI.
+// Order here determines render order on the client documents page.
+export const CRM_DOC_CATEGORIES = [
+  {
+    code: "all_applicants",
+    label: "All applicants",
+    description: "Required for every client.",
+  },
+  {
+    code: "bachelors",
+    label: "Bachelor's track",
+    description: "Matric + Intermediate (or O/A Levels) + English test.",
+  },
+  {
+    code: "masters",
+    label: "Master's track",
+    description: "Bachelor's degree, SOP, LORs, CV.",
+  },
+  {
+    code: "phd",
+    label: "PhD track",
+    description: "Research proposal, supervisor correspondence, publications.",
+  },
+  {
+    code: "work_permit",
+    label: "Work permit / Europe",
+    description: "Skill certificates, experience letters, language.",
+  },
+  {
+    code: "visa",
+    label: "Visa stage",
+    description: "Bank statements, sponsor docs, apostille, embassy paperwork.",
+  },
+] as const;
+
+export type CrmDocCategory = (typeof CRM_DOC_CATEGORIES)[number]["code"];
+
+export const CRM_DOC_CODE_CATEGORY: Record<CrmDocCode, CrmDocCategory> = {
+  cnic_front: "all_applicants",
+  cnic_back: "all_applicants",
+  passport_data_page: "all_applicants",
+  passport_photo: "all_applicants",
+  en_agreement_signed: "all_applicants",
+
+  matric_transcript: "bachelors",
+  matric_certificate: "bachelors",
+  olevel_statement_of_result: "bachelors",
+  olevel_certificates: "bachelors",
+  inter_transcript: "bachelors",
+  inter_certificate: "bachelors",
+  alevel_certificates: "bachelors",
+  english_test_result: "bachelors",
+  birth_certificate: "bachelors",
+  character_certificate: "bachelors",
+
+  bachelors_transcript: "masters",
+  bachelors_degree: "masters",
+  hec_equivalency: "masters",
+  sop: "masters",
+  lor_1: "masters",
+  lor_2: "masters",
+  lor_3: "masters",
+  cv: "masters",
+  work_experience_letter: "masters",
+
+  research_proposal: "phd",
+  supervisor_correspondence: "phd",
+  publications_list: "phd",
+
+  trade_certificate: "work_permit",
+  experience_letter: "work_permit",
+  language_certificate: "work_permit",
+  job_offer_letter: "work_permit",
+  driving_license: "work_permit",
+
+  bank_statement_6m: "visa",
+  sponsor_affidavit: "visa",
+  sponsor_cnic: "visa",
+  sponsor_bank_statement: "visa",
+  gic_proof: "visa",
+  blocked_account_proof: "visa",
+  medical_certificate: "visa",
+  hiv_test: "visa",
+  apostille_academic_docs: "visa",
+  apostille_visa_docs: "visa",
+  visa_appointment_proof: "visa",
+};
+
+/**
+ * Returns the default-expanded categories for a client's target_level.
+ * "All applicants" + "Visa stage" are always relevant; the academic track
+ * is the one matching the level.
+ */
+export function defaultExpandedDocCategories(
+  targetLevel: string | null
+): CrmDocCategory[] {
+  const level = (targetLevel ?? "").toLowerCase();
+  const base: CrmDocCategory[] = ["all_applicants"];
+  if (level === "bachelors") return [...base, "bachelors", "visa"];
+  if (level === "masters") return [...base, "bachelors", "masters", "visa"];
+  if (level === "phd") return [...base, "bachelors", "masters", "phd", "visa"];
+  if (level === "work_permit") return [...base, "work_permit", "visa"];
+  return CRM_DOC_CATEGORIES.map((c) => c.code); // unknown level → expand all
+}
 
 export type CrmLeadMessage = {
   id: string;

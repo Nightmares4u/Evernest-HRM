@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDateTime } from "@/lib/crm/format";
-import { getCrmClientDetail } from "@/lib/db/crm";
+import { getCrmClientDetail, listCrmClientDocuments } from "@/lib/db/crm";
 import type {
   CrmClientActivity,
   CrmClientPayment,
@@ -47,6 +47,10 @@ export default async function CrmClientDetailPage({
   if (!detail) notFound();
 
   const { client, payments, activities } = detail;
+  const documents = await listCrmClientDocuments(client.id);
+  const docsAwaitingReview = documents.filter((document) =>
+    document.doc_state === "uploaded" || document.doc_state === "under_review"
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -71,6 +75,20 @@ export default async function CrmClientDetailPage({
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
+
+      <nav className="flex flex-wrap gap-2">
+        <Link
+          href={`/crm/clients/${client.id}/documents`}
+          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+        >
+          Documents
+          {docsAwaitingReview > 0 && (
+            <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+              {docsAwaitingReview}
+            </span>
+          )}
+        </Link>
+      </nav>
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5 lg:col-span-2">

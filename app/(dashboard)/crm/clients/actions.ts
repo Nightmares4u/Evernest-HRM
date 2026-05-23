@@ -209,18 +209,24 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
   if (!method) redirectClient(clientId, "error", "Payment method is required.");
 
   const admin = createAdminClient();
-  const { error: paymentError } = await admin.from("crm_client_payments").insert({
-    client_id: clientId,
-    amount,
-    currency,
-    paid_at: paidAt.toISOString(),
-    method,
-    reference,
-    notes,
-    recorded_by_user_id: me.authUserId,
-  });
+  const { data: paymentRow, error: paymentError } = await admin
+    .from("crm_client_payments")
+    .insert({
+      client_id: clientId,
+      amount,
+      currency,
+      paid_at: paidAt.toISOString(),
+      method,
+      reference,
+      notes,
+      recorded_by_user_id: me.authUserId,
+    })
+    .select("id")
+    .single();
 
-  if (paymentError) redirectClient(clientId, "error", `Could not record payment: ${paymentError.message}`);
+  if (paymentError || !paymentRow) {
+    redirectClient(clientId, "error", `Could not record payment: ${paymentError?.message ?? "unknown error"}`);
+  }
 
   const { error: activityError } = await admin.from("crm_client_activities").insert({
     client_id: clientId,
@@ -228,6 +234,7 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
     actor_user_id: me.authUserId,
     description: `Payment recorded: ${currency} ${amount.toFixed(2)}.`,
     payload: {
+      payment_id: paymentRow.id,
       amount,
       currency,
       paid_at: paidAt.toISOString(),
