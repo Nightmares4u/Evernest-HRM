@@ -3,10 +3,10 @@
 > **Status:** Directional. Not locked. Vibe-build target.
 > **Created:** 2026-05-22.
 > **Parent docs:**
-> - [CRM_MASTER_CONTEXT.md](CRM_MASTER_CONTEXT.md)
+> - [archive/CRM_MASTER_CONTEXT.md](archive/CRM_MASTER_CONTEXT.md) — historical reference only
 > - [CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md](CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md)
 > - [STAGE_1_DECISIONS.md](STAGE_1_DECISIONS.md)
-> - [REFERENCE_CODE_EXTRACTION_MAP.md](REFERENCE_CODE_EXTRACTION_MAP.md)
+> - [archive/REFERENCE_CODE_EXTRACTION_MAP.md](archive/REFERENCE_CODE_EXTRACTION_MAP.md) — historical reference only
 > - [../hrm/SYSTEM_SETTINGS_MASTER_PLAN.md](../hrm/SYSTEM_SETTINGS_MASTER_PLAN.md)
 > **Mode:** Vibe-build — locked decisions below, schema sketches will drift.
 > **Implementation note:** Stage 2A-2E has landed on `crm-dev`. Treat
@@ -761,10 +761,10 @@ Phase 2E's Codex prompt mandates this explicitly.
 ## 15. Pointers
 
 - [STAGE_1_DECISIONS.md](STAGE_1_DECISIONS.md) — what's already locked.
-- [REFERENCE_CODE_EXTRACTION_MAP.md](REFERENCE_CODE_EXTRACTION_MAP.md) —
+- [archive/REFERENCE_CODE_EXTRACTION_MAP.md](archive/REFERENCE_CODE_EXTRACTION_MAP.md) —
   C-13 (study-abroad lead/application domain fields) is the closest
-  reference for Stage 2 vocabulary. Inspiration only — no license to
-  copy.
+  historical reference for Stage 2 vocabulary. Inspiration only — no
+  license to copy, and not current implementation truth.
 - [CURRENT_STATE.md](CURRENT_STATE.md) — should be updated after each
   Phase 2A/B/C/D/E lands.
 - [../hrm/SYSTEM_SETTINGS_MASTER_PLAN.md](../hrm/SYSTEM_SETTINGS_MASTER_PLAN.md) —

@@ -5,9 +5,9 @@ these decisions. Any change requires an explicit revision of this file.
 
 ## Document Precedence
 
-If anything in the older CRM planning docs (CRM_HRM_INTEGRATION.md,
+If anything in the older CRM planning docs (`archive/CRM_HRM_INTEGRATION.md`,
 CRM_DATA_MODEL_V1.md, DATA_MODEL.md, CRM_ARCHITECTURE_DECISION.md,
-MVP_SCOPE.md, CRM_STAGE_1_MVP_SCOPE.md, WHATSAPP_STAGE_1_INTAKE.md,
+MVP_SCOPE.md, CRM_STAGE_1_MVP_SCOPE.md, `archive/WHATSAPP_STAGE_1_INTAKE.md`,
 OPEN_QUESTIONS.md, IMPLEMENTATION_PLAN.md, CURRENT_STATE.md) contradicts
 this file, **this file wins**. The Codex implementation packet
 (`CODEX_STAGE_1_PACKET.md`) is the authoritative build spec derived from
@@ -89,8 +89,8 @@ in Postgres policies. DB-level branch RLS is deferred.
 
 ### 8. Greeting text
 Use the 7-question greeting from
-`WHATSAPP_STAGE_1_INTAKE.md` § *Greeting and Structured Info Request*
-as the default template.
+`archive/WHATSAPP_STAGE_1_INTAKE.md` § *Greeting and Structured Info
+Request* as the default template.
 
 - Single template for Stage 1 (no per-number variants).
 - Future per-product variants will live on `crm_whatsapp_numbers`.

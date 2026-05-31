@@ -12,6 +12,10 @@ This index serves as the master entry point and source of truth for the EN CRM m
 
 ## 3. Read These First
 
+Agents should read only the active docs below first. Archived audits,
+reference extractions, and old plans are historical context only; they
+must not be treated as current implementation state or current scope.
+
 1. **`CURRENT_STATE.md`** - The factual record of what is actually implemented and shipped.
 2. **`CRM_BOARD.md`** - The operational task board, backlog, and immediate next steps.
 3. **`CLIENT_LIFECYCLE_STAGE_2_PLAN.md`** - Detailed lifecycle rules for Stage 2 (Conversion, Docs, Applications, Visa, Closure, Financials).
@@ -19,6 +23,25 @@ This index serves as the master entry point and source of truth for the EN CRM m
 5. **`CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md`** - Long-form architectural overview and agent handoff guide.
 
 > **Warning:** Do not treat stale docs or plans as implementation truth. Always verify against `CURRENT_STATE.md` and the actual codebase.
+
+## 3.1 Archive
+
+The `archive/` directory contains historical-only material. Read it only
+when a user explicitly asks for audit history, provenance, or old
+reference material.
+
+- `archive/GEMINI_AUDIT_2026_05_23.md` - historical audit findings only.
+- `archive/CRM_SMOKE_TEST_AUDIT_2026_05_31.md` - historical smoke-test report only.
+- `archive/REFERENCE_CRM_INTEGRATION_AUDIT.md` - historical reference audit only.
+- `archive/REFERENCE_CODE_EXTRACTION_MAP.md` - historical extraction/reference notes only.
+- `archive/CRM_MASTER_CONTEXT.md` - historical planning context only.
+- `archive/CRM_HRM_INTEGRATION.md` - historical integration notes only.
+- `archive/CRM_SETTINGS_INTEGRATION_NOTES.md` - historical settings notes only.
+- `archive/WHATSAPP_META_PIPELINE.md` - historical WhatsApp pipeline notes only.
+- `archive/WHATSAPP_STAGE_1_INTAKE.md` - historical Stage 1 intake notes only.
+
+Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
+`CLIENT_LIFECYCLE_STAGE_2_PLAN.md`, or the actual codebase.
 
 ## 4. Current Implementation Snapshot
 
