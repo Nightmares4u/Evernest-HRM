@@ -46,6 +46,7 @@ export default async function AdminTasksPage({
   if (!isBranchManagerOrAboveRole(me.appUser.role)) {
     redirect("/dashboard?error=Manager access required");
   }
+  const isSuperAdmin = me.appUser.role === "super_admin";
   const filter: AdminTaskFilter =
     FILTER_OPTIONS.find((f) => f.key === sp.filter)?.key ?? "open";
   const view = sp.view === "schedule" ? "schedule" : "list";
@@ -108,6 +109,8 @@ export default async function AdminTasksPage({
         </div>
       )}
 
+      {isSuperAdmin && <TaskMaintenanceCard />}
+
       <AssignForm assignees={assignees} today={today} />
 
       {view === "list" ? (
@@ -116,6 +119,27 @@ export default async function AdminTasksPage({
         <ScheduleSection tasks={scheduleTasks} startDate={today} />
       )}
     </div>
+  );
+}
+
+function TaskMaintenanceCard() {
+  return (
+    <section className="rounded-lg border border-red-100 bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Task Maintenance</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Preview and delete test/stale HRM tasks.
+          </p>
+        </div>
+        <Link
+          href="/admin/tasks/maintenance"
+          className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500"
+        >
+          Open maintenance
+        </Link>
+      </div>
+    </section>
   );
 }
 
