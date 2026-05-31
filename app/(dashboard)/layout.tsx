@@ -26,6 +26,7 @@ const CRM_NAV = [
   { href: "/crm/clients", label: "Clients" },
   { href: "/crm/leads/follow-ups", label: "Follow-ups" },
   { href: "/crm/transfers", label: "Transfers" },
+  { href: "/crm/assistant", label: "Assistant" },
   { href: "/crm/inbox", label: "Raw Inbox", superAdminOnly: true },
 ] satisfies NavItem[];
 

@@ -22,6 +22,7 @@
 - Stage 2F-1: Client financials / refund policy hardening.
 - RPC hardening for Phase 2A/2D multi-table mutations: migration `0022`, commit `81c287f`; closes audit items A-2, A-8, A-9, and A-10.
 - **Admin Financials MVP:** read-only `/admin/financials` (super_admin only). PKR-only company-wide dashboard combining CRM payments/refunds and HRM payroll-preview outflow. No new tables. Recent payment/refund tables link out to client financials/closure. Non-PKR rows excluded from totals with an amber warning. No invoices, no commissions, no ad-spend.
+- **Internal CRM Assistant MVP:** `/crm/assistant`. Gemini-backed staff Q&A over the CRM planning docs only. Server-side `GEMINI_API_KEY` (and optional `GEMINI_MODEL`, default `gemini-2.5-flash`). No mutations, no chat history table, no embeddings/vector DB, no client-facing chatbot, no parser fallback.
 
 ## In Progress
 
@@ -71,3 +72,4 @@
 - Counselor visibility vs. super-admin visibility checks.
 - Regression test the migration `0022` RPC paths for payment recording and Phase 2D milestone/status mutations.
 - Admin Financials `/admin/financials`: super-admin-only gating; monthly totals match `/crm/clients/[id]/financials` ledgers in aggregate; payroll outflow matches `/admin/payroll` estimated-payable total; non-PKR rows surface the amber warning and are excluded from totals.
+- CRM Assistant `/crm/assistant`: page renders without `GEMINI_API_KEY` and surfaces an amber disabled banner; with the key set, sample questions return doc-grounded answers; the assistant refuses to invent routes, refuses to perform actions, and refuses to reveal secrets; missing doc files surface in the page banner; non-authenticated user is redirected to `/login`.

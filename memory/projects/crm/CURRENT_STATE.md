@@ -38,6 +38,14 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - **Terminal State Lock:** Payments are allowed only on non-terminal clients. Refunds are NOT allowed on `alumni` clients (hardened in both UI and Postgres RPC `crm_record_client_refund`).
 - **Refund Policy:** Refunds are restricted to the `withdrawn_refunded` closure path and are strictly a `super_admin` action.
 
+### Internal CRM Assistant MVP - Completed
+- **Route:** `/crm/assistant` (any authenticated active staff user).
+- **Model:** Gemini (default `gemini-2.5-flash`, overridable via `GEMINI_MODEL`). Server-side REST call only; `GEMINI_API_KEY` never reaches the client.
+- **Knowledge source:** static CRM planning docs (INDEX, CURRENT_STATE, CRM_BOARD, CLIENT_LIFECYCLE_STAGE_2_PLAN, STAGE_1_DECISIONS, CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE) loaded from `memory/projects/crm/` and injected into the prompt. Cached per-process.
+- **System prompt** forbids inventing routes/actions/RPCs, performing mutations, giving legal/visa guarantees, and revealing secrets.
+- **No database mutations, no chat history, no embeddings, no vector DB.** Stateless Q&A; previous question/answer is round-tripped via the URL.
+- **Not enabled:** Gemini parser fallback for raw intake, client-facing chatbot, WhatsApp API — all still deferred.
+
 ### Admin Financials MVP - Completed
 - **Route:** `/admin/financials` (super_admin only). Read-only company-wide dashboard.
 - **CRM inflow:** This-month and all-time totals for PKR payments received and refunds. Recent payment / refund tables (last 20 each) with links to the client financials/closure pages.
@@ -82,6 +90,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `/crm/clients/[id]/visa`
 - `/crm/clients/[id]/closure`
 - `/crm/clients/[id]/financials`
+- `/crm/assistant` (internal CRM/HRM Q&A; Gemini-backed, docs-only)
 
 **Admin Routes:**
 - `/admin/crm`
