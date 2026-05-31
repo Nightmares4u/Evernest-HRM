@@ -2,51 +2,55 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { todayPKT } from "@/lib/attendance/format";
 import { requireSuperAdmin } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/server";
+import type { TaskStatus } from "@/lib/types/hrm";
 
-export type TaskCleanupMode =
-  | "completed_test"
-  | "pending_test"
-  | "all_test"
-  | "stale_completed"
-  | "exact_test_match";
+export type TaskMaintenanceStatusFilter = "all" | "open" | "done" | "overdue";
 
-export type TaskCleanupCriteria = {
-  mode: TaskCleanupMode;
-  staleBefore?: string;
-  exactQuery?: string;
+export type TaskMaintenanceFilters = {
+  q?: string;
+  status?: TaskMaintenanceStatusFilter;
+  testOnly?: boolean;
+  createdBefore?: string;
 };
 
-export type TaskCleanupSample = {
+export type TaskMaintenanceRow = {
   id: string;
   title: string;
   description: string | null;
-  status: string;
+  status: TaskStatus;
   assigned_to: string;
   assigned_by: string;
   due_date: string;
+  due_time: string | null;
+  priority: string;
+  origin: string;
+  recurring_task_id: string | null;
+  requires_approval: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
   created_at: string;
   completed_at: string | null;
   assignee_name: string | null;
   assigner_name: string | null;
 };
 
-export type TaskCleanupPreview = {
-  criteria: TaskCleanupCriteria;
-  taskCount: number;
-  taskUpdateCount: number;
-  taskAttachmentCount: number;
-  samples: TaskCleanupSample[];
-  error: string | null;
+export type TaskMaintenanceList = {
+  rows: TaskMaintenanceRow[];
+  total: number;
+  limit: number;
 };
 
 const MAINTENANCE_PATH = "/admin/tasks/maintenance";
 const CONFIRMATION_TEXT = "DELETE TASK DATA";
-const MAX_DELETE_ROWS = 5000;
+const MAX_VISIBLE_TASKS = 100;
+const MAX_BULK_DELETE = 100;
 
-const TASK_SAMPLE_SELECT = `
-  id, title, description, status, assigned_to, assigned_by, due_date,
+const TASK_MAINTENANCE_SELECT = `
+  id, title, description, status, assigned_to, assigned_by, due_date, due_time,
+  priority, origin, recurring_task_id, requires_approval, approved_by, approved_at,
   created_at, completed_at,
   assignee:app_users!tasks_assigned_to_fkey(display_name),
   assigner:app_users!tasks_assigned_by_fkey(display_name)
@@ -56,78 +60,104 @@ function readString(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
 }
 
-function isTaskCleanupMode(value: string): value is TaskCleanupMode {
-  return [
-    "completed_test",
-    "pending_test",
-    "all_test",
-    "stale_completed",
-    "exact_test_match",
-  ].includes(value);
+function normalizeStatusFilter(value: string | undefined): TaskMaintenanceStatusFilter {
+  if (value === "open" || value === "done" || value === "overdue") return value;
+  return "all";
 }
 
-function taskCleanupCriteriaFromFormData(formData: FormData): TaskCleanupCriteria | null {
-  const mode = readString(formData, "mode");
-  if (!isTaskCleanupMode(mode)) return null;
-  return {
-    mode,
-    staleBefore: readString(formData, "stale_before") || undefined,
-    exactQuery: readString(formData, "exact_query") || undefined,
-  };
-}
-
-function validateCriteria(criteria: TaskCleanupCriteria): string | null {
-  if (criteria.mode === "stale_completed") {
-    if (!criteria.staleBefore || !/^\d{4}-\d{2}-\d{2}$/.test(criteria.staleBefore)) {
-      return "Choose a valid stale-before date.";
-    }
-  }
-  if (criteria.mode === "exact_test_match" && !criteria.exactQuery) {
-    return "Enter an exact task ID or exact test task title.";
-  }
-  return null;
-}
-
-function uuidLooksValid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function staleBeforeIso(date: string): string {
-  return `${date}T00:00:00.000Z`;
-}
-
-function applyTestTaskPredicate(query: any) {
-  return query.or("title.ilike.%TEST%,description.ilike.%TEST%,title.ilike.[TEST]%");
-}
-
-function applyCriteria(query: any, criteria: TaskCleanupCriteria) {
-  if (criteria.mode === "completed_test") {
-    return applyTestTaskPredicate(query.eq("status", "done"));
-  }
-  if (criteria.mode === "pending_test") {
-    return applyTestTaskPredicate(query.neq("status", "done"));
-  }
-  if (criteria.mode === "all_test") {
-    return applyTestTaskPredicate(query);
-  }
-  if (criteria.mode === "stale_completed" && criteria.staleBefore) {
-    return query
-      .eq("status", "done")
-      .not("completed_at", "is", null)
-      .lt("completed_at", staleBeforeIso(criteria.staleBefore));
-  }
-  if (criteria.mode === "exact_test_match" && criteria.exactQuery) {
-    const exact = uuidLooksValid(criteria.exactQuery)
-      ? query.eq("id", criteria.exactQuery)
-      : query.eq("title", criteria.exactQuery);
-    return applyTestTaskPredicate(exact);
-  }
-  return query.limit(0);
+function validDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
 function pickOne<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function applyTaskMaintenanceFilters(query: any, filters: TaskMaintenanceFilters) {
+  const q = filters.q?.trim();
+  if (q) {
+    const escaped = q.replaceAll("%", "\\%").replaceAll("_", "\\_").replace(/[,()]/g, " ");
+    query = query.or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%`);
+  }
+
+  if (filters.testOnly) {
+    query = query.or("title.ilike.%TEST%,description.ilike.%TEST%,title.ilike.[TEST]%");
+  }
+
+  const status = normalizeStatusFilter(filters.status);
+  if (status === "open") {
+    query = query.neq("status", "done");
+  } else if (status === "done") {
+    query = query.eq("status", "done");
+  } else if (status === "overdue") {
+    query = query.neq("status", "done").lt("due_date", todayPKT());
+  }
+
+  const createdBefore = validDate(filters.createdBefore);
+  if (createdBefore) {
+    query = query.lt("created_at", `${createdBefore}T00:00:00.000Z`);
+  }
+
+  return query;
+}
+
+function normalizeTaskRows(data: unknown): TaskMaintenanceRow[] {
+  type RawTaskRow = Omit<TaskMaintenanceRow, "assignee_name" | "assigner_name"> & {
+    assignee: { display_name: string | null } | { display_name: string | null }[] | null;
+    assigner: { display_name: string | null } | { display_name: string | null }[] | null;
+  };
+
+  return ((data ?? []) as RawTaskRow[]).map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    assigned_to: row.assigned_to,
+    assigned_by: row.assigned_by,
+    due_date: row.due_date,
+    due_time: row.due_time,
+    priority: row.priority,
+    origin: row.origin,
+    recurring_task_id: row.recurring_task_id,
+    requires_approval: row.requires_approval,
+    approved_by: row.approved_by,
+    approved_at: row.approved_at,
+    created_at: row.created_at,
+    completed_at: row.completed_at,
+    assignee_name: pickOne(row.assignee)?.display_name ?? null,
+    assigner_name: pickOne(row.assigner)?.display_name ?? null,
+  }));
+}
+
+export async function listTaskMaintenanceRows(
+  filters: TaskMaintenanceFilters
+): Promise<TaskMaintenanceList> {
+  await requireSuperAdmin(MAINTENANCE_PATH);
+
+  const admin = createAdminClient();
+  const query = applyTaskMaintenanceFilters(
+    admin
+      .from("tasks")
+      .select(TASK_MAINTENANCE_SELECT, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .limit(MAX_VISIBLE_TASKS),
+    filters
+  );
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`listTaskMaintenanceRows: ${error.message}`);
+
+  return {
+    rows: normalizeTaskRows(data),
+    total: count ?? 0,
+    limit: MAX_VISIBLE_TASKS,
+  };
+}
+
+function uuidLooksValid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 async function childCountsForTaskIds(
@@ -164,122 +194,51 @@ async function childCountsForTaskIds(
   };
 }
 
-async function matchingTaskIds(
-  admin: ReturnType<typeof createAdminClient>,
-  criteria: TaskCleanupCriteria,
-  limit: number
-): Promise<string[]> {
-  const { data, error } = await applyCriteria(
-    admin.from("tasks").select("id").order("created_at", { ascending: true }).limit(limit),
-    criteria
-  );
-  if (error) throw new Error(`Could not load matching task ids: ${error.message}`);
-  return ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
-}
-
-export async function previewTaskCleanup(
-  criteria: TaskCleanupCriteria
-): Promise<TaskCleanupPreview> {
+export async function deleteSelectedTaskCleanup(formData: FormData): Promise<void> {
   await requireSuperAdmin(MAINTENANCE_PATH);
-
-  const validationError = validateCriteria(criteria);
-  if (validationError) {
-    return {
-      criteria,
-      taskCount: 0,
-      taskUpdateCount: 0,
-      taskAttachmentCount: 0,
-      samples: [],
-      error: validationError,
-    };
-  }
-
-  const admin = createAdminClient();
-  const { data, error, count } = await applyCriteria(
-    admin
-      .from("tasks")
-      .select(TASK_SAMPLE_SELECT, { count: "exact" })
-      .order("created_at", { ascending: false })
-      .limit(20),
-    criteria
-  );
-  if (error) {
-    return {
-      criteria,
-      taskCount: 0,
-      taskUpdateCount: 0,
-      taskAttachmentCount: 0,
-      samples: [],
-      error: error.message,
-    };
-  }
-
-  const samples = ((data ?? []) as Array<TaskCleanupSample & {
-    assignee: { display_name: string | null } | { display_name: string | null }[] | null;
-    assigner: { display_name: string | null } | { display_name: string | null }[] | null;
-  }>).map((row) => ({
-    id: row.id,
-    title: row.title,
-    description: row.description,
-    status: row.status,
-    assigned_to: row.assigned_to,
-    assigned_by: row.assigned_by,
-    due_date: row.due_date,
-    created_at: row.created_at,
-    completed_at: row.completed_at,
-    assignee_name: pickOne(row.assignee)?.display_name ?? null,
-    assigner_name: pickOne(row.assigner)?.display_name ?? null,
-  }));
-
-  const taskIds = await matchingTaskIds(admin, criteria, MAX_DELETE_ROWS + 1);
-  const childCounts = await childCountsForTaskIds(admin, taskIds.slice(0, MAX_DELETE_ROWS));
-
-  return {
-    criteria,
-    taskCount: count ?? 0,
-    ...childCounts,
-    samples,
-    error: null,
-  };
-}
-
-export async function deleteTaskCleanup(formData: FormData): Promise<void> {
-  await requireSuperAdmin(MAINTENANCE_PATH);
-
-  const criteria = taskCleanupCriteriaFromFormData(formData);
-  if (!criteria) {
-    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("Choose a cleanup mode first.")}`);
-  }
 
   const confirmation = readString(formData, "confirmation");
-  const previewAck = readString(formData, "preview_ack");
-  if (previewAck !== "previewed") {
-    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("Preview the cleanup before deleting.")}`);
-  }
   if (confirmation !== CONFIRMATION_TEXT) {
     redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("Typed confirmation did not match.")}`);
   }
 
-  const validationError = validateCriteria(criteria);
-  if (validationError) {
-    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent(validationError)}`);
-  }
+  const selectedIds = Array.from(new Set(
+    formData
+      .getAll("task_ids")
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+  ));
 
-  const admin = createAdminClient();
-  const taskIds = await matchingTaskIds(admin, criteria, MAX_DELETE_ROWS + 1);
-  if (taskIds.length === 0) {
-    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("No matching tasks found.")}`);
+  if (selectedIds.length === 0) {
+    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("Select at least one task to delete.")}`);
   }
-  if (taskIds.length > MAX_DELETE_ROWS) {
+  if (selectedIds.length > MAX_BULK_DELETE) {
     redirect(
       `${MAINTENANCE_PATH}?error=${encodeURIComponent(
-        `Cleanup matched more than ${MAX_DELETE_ROWS} tasks. Narrow the criteria before deleting.`
+        `Select ${MAX_BULK_DELETE} or fewer tasks per delete.`
       )}`
     );
   }
+  if (selectedIds.some((id) => !uuidLooksValid(id))) {
+    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("One or more selected task IDs are invalid.")}`);
+  }
 
-  const childCounts = await childCountsForTaskIds(admin, taskIds);
-  const { error } = await admin.from("tasks").delete().in("id", taskIds);
+  const admin = createAdminClient();
+  const { data: existingRows, error: existingError } = await admin
+    .from("tasks")
+    .select("id")
+    .in("id", selectedIds);
+  if (existingError) {
+    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent(`Could not validate selected tasks: ${existingError.message}`)}`);
+  }
+
+  const existingIds = ((existingRows ?? []) as Array<{ id: string }>).map((row) => row.id);
+  if (existingIds.length !== selectedIds.length) {
+    redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent("Some selected tasks no longer exist. Refresh and try again.")}`);
+  }
+
+  const childCounts = await childCountsForTaskIds(admin, existingIds);
+  const { error } = await admin.from("tasks").delete().in("id", existingIds);
   if (error) {
     redirect(`${MAINTENANCE_PATH}?error=${encodeURIComponent(`Delete failed: ${error.message}`)}`);
   }
@@ -292,7 +251,7 @@ export async function deleteTaskCleanup(formData: FormData): Promise<void> {
   revalidatePath("/dashboard");
 
   const params = new URLSearchParams({
-    ok: `Deleted ${taskIds.length} task(s), cascading ${childCounts.taskUpdateCount} task update(s) and ${childCounts.taskAttachmentCount} attachment(s).`,
+    ok: `Deleted ${existingIds.length} task(s), cascading ${childCounts.taskUpdateCount} task update(s) and ${childCounts.taskAttachmentCount} attachment(s).`,
   });
   redirect(`${MAINTENANCE_PATH}?${params.toString()}`);
 }
