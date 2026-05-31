@@ -20,6 +20,7 @@
 - Stage 2D: Country milestones + visa gate.
 - Stage 2E: Closure, visa decisions, pre-departure, departed, alumni, withdrawals/refunds (RPC-hardened).
 - Stage 2F-1: Client financials / refund policy hardening.
+- RPC hardening for Phase 2A/2D multi-table mutations: migration `0022`, commit `81c287f`; closes audit items A-2, A-8, A-9, and A-10.
 
 ## In Progress
 
@@ -35,7 +36,6 @@
 
 ## Backlog
 
-- **RPC Migration (High Technical Debt):** Migrate remaining Stage 2A-2D multi-table direct-write actions (e.g., `convertLeadToClient`, `recordClientPayment`) to Postgres RPCs to guarantee transaction atomicity (fixing known Gemini Audit A-1, A-2, A-8, A-9, A-10).
 - **T12:** KPI / Reporting Dashboard.
 - **T13:** RLS / Permission Hardening (Ensure counselors only see their assigned leads).
 - Finalize MVP branch scope and product scope.
@@ -55,7 +55,7 @@
 
 ## Known Risks / Technical Debt
 
-- **Multi-table Write Atomicity:** As flagged in the Gemini 2026-05-23 Audit, `convertLeadToClient` and other Stage 2A-2D actions perform sequential Supabase writes using a manual compensation pattern. These are vulnerable to partial failure and need to be refactored into atomic Postgres RPCs (following the Stage 2E pattern).
+- **Multi-table Write Atomicity:** Phase 2A/2D RPC hardening landed in commit `81c287f` with migration `0022`, closing A-2, A-8, A-9, and A-10. Do not carry those items as open "convert to RPC later" work.
 - WhatsApp attribution may be weak without strict number/campaign discipline.
 - Existing WhatsApp numbers may be staff-owned or inconsistently used.
 - Combining sales statuses and case statuses may create reporting confusion.
@@ -69,4 +69,4 @@
 - Follow-up schedule and completion.
 - Notes and status transitions.
 - Counselor visibility vs. super-admin visibility checks.
-- Verification of older Stage 2A-2D manual compensation rollbacks during simulated failures.
+- Regression test the migration `0022` RPC paths for payment recording and Phase 2D milestone/status mutations.

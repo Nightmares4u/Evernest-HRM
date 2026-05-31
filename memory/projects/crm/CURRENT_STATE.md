@@ -8,6 +8,7 @@
 The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy). The core workflow from raw WhatsApp intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials are fully implemented on `crm-dev`.
 
 ### Latest Known Feature / Hardening Commits
+- `81c287f fix(crm): RPC harden Phase 2A/2D multi-table mutations`
 - `7df4746 fix(crm): production-hardening sweep across Stage 1/2 — A-1, terminal locks, activity union`
 - `235b12c docs: sync CRM Stage 2 implementation state`
 - `7e27dbb feat: add CRM client closure and refund flow`
@@ -30,6 +31,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - **Phase 2C (Applications):** Per-university application rows. A client can have at most one accepted application.
 - **Phase 2D (Visa Milestones):** Country-driven milestone checklists. A client cannot enter `visa_submitted` unless required milestones are `done` or `not_applicable`.
 - **Phase 2E (Closure):** Closure states include `pre_departure`, `departed`, `alumni` (successful completion), and `withdrawn_refunded` (failure/withdrawal). Terminal clients (`alumni`, `withdrawn_refunded`) are locked from normal workflow mutations. Phase 2E actions are fully RPC-first for atomic writes.
+- **RPC Hardening:** Migration `0022` added Postgres RPC hardening for Phase 2A/2D multi-table mutations. Audit backlog items A-2 (`recordClientPayment`), A-8, A-9, and A-10 are completed by commit `81c287f`.
 
 ### Phase 2F-1 (Client Financials) - Completed
 - **Financials Tab:** `/crm/clients/[id]/financials` tracks client-level payments and refunds.
@@ -58,6 +60,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `0019_crm_client_country_milestones_phase_2d.sql`
 - `0020_crm_client_closure_phase_2e.sql`
 - `0021_crm_refund_policy_hardening.sql`
+- `0022_crm_phase_2a_2d_rpc_hardening.sql`
 
 ## Current Route Inventory
 
@@ -84,4 +87,4 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `/admin/crm/clients/doc-review`
 
 ## Known Backlog & Technical Debt
-- **RPC Migration:** Older Stage 2A-2D multi-table actions (e.g., `convertLeadToClient`, document verification, milestone updates) use sequential TypeScript database writes with manual fallback deletions. They should opportunistically be migrated to Postgres RPCs (following the Stage 2E/2F pattern) to ensure atomic transaction safety.
+- **RPC Migration:** Phase 2A/2D audit items A-2, A-8, A-9, and A-10 are closed by commit `81c287f` and migration `0022`. Do not keep "convert to RPC later" as an immediate backlog item for these paths.
