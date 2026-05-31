@@ -1,11 +1,11 @@
 # Current State
 
-> **Last updated:** 2026-05-31 (Post Stage 2F-1 Financials)
+> **Last updated:** 2026-06-01 (Post Admin Financials MVP)
 > **Branch:** `crm-dev`
 
 ## Status Summary
 
-The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy). The core workflow from raw WhatsApp intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials are fully implemented on `crm-dev`.
+The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy), with Phase 2A/2D multi-table mutations atomically hardened via RPC (migration 0022). A read-only **Admin Financials MVP** now lives at `/admin/financials` and combines CRM payment/refund inflow with HRM payroll-preview outflow (PKR-only). The core workflow from raw WhatsApp intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials are fully implemented on `crm-dev`.
 
 ### Latest Known Feature / Hardening Commits
 - `81c287f fix(crm): RPC harden Phase 2A/2D multi-table mutations`
@@ -38,10 +38,16 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - **Terminal State Lock:** Payments are allowed only on non-terminal clients. Refunds are NOT allowed on `alumni` clients (hardened in both UI and Postgres RPC `crm_record_client_refund`).
 - **Refund Policy:** Refunds are restricted to the `withdrawn_refunded` closure path and are strictly a `super_admin` action.
 
+### Admin Financials MVP - Completed
+- **Route:** `/admin/financials` (super_admin only). Read-only company-wide dashboard.
+- **CRM inflow:** This-month and all-time totals for PKR payments received and refunds. Recent payment / refund tables (last 20 each) with links to the client financials/closure pages.
+- **HRM outflow:** Monthly payroll outflow computed from the existing `buildPayrollPreview` helper (no finalized payroll-run table exists yet). Labeled as a preview-based estimate.
+- **Currency:** PKR-only MVP. Non-PKR rows are excluded from totals and surface an amber warning banner. FX / multi-currency support is deferred to a separate feature.
+- **No new tables / migrations.** Pure read-only aggregation over `crm_client_payments`, `crm_client_refunds`, and HRM payroll preview inputs.
+
 ## Pending / Planned Work
 
-- **Admin Financials:** (Next Immediate) Separate, company-wide view combining CRM inflow (payments/refunds) with HRM outflow (payroll).
-- **Full Regression Testing:** Manual smoke testing across Stage 2 lifecycle paths.
+- **Full Regression Testing:** Manual smoke testing across Stage 2 lifecycle paths and Admin Financials.
 - **WhatsApp API MVP:** Webhook verification, receiving incoming Meta messages, mapping `phone_number_id` to `crm_whatsapp_numbers`, and raw inbox creation + auto-parse. (No auto-promote/chatbot yet).
 - **UX Polish:** Refining the activity timeline visuals (Atomic CRM style) and lead boards after functional finalization.
 - **Gemini Chatbot / Parser:** Deferred.
@@ -85,6 +91,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `/admin/crm/transfers`
 - `/admin/crm/clients/conversion-queue`
 - `/admin/crm/clients/doc-review`
+- `/admin/financials` (super_admin only)
 
 ## Known Backlog & Technical Debt
 - **RPC Migration:** Phase 2A/2D audit items A-2, A-8, A-9, and A-10 are closed by commit `81c287f` and migration `0022`. Do not keep "convert to RPC later" as an immediate backlog item for these paths.

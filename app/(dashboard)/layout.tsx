@@ -49,6 +49,7 @@ export default async function DashboardLayout({
   const adminNavItems = isSuperAdmin
     ? [
         { href: "/admin/crm", label: "Admin CRM" },
+        { href: "/admin/financials", label: "Financials" },
         { href: "/admin/holidays", label: "Paid Holidays" },
         { href: "/admin/payroll", label: "Payroll Preview" },
       ]

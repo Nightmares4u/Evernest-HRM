@@ -21,6 +21,7 @@
 - Stage 2E: Closure, visa decisions, pre-departure, departed, alumni, withdrawals/refunds (RPC-hardened).
 - Stage 2F-1: Client financials / refund policy hardening.
 - RPC hardening for Phase 2A/2D multi-table mutations: migration `0022`, commit `81c287f`; closes audit items A-2, A-8, A-9, and A-10.
+- **Admin Financials MVP:** read-only `/admin/financials` (super_admin only). PKR-only company-wide dashboard combining CRM payments/refunds and HRM payroll-preview outflow. No new tables. Recent payment/refund tables link out to client financials/closure. Non-PKR rows excluded from totals with an amber warning. No invoices, no commissions, no ad-spend.
 
 ## In Progress
 
@@ -28,8 +29,7 @@
 
 ## Next Immediate
 
-- **Admin Financials:** `/admin/crm/financials` or `/admin/financials`. Company-wide inflow/outflow combining CRM payments/refunds and HRM payroll.
-- **Full Regression Testing:** Manual end-to-end testing of Stage 2 lifecycle paths and smoke-test verifications.
+- **Full Regression Testing:** Manual end-to-end testing of Stage 2 lifecycle paths, RPC paths from migration `0022`, and Admin Financials totals.
 - **WhatsApp API MVP:** Real WhatsApp Cloud API/webhook intake (Meta WABA setup). Webhook verification, message reception, mapping to `phone_number_id`, and raw inbox creation.
 - **T10D (UX Polish):** Activity timeline polish (Atomic CRM styling) post-functional completion.
 - **T11 (UX Polish):** Lead Board / Pipeline UI.
@@ -70,3 +70,4 @@
 - Notes and status transitions.
 - Counselor visibility vs. super-admin visibility checks.
 - Regression test the migration `0022` RPC paths for payment recording and Phase 2D milestone/status mutations.
+- Admin Financials `/admin/financials`: super-admin-only gating; monthly totals match `/crm/clients/[id]/financials` ledgers in aggregate; payroll outflow matches `/admin/payroll` estimated-payable total; non-PKR rows surface the amber warning and are excluded from totals.
