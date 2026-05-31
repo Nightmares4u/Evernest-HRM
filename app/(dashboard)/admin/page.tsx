@@ -142,6 +142,15 @@ export default async function AdminPage() {
               hint="Create login + HR profile"
             />
           )}
+          {isSuperAdmin && (
+            <ActionCard
+              label="Task Maintenance"
+              value="Clean"
+              href="/admin/tasks/maintenance"
+              tone="red"
+              hint="Preview and delete test/stale tasks"
+            />
+          )}
         </div>
       </Section>
 
@@ -345,6 +354,14 @@ export default async function AdminPage() {
             description="Templates that auto-generate task instances on scheduled days."
             live
           />
+          {isSuperAdmin && (
+            <QuickLink
+              href="/admin/tasks/maintenance"
+              title="Task Maintenance"
+              description="Preview and delete test/stale HRM tasks."
+              live
+            />
+          )}
           <QuickLink
             href="/admin/holidays"
             title="Paid holidays"
