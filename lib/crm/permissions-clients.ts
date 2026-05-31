@@ -111,6 +111,12 @@ export function canWithdrawClient(me: CurrentUser): boolean {
   return me.appUser.role === "super_admin";
 }
 
+export function canRecordClientPayment(me: CurrentUser): boolean {
+  // → clients.payments.record
+  if (!me.appUser.is_active) return false;
+  return me.appUser.role === "super_admin";
+}
+
 export function canRecordClientRefund(me: CurrentUser): boolean {
   // → clients.refunds.record
   if (!me.appUser.is_active) return false;

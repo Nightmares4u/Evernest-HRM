@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { createAdminClient } from "@/lib/supabase/server";
-import { isClientTerminal } from "@/lib/crm/permissions-clients";
+import { canRecordClientPayment, isClientTerminal } from "@/lib/crm/permissions-clients";
 import type { CrmClient, CrmLead } from "@/lib/types/crm";
 
 function readString(formData: FormData, key: string): string {
@@ -66,8 +66,17 @@ function redirectLead(leadId: string, key: "ok" | "error", message: string): nev
   redirect(`/crm/leads/${leadId}?${key}=${encodeURIComponent(message)}`);
 }
 
-function redirectClient(clientId: string, key: "ok" | "error", message: string): never {
-  redirect(`/crm/clients/${clientId}?${key}=${encodeURIComponent(message)}`);
+function redirectClient(
+  clientId: string,
+  key: "ok" | "error",
+  message: string,
+  returnTo?: string
+): never {
+  const path =
+    returnTo === "financials"
+      ? `/crm/clients/${clientId}/financials`
+      : `/crm/clients/${clientId}`;
+  redirect(`${path}?${key}=${encodeURIComponent(message)}`);
 }
 
 export async function convertLeadToClient(formData: FormData): Promise<void> {
@@ -209,9 +218,10 @@ export async function convertLeadToClient(formData: FormData): Promise<void> {
 export async function recordClientPayment(formData: FormData): Promise<void> {
   const me = requireActiveUser(await getCurrentUser());
   const clientId = readString(formData, "client_id");
+  const returnTo = readString(formData, "return_to");
   if (!clientId) redirect("/crm/clients?error=Client%20id%20is%20required");
-  if (me.appUser.role !== "super_admin") {
-    redirectClient(clientId, "error", "Only super admin can record client payments.");
+  if (!canRecordClientPayment(me)) {
+    redirectClient(clientId, "error", "Only super admin can record client payments.", returnTo);
   }
 
   const amount = parseRequiredMoney(readString(formData, "amount"));
@@ -220,9 +230,9 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
   const currency = readString(formData, "currency") || "PKR";
   const reference = readString(formData, "reference") || null;
   const notes = readString(formData, "notes") || null;
-  if (amount == null) redirectClient(clientId, "error", "Payment amount must be greater than zero.");
-  if (!paidAt) redirectClient(clientId, "error", "Payment date/time is required.");
-  if (!method) redirectClient(clientId, "error", "Payment method is required.");
+  if (amount == null) redirectClient(clientId, "error", "Payment amount must be greater than zero.", returnTo);
+  if (!paidAt) redirectClient(clientId, "error", "Payment date/time is required.", returnTo);
+  if (!method) redirectClient(clientId, "error", "Payment method is required.", returnTo);
 
   const admin = createAdminClient();
 
@@ -235,13 +245,14 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
     .eq("id", clientId)
     .maybeSingle();
   if (!clientRow) {
-    redirectClient(clientId, "error", "Client not found.");
+    redirectClient(clientId, "error", "Client not found.", returnTo);
   }
   if (isClientTerminal(clientRow as Pick<CrmClient, "status">)) {
     redirectClient(
       clientId,
       "error",
-      `Cannot record a payment against a ${(clientRow as Pick<CrmClient, "status">).status} client.`
+      `Cannot record a payment against a ${(clientRow as Pick<CrmClient, "status">).status} client.`,
+      returnTo
     );
   }
   const { data: paymentRow, error: paymentError } = await admin
@@ -260,7 +271,12 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
     .single();
 
   if (paymentError || !paymentRow) {
-    redirectClient(clientId, "error", `Could not record payment: ${paymentError?.message ?? "unknown error"}`);
+    redirectClient(
+      clientId,
+      "error",
+      `Could not record payment: ${paymentError?.message ?? "unknown error"}`,
+      returnTo
+    );
   }
 
   const { error: activityError } = await admin.from("crm_client_activities").insert({
@@ -280,10 +296,16 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
 
   if (activityError) {
     await admin.from("crm_client_payments").delete().eq("id", paymentRow.id);
-    redirectClient(clientId, "error", `Payment recorded, but activity failed (rolled back): ${activityError.message}`);
+    redirectClient(
+      clientId,
+      "error",
+      `Payment recorded, but activity failed (rolled back): ${activityError.message}`,
+      returnTo
+    );
   }
 
   revalidatePath("/crm/clients");
   revalidatePath(`/crm/clients/${clientId}`);
-  redirectClient(clientId, "ok", "Payment recorded.");
+  revalidatePath(`/crm/clients/${clientId}/financials`);
+  redirectClient(clientId, "ok", "Payment recorded.", returnTo);
 }

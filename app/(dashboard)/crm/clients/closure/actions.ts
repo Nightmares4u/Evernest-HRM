@@ -61,6 +61,7 @@ function revalidateClientClosurePaths(clientId: string): void {
   revalidatePath(`/crm/clients/${clientId}`);
   revalidatePath(`/crm/clients/${clientId}/visa`);
   revalidatePath(`/crm/clients/${clientId}/closure`);
+  revalidatePath(`/crm/clients/${clientId}/financials`);
 }
 
 export async function recordVisaDecisionAction(formData: FormData): Promise<void> {
@@ -244,6 +245,9 @@ export async function recordClientRefundAction(formData: FormData): Promise<void
   const { me, data } = await requireClosureAccess(clientId);
   if (!data.canRecordRefund) {
     redirectClosure(clientId, "error", "Only super admins can record refunds.");
+  }
+  if (data.client.status !== "withdrawn_refunded") {
+    redirectClosure(clientId, "error", "Refunds can only be recorded for withdrawn/refunded clients.");
   }
 
   const amount = parseOptionalMoney(readString(formData, "amount"));

@@ -59,6 +59,8 @@ export default async function ClientClosurePage({
   const { client, visaDecisions, refunds } = data;
   const canWithdrawFromStatus =
     client.status !== "alumni" && client.status !== "withdrawn_refunded";
+  const canRecordRefundForStatus =
+    data.canRecordRefund && client.status === "withdrawn_refunded";
 
   return (
     <div className="space-y-6">
@@ -108,7 +110,7 @@ export default async function ClientClosurePage({
           <h2 className="text-sm font-semibold text-gray-900">Closure status</h2>
           <p className="mt-2 text-sm text-gray-500">
             Closure controls become available after a granted visa decision moves the client to
-            pre-departure. Withdrawals and standalone refunds are still available to super admins.
+            pre-departure. Withdrawals are still available to super admins before terminal closure.
           </p>
         </section>
       )}
@@ -118,7 +120,7 @@ export default async function ClientClosurePage({
       <RefundsPanel
         clientId={client.id}
         refunds={refunds}
-        canRecordRefund={data.canRecordRefund}
+        canRecordRefund={canRecordRefundForStatus}
       />
     </div>
   );

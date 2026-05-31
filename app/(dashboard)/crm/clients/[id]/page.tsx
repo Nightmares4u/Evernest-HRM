@@ -136,6 +136,12 @@ export default async function CrmClientDetailPage({
           )}
         </Link>
         <Link
+          href={`/crm/clients/${client.id}/financials`}
+          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+        >
+          Financials
+        </Link>
+        <Link
           href={`/crm/clients/${client.id}/closure`}
           className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
         >

@@ -49,10 +49,12 @@ import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
 import {
   canEditClientMilestone,
   canEditClientStatus,
+  canRecordClientPayment,
   canRecordClientRefund,
   canVerifyClientDoc,
   canViewCrmClient,
   canWithdrawClient,
+  isClientTerminal,
 } from "@/lib/crm/permissions-clients";
 
 export const CRM_PRODUCT_CATEGORIES = ["Italy", "Korea", "B2B", "General"] as const;
@@ -1564,6 +1566,58 @@ export async function getCrmClientDetail(id: string): Promise<{
     client,
     activities: (activitiesRes.data ?? []) as CrmClientActivity[],
     payments: (paymentsRes.data ?? []) as CrmClientPayment[],
+  };
+}
+
+export async function getCrmClientFinancialsPage(clientId: string): Promise<{
+  client: CrmClientVM;
+  payments: CrmClientPayment[];
+  refunds: CrmClientRefund[];
+  totalReceived: number;
+  totalRefunded: number;
+  netReceived: number;
+  canRecordPayment: boolean;
+} | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const me = requireActiveCrmUser(await getCurrentUser());
+  const admin = createAdminClient();
+  const client = await loadClientVM(admin, clientId);
+  if (!client || !canViewCrmClient(me, client)) return null;
+
+  const [paymentsRes, refundsRes] = await Promise.all([
+    admin
+      .from("crm_client_payments")
+      .select("*")
+      .eq("client_id", client.id)
+      .order("paid_at", { ascending: false }),
+    admin
+      .from("crm_client_refunds")
+      .select("*")
+      .eq("client_id", client.id)
+      .order("refunded_at", { ascending: false }),
+  ]);
+
+  if (paymentsRes.error) {
+    throw new Error(`getCrmClientFinancialsPage payments: ${paymentsRes.error.message}`);
+  }
+  if (refundsRes.error) {
+    throw new Error(`getCrmClientFinancialsPage refunds: ${refundsRes.error.message}`);
+  }
+
+  const payments = (paymentsRes.data ?? []) as CrmClientPayment[];
+  const refunds = (refundsRes.data ?? []) as CrmClientRefund[];
+  const totalReceived = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const totalRefunded = refunds.reduce((sum, refund) => sum + Number(refund.amount), 0);
+
+  return {
+    client,
+    payments,
+    refunds,
+    totalReceived,
+    totalRefunded,
+    netReceived: totalReceived - totalRefunded,
+    canRecordPayment: canRecordClientPayment(me) && !isClientTerminal(client),
   };
 }
 
