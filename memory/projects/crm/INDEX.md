@@ -28,7 +28,7 @@ must not be treated as current implementation state or current scope.
 
 The `archive/` directory contains historical-only material. Read it only
 when a user explicitly asks for audit history, provenance, or old
-reference material.
+reference material. Future agents should not treat archived audits as current implementation truth.
 
 - `archive/GEMINI_AUDIT_2026_05_23.md` - historical audit findings only.
 - `archive/CRM_SMOKE_TEST_AUDIT_2026_05_31.md` - historical smoke-test report only.
@@ -46,9 +46,11 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 ## 4. Current Implementation Snapshot
 
 - **Stage 1 (Lead Management):** Complete.
-- **Stage 2A-2E (Client Lifecycle):** Complete.
+- **Stage 2A-2E (Client Lifecycle):** Complete (Phase 2 mutations RPC hardened).
 - **Phase 2F-1 (Client Financials & Refund Policy):** Complete.
-- **Admin Financials:** Planned / Next.
+- **Admin Financials MVP:** Complete.
+- **Admin Task Maintenance:** Complete.
+- **Internal CRM Assistant MVP:** Complete.
 - **WhatsApp API:** Pending (Meta/WABA setup pending).
 - **Gemini Parser / Chatbot:** Deferred.
 
@@ -70,6 +72,9 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 **Financials:**
 - `/crm/clients/[id]/financials` (Client-level financials)
 
+**Assistant:**
+- `/crm/assistant` (Internal CRM docs-grounded assistant)
+
 **Admin CRM:**
 - `/admin/crm`
 - `/admin/crm/whatsapp-numbers`
@@ -78,9 +83,10 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 - `/admin/crm/transfers`
 - `/admin/crm/clients/conversion-queue`
 - `/admin/crm/clients/doc-review`
+- `/admin/financials` (Company-wide CRM/HRM dashboard)
+- `/admin/tasks/maintenance` (DB cleanup tool)
 
 **Future / Planned Routes:**
-- `/admin/financials` or `/admin/crm/financials` (Admin Financials)
 - `/api/webhooks/whatsapp` (WhatsApp API Webhook)
 
 ## 6. Current Migration Map
@@ -97,19 +103,22 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 - `0019_crm_client_country_milestones_phase_2d.sql`
 - `0020_crm_client_closure_phase_2e.sql`
 - `0021_crm_refund_policy_hardening.sql`
+- `0022_crm_phase_2a_2d_rpc_backfill.sql`
 
 ## 7. Current Next Tasks
 
-1. **Admin Financials:** (Company-wide inflow/outflow, combining CRM and HRM).
-2. **Full Regression Testing:** (Manual smoke tests for Stage 2 features).
+1. **Full Regression Testing:** (Manual smoke tests across Stage 1, Stage 2, Financials, and Assistant before internal rollout).
+2. **Manual Migrations Check:** Verify `0022` is applied in Supabase.
 3. **WhatsApp API MVP:** (Webhook verification, receive message, map to `phone_number_id`, create raw inbox, auto-parse).
-4. **UX Polish:** (After functional completion).
-5. **RPC Backlog:** (Opportunistically migrate older Stage 2A-2D multi-table writes to RPCs).
+4. **UX Polish:** (After functional regression).
+5. **Gemini Parser Fallback:** (Later).
+6. **Stage 3 Client Portal:** (Later).
 
 ## 8. Deferred / Do Not Build Yet
 
 - **Stage 3 Client Portal:** (Deferred until staff-side CRM is stable).
 - **Gemini Chatbot / Parser:** (Rule-based parser remains default).
+- **Multi-Currency:** (Financials remains PKR-only until explicit currency feature).
 - **Invoices:** (Not needed yet).
 - **Commissions:** (Out of scope for now).
 - **HRM Task Sync:** (CRM has its own follow-up tracking).
@@ -117,10 +126,10 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 
 ## 9. Agent Operating Rules
 
-- **Read current docs first:** Always check `INDEX.md`, `CURRENT_STATE.md`, and `CRM_BOARD.md` before coding.
-- **No broad feature creep:** Stick to the immediate task. Do not build deferred features.
+- **Read current docs first:** Always check `INDEX.md`, `CURRENT_STATE.md`, and `CRM_BOARD.md` before coding. `crm-dev` is the source of truth. Archived docs are historical only.
+- **No broad feature creep:** Stick to the immediate task. Do not build WhatsApp API / Gemini parser / client portal unless explicitly requested. Keep financials PKR-only.
 - **No `git add .`:** Do not blindly stage files.
 - **No commit / push:** Do not commit or push unless explicitly asked by the user.
 - **Always report:** Detail the files changed, build/typecheck status, and migrations needed. Provide a safe `git add` command for the user.
 - **Schema changes = Migrations:** Never alter the database without a new migration file.
-- **Multi-table mutations:** MUST use Postgres RPCs (functions) or, if unavoidable in legacy code, implement manual compensation to prevent orphan rows.
+- **Multi-table mutations:** MUST use Postgres RPCs (functions) or, if unavoidable in legacy code, implement careful manual compensation.

@@ -1,19 +1,27 @@
 # Current State
 
-> **Last updated:** 2026-06-01 (Post Admin Financials MVP)
+> **Last updated:** 2026-06-01 (Post Admin Financials & Assistant MVP)
 > **Branch:** `crm-dev`
 
 ## Status Summary
 
-The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy), with Phase 2A/2D multi-table mutations atomically hardened via RPC (migration 0022). A read-only **Admin Financials MVP** now lives at `/admin/financials` and combines CRM payment/refund inflow with HRM payroll-preview outflow (PKR-only). The core workflow from raw WhatsApp intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials are fully implemented on `crm-dev`.
+The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy), with Phase 2A/2D multi-table mutations atomically hardened via RPC (migration 0022).
+A read-only **Admin Financials MVP** now lives at `/admin/financials` and combines CRM payment/refund inflow with HRM payroll-preview outflow (PKR-only).
+An **Internal CRM Assistant MVP** lives at `/crm/assistant` allowing staff to query the CRM planning documentation via Gemini.
+An **Admin Task Maintenance** cleanup tool is available at `/admin/tasks/maintenance` for reducing test pollution.
+
+The core workflow from raw WhatsApp intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials are fully implemented on `crm-dev`.
 
 ### Latest Known Feature / Hardening Commits
-- `81c287f fix(crm): RPC harden Phase 2A/2D multi-table mutations`
+- `69b8506 feat: add internal CRM assistant`
+- `d5ba1f3 feat: add admin task maintenance cleanup`
+- `da5c04b feat: add admin financials dashboard`
+- `fe34141 docs: mark CRM RPC hardening complete`
+- `81c287f refactor: harden CRM Phase 2 mutations with RPCs`
+- `6453589 docs: archive historical CRM planning and audit files`
+- `907be8f docs: refresh CRM source of truth after financials`
+- `52bed07 feat: add CRM client financials and refund policy hardening`
 - `7df4746 fix(crm): production-hardening sweep across Stage 1/2 — A-1, terminal locks, activity union`
-- `235b12c docs: sync CRM Stage 2 implementation state`
-- `7e27dbb feat: add CRM client closure and refund flow`
-- `c6e5928 feat: Phase 2C applications + Phase 2D country milestones + transaction policy`
-- `2fa2e43 feat: Phase 2B client documents + Gemini audit fix-ups (migration 0017)`
 
 ## Feature State by Stage
 
@@ -31,20 +39,12 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - **Phase 2C (Applications):** Per-university application rows. A client can have at most one accepted application.
 - **Phase 2D (Visa Milestones):** Country-driven milestone checklists. A client cannot enter `visa_submitted` unless required milestones are `done` or `not_applicable`.
 - **Phase 2E (Closure):** Closure states include `pre_departure`, `departed`, `alumni` (successful completion), and `withdrawn_refunded` (failure/withdrawal). Terminal clients (`alumni`, `withdrawn_refunded`) are locked from normal workflow mutations. Phase 2E actions are fully RPC-first for atomic writes.
-- **RPC Hardening:** Migration `0022` added Postgres RPC hardening for Phase 2A/2D multi-table mutations. Audit backlog items A-2 (`recordClientPayment`), A-8, A-9, and A-10 are completed by commit `81c287f`.
+- **RPC Hardening:** Migration `0022_crm_phase_2a_2d_rpc_backfill.sql` added Postgres RPC hardening for Phase 2A/2D multi-table mutations. Audit backlog items A-2 (`recordClientPayment`), A-8, A-9, and A-10 are completed by commit `81c287f`.
 
 ### Phase 2F-1 (Client Financials) - Completed
 - **Financials Tab:** `/crm/clients/[id]/financials` tracks client-level payments and refunds.
 - **Terminal State Lock:** Payments are allowed only on non-terminal clients. Refunds are NOT allowed on `alumni` clients (hardened in both UI and Postgres RPC `crm_record_client_refund`).
 - **Refund Policy:** Refunds are restricted to the `withdrawn_refunded` closure path and are strictly a `super_admin` action.
-
-### Internal CRM Assistant MVP - Completed
-- **Route:** `/crm/assistant` (any authenticated active staff user).
-- **Model:** Gemini (default `gemini-2.5-flash`, overridable via `GEMINI_MODEL`). Server-side REST call only; `GEMINI_API_KEY` never reaches the client.
-- **Knowledge source:** static CRM planning docs (INDEX, CURRENT_STATE, CRM_BOARD, CLIENT_LIFECYCLE_STAGE_2_PLAN, STAGE_1_DECISIONS, CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE) loaded from `memory/projects/crm/` and injected into the prompt. Cached per-process.
-- **System prompt** forbids inventing routes/actions/RPCs, performing mutations, giving legal/visa guarantees, and revealing secrets.
-- **No database mutations, no chat history, no embeddings, no vector DB.** Stateless Q&A; previous question/answer is round-tripped via the URL.
-- **Not enabled:** Gemini parser fallback for raw intake, client-facing chatbot, WhatsApp API — all still deferred.
 
 ### Admin Financials MVP - Completed
 - **Route:** `/admin/financials` (super_admin only). Read-only company-wide dashboard.
@@ -53,9 +53,22 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - **Currency:** PKR-only MVP. Non-PKR rows are excluded from totals and surface an amber warning banner. FX / multi-currency support is deferred to a separate feature.
 - **No new tables / migrations.** Pure read-only aggregation over `crm_client_payments`, `crm_client_refunds`, and HRM payroll preview inputs.
 
+### Admin Task Maintenance - Completed
+- **Route:** `/admin/tasks/maintenance` (super_admin only).
+- **Function:** Deletes test/stale task data from DB to reduce test pollution and conserve database space.
+- **Safety:** Preview + typed confirmation. Does not touch payroll, attendance, leave, CRM records, employees, branches, or real HRM data.
+
+### Internal CRM Assistant MVP - Completed
+- **Route:** `/crm/assistant` (any authenticated active staff user).
+- **Model:** Uses Gemini API (`GEMINI_API_KEY` in environment, `GEMINI_MODEL` optional/default). Server-side REST call only; key never reaches the client.
+- **Knowledge source:** Static CRM planning docs (INDEX, CURRENT_STATE, CRM_BOARD, CLIENT_LIFECYCLE_STAGE_2_PLAN, STAGE_1_DECISIONS, CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE) loaded from `memory/projects/crm/` and injected into the prompt.
+- **Safety & Scope:** Internal staff guidance only. System prompt forbids inventing routes/actions/RPCs, performing mutations, giving legal/visa guarantees, and revealing secrets. No database mutations/action execution.
+- **Limitations:** Static-context MVP. Vector search/embeddings are deferred. No chat history storage. No WhatsApp integration. No client-facing chatbot. No parser fallback yet.
+
 ## Pending / Planned Work
 
-- **Full Regression Testing:** Manual smoke testing across Stage 2 lifecycle paths and Admin Financials.
+- **Full Regression Testing:** Manual smoke testing across Stage 1 + Stage 2 + Financials + Assistant before internal rollout.
+- **Manual Migrations Check:** Verify `0022` is manually applied in Supabase.
 - **WhatsApp API MVP:** Webhook verification, receiving incoming Meta messages, mapping `phone_number_id` to `crm_whatsapp_numbers`, and raw inbox creation + auto-parse. (No auto-promote/chatbot yet).
 - **UX Polish:** Refining the activity timeline visuals (Atomic CRM style) and lead boards after functional finalization.
 - **Gemini Chatbot / Parser:** Deferred.
@@ -74,7 +87,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `0019_crm_client_country_milestones_phase_2d.sql`
 - `0020_crm_client_closure_phase_2e.sql`
 - `0021_crm_refund_policy_hardening.sql`
-- `0022_crm_phase_2a_2d_rpc_hardening.sql`
+- `0022_crm_phase_2a_2d_rpc_backfill.sql`
 
 ## Current Route Inventory
 
@@ -90,7 +103,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `/crm/clients/[id]/visa`
 - `/crm/clients/[id]/closure`
 - `/crm/clients/[id]/financials`
-- `/crm/assistant` (internal CRM/HRM Q&A; Gemini-backed, docs-only)
+- `/crm/assistant` (Internal CRM docs-grounded assistant)
 
 **Admin Routes:**
 - `/admin/crm`
@@ -101,6 +114,7 @@ The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Polic
 - `/admin/crm/clients/conversion-queue`
 - `/admin/crm/clients/doc-review`
 - `/admin/financials` (super_admin only)
+- `/admin/tasks/maintenance` (DB cleanup tool)
 
-## Known Backlog & Technical Debt
-- **RPC Migration:** Phase 2A/2D audit items A-2, A-8, A-9, and A-10 are closed by commit `81c287f` and migration `0022`. Do not keep "convert to RPC later" as an immediate backlog item for these paths.
+## Known Backlog & Technical Deb
+- Phase 2A/2D audit items A-2, A-8, A-9, and A-10 are closed by commit `81c287f` and migration `0022`. They are no longer on the immediate backlog for RPC conversion.
