@@ -1920,54 +1920,21 @@ export async function ensureClientMilestonesSeeded(clientId: string): Promise<{
   const country = normalizeTargetCountry(client.target_country);
   if (!country) return { country: null, inserted: 0 };
 
-  const definitions = CRM_COUNTRY_MILESTONES[country];
-  const { data: existingData, error: existingError } = await admin
-    .from("crm_client_country_milestones")
-    .select("milestone_code")
-    .eq("client_id", clientId);
+  const candidateCodes = CRM_COUNTRY_MILESTONES[country].map((definition) => definition.code);
 
-  if (existingError) throw new Error(`ensureClientMilestonesSeeded existing: ${existingError.message}`);
+  // Seed + activity log are atomic in crm_seed_client_milestones
+  // (migration 0022). Returns the codes actually inserted (after ON
+  // CONFLICT DO NOTHING), so the count matches what landed in the table.
+  const { data, error } = await admin.rpc("crm_seed_client_milestones", {
+    p_client_id: clientId,
+    p_country: country,
+    p_candidate_codes: candidateCodes,
+    p_actor_user_id: me.authUserId,
+  });
 
-  const existingCodes = new Set(((existingData ?? []) as { milestone_code: string }[]).map((row) => row.milestone_code));
-  const missing = definitions.filter((definition) => !existingCodes.has(definition.code));
-  if (missing.length === 0) return { country, inserted: 0 };
+  if (error) throw new Error(`ensureClientMilestonesSeeded: ${error.message}`);
 
-  const { data: insertedData, error: insertError } = await admin
-    .from("crm_client_country_milestones")
-    .upsert(
-      missing.map((definition) => ({
-        client_id: clientId,
-        milestone_code: definition.code,
-      })),
-      { onConflict: "client_id,milestone_code", ignoreDuplicates: true }
-    )
-    .select("milestone_code");
-
-  if (insertError) throw new Error(`ensureClientMilestonesSeeded insert: ${insertError.message}`);
-
-  const insertedCodes = ((insertedData ?? []) as { milestone_code: string }[]).map((row) => row.milestone_code);
-  if (insertedCodes.length > 0) {
-    const { error: activityError } = await admin.from("crm_client_activities").insert({
-      client_id: clientId,
-      activity_type: "milestones_seeded",
-      actor_user_id: me.authUserId,
-      description: `Country milestones seeded for ${country}.`,
-      payload: {
-        country,
-        codes: insertedCodes,
-      },
-    });
-
-    if (activityError) {
-      await admin
-        .from("crm_client_country_milestones")
-        .delete()
-        .eq("client_id", clientId)
-        .in("milestone_code", insertedCodes);
-      throw new Error(`ensureClientMilestonesSeeded activity: ${activityError.message} (rolled back)`);
-    }
-  }
-
+  const insertedCodes = (data ?? []) as string[];
   return { country, inserted: insertedCodes.length };
 }
 

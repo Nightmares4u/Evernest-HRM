@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { createAdminClient } from "@/lib/supabase/server";
-import { canRecordClientPayment, isClientTerminal } from "@/lib/crm/permissions-clients";
+import { canRecordClientPayment } from "@/lib/crm/permissions-clients";
 import type { CrmClient, CrmLead } from "@/lib/types/crm";
 
 function readString(formData: FormData, key: string): string {
@@ -236,72 +236,22 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
 
   const admin = createAdminClient();
 
-  // Terminal state guard: do NOT allow new payments against alumni or
-  // withdrawn clients. Refunds for withdrawn clients go through the
-  // closure refund flow, not this action.
-  const { data: clientRow } = await admin
-    .from("crm_clients")
-    .select("status")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (!clientRow) {
-    redirectClient(clientId, "error", "Client not found.", returnTo);
-  }
-  if (isClientTerminal(clientRow as Pick<CrmClient, "status">)) {
-    redirectClient(
-      clientId,
-      "error",
-      `Cannot record a payment against a ${(clientRow as Pick<CrmClient, "status">).status} client.`,
-      returnTo
-    );
-  }
-  const { data: paymentRow, error: paymentError } = await admin
-    .from("crm_client_payments")
-    .insert({
-      client_id: clientId,
-      amount,
-      currency,
-      paid_at: paidAt.toISOString(),
-      method,
-      reference,
-      notes,
-      recorded_by_user_id: me.authUserId,
-    })
-    .select("id")
-    .single();
-
-  if (paymentError || !paymentRow) {
-    redirectClient(
-      clientId,
-      "error",
-      `Could not record payment: ${paymentError?.message ?? "unknown error"}`,
-      returnTo
-    );
-  }
-
-  const { error: activityError } = await admin.from("crm_client_activities").insert({
-    client_id: clientId,
-    activity_type: "payment_recorded",
-    actor_user_id: me.authUserId,
-    description: `Payment recorded: ${currency} ${amount.toFixed(2)}.`,
-    payload: {
-      payment_id: paymentRow.id,
-      amount,
-      currency,
-      paid_at: paidAt.toISOString(),
-      method,
-      reference,
-    },
+  // Terminal-state guard, payment insert, and activity log run atomically
+  // in crm_record_client_payment (migration 0022). Permission check above
+  // stays in the action; data integrity belongs to the RPC.
+  const { error: rpcError } = await admin.rpc("crm_record_client_payment", {
+    p_client_id: clientId,
+    p_amount: amount,
+    p_currency: currency,
+    p_paid_at: paidAt.toISOString(),
+    p_method: method,
+    p_reference: reference,
+    p_notes: notes,
+    p_actor_user_id: me.authUserId,
   });
 
-  if (activityError) {
-    await admin.from("crm_client_payments").delete().eq("id", paymentRow.id);
-    redirectClient(
-      clientId,
-      "error",
-      `Payment recorded, but activity failed (rolled back): ${activityError.message}`,
-      returnTo
-    );
+  if (rpcError) {
+    redirectClient(clientId, "error", `Could not record payment: ${rpcError.message}`, returnTo);
   }
 
   revalidatePath("/crm/clients");

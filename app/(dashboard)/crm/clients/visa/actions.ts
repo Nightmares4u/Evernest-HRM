@@ -129,7 +129,7 @@ export async function setMilestoneStatus(formData: FormData): Promise<void> {
 
   const loaded = await loadMilestoneWithClient(admin, milestoneId);
   if (!loaded) redirectVisa(clientId, "error", "Milestone not found.");
-  const { milestone, client } = loaded;
+  const { client } = loaded;
   if (!canEditClientMilestone(me, client, meDepartmentName)) {
     redirectVisa(client.id, "error", "Only the assigned counselor, Operations, or super admin can update milestones.");
   }
@@ -141,64 +141,19 @@ export async function setMilestoneStatus(formData: FormData): Promise<void> {
     );
   }
 
-  // Snapshot the original milestone state for A-8 rollback compensation
-  // if the activity-log insert below fails. Will be replaced by a Postgres
-  // RPC wrapper in a follow-up — see CRM_BOARD.md "RPC migration".
-  const original = {
-    status: milestone.status,
-    due_at: milestone.due_at,
-    notes: milestone.notes,
-    completed_at: milestone.completed_at,
-    completed_by_user_id: milestone.completed_by_user_id,
-  };
-
-  const { error: updateError } = await admin
-    .from("crm_client_country_milestones")
-    .update({
-      status: toStatus,
-      due_at: dueAt,
-      notes: note,
-      completed_at: toStatus === "done" ? new Date().toISOString() : null,
-      completed_by_user_id: toStatus === "done" ? me.authUserId : null,
-    })
-    .eq("id", milestone.id);
-
-  if (updateError) {
-    redirectVisa(client.id, "error", `Could not update milestone: ${updateError.message}`);
-  }
-
-  const { error: activityError } = await admin.from("crm_client_activities").insert({
-    client_id: client.id,
-    activity_type: "milestone_status_changed",
-    actor_user_id: me.authUserId,
-    description: `Milestone ${milestone.milestone_code} changed from ${milestone.status} to ${toStatus}.`,
-    payload: {
-      milestone_id: milestone.id,
-      milestone_code: milestone.milestone_code,
-      from_status: milestone.status,
-      to_status: toStatus,
-      note,
-    },
+  // Milestone update + activity log run atomically in
+  // crm_set_milestone_status (migration 0022). The RPC re-checks
+  // terminal state under FOR UPDATE locks to protect against races.
+  const { error: rpcError } = await admin.rpc("crm_set_milestone_status", {
+    p_milestone_id: milestoneId,
+    p_to_status: toStatus,
+    p_due_at: dueAt,
+    p_note: note,
+    p_actor_user_id: me.authUserId,
   });
 
-  if (activityError) {
-    // Compensation: revert the milestone row to its original state so we
-    // don't persist a status change without an audit trail.
-    await admin
-      .from("crm_client_country_milestones")
-      .update({
-        status: original.status,
-        due_at: original.due_at,
-        notes: original.notes,
-        completed_at: original.completed_at,
-        completed_by_user_id: original.completed_by_user_id,
-      })
-      .eq("id", milestone.id);
-    redirectVisa(
-      client.id,
-      "error",
-      `Milestone updated, but activity failed: ${activityError.message} (rolled back).`
-    );
+  if (rpcError) {
+    redirectVisa(client.id, "error", `Could not update milestone: ${rpcError.message}`);
   }
 
   revalidateVisaPaths(client.id);
@@ -322,33 +277,20 @@ async function updateClientStatusWithActivity(
   activityType: "client_status_changed" | "client_status_rolled_back",
   note: string | null
 ): Promise<void> {
-  const fromStatus = client.status;
-  const { error: updateError } = await admin
-    .from("crm_clients")
-    .update({ status: toStatus })
-    .eq("id", client.id);
-
-  if (updateError) throw new Error(`updateClientStatusWithActivity update: ${updateError.message}`);
-
-  const { error: activityError } = await admin.from("crm_client_activities").insert({
-    client_id: client.id,
-    activity_type: activityType,
-    actor_user_id: me.authUserId,
-    description: `Client status changed from ${fromStatus} to ${toStatus}.`,
-    payload: {
-      from: fromStatus,
-      to: toStatus,
-      note,
-      reason: activityType === "client_status_rolled_back" ? note : null,
-    },
+  // Atomic status update + activity log via crm_update_client_status_with_activity
+  // (migration 0022). The RPC re-reads status under FOR UPDATE and rejects the
+  // call if the row no longer matches the expected from-status, so the caller's
+  // TS-side preconditions cannot be undone by a concurrent transition.
+  const { error } = await admin.rpc("crm_update_client_status_with_activity", {
+    p_client_id: client.id,
+    p_expected_from_status: client.status,
+    p_to_status: toStatus,
+    p_activity_type: activityType,
+    p_note: note,
+    p_actor_user_id: me.authUserId,
   });
-
-  if (activityError) {
-    await admin
-      .from("crm_clients")
-      .update({ status: fromStatus })
-      .eq("id", client.id);
-    throw new Error(`updateClientStatusWithActivity activity: ${activityError.message} (rolled back)`);
+  if (error) {
+    throw new Error(`updateClientStatusWithActivity: ${error.message}`);
   }
 }
 
