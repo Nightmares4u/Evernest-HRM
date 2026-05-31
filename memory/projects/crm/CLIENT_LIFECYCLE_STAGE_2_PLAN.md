@@ -551,6 +551,27 @@ until APS milestone is `done`.
 **Exit criteria:** A full lifecycle from conversion to alumni can be
 walked end-to-end.
 
+### Phase 2F-1 — CRM financials + refund hardening (2026-05-31)
+- Migration `0021_crm_refund_policy_hardening.sql`.
+- Route: `/crm/clients/[id]/financials`.
+- Client detail navigation link: Financials.
+- Financials page: total received, total refunded, net received,
+  payment history, refund history.
+- Payment form uses existing `recordClientPayment` action and existing
+  permission model; payments are allowed only for non-terminal clients.
+- Refund form on closure is visible only to super_admin users when
+  `client.status === 'withdrawn_refunded'`.
+- Refund action and `crm_record_client_refund` RPC reject all statuses
+  except `withdrawn_refunded`; alumni is a successful terminal status and
+  cannot receive refunds.
+- Scope exclusions preserved: no invoices, no payroll/commission, no HRM
+  financial integration, no complex accounting.
+
+**Exit criteria:** A super_admin can record payments from the financials
+tab for active clients, all viewers with client access can review payment
+and refund history, and alumni refunds fail from both UI and direct
+action/RPC calls.
+
 ### Phase 2F (deferred — Stage 3) — Client portal
 - Separate auth flow (client_id + password).
 - Client-side upload UI.
@@ -590,7 +611,8 @@ walked end-to-end.
 - **Client code format.** Resolved in Phase 2A: `EN-{YYYY}-{4-digit sequence}`.
 - **Department code/name for "Operations"** — resolved for Stage 2 as hardcoded `Operations`; move to settings/RBAC later.
 - **Multiple counselors per client?** Today, one. Some cases need a primary (counselor) + a docs reviewer in tandem. Defer unless real cases appear.
-- **Refund policy enforcement** — Phase 2E captures free-text reason and amount; policy logic can be added later.
+- **Refund policy enforcement.** Resolved in Phase 2F-1: refunds are
+  super_admin only and valid only for `withdrawn_refunded` clients.
 - **English test re-tests.** If a client takes IELTS twice, do we keep both? Yes — `superseded_by` handles it. Confirm UX shows only the latest.
 - **B2B and Work Permit state machines.** Sketched but not detailed. Both should get their own short planning docs once Stage 2 student flow is in pilot.
 - **Webhooks/notifications when status changes.** Email to client? Stage 3 (portal) — out of scope here.

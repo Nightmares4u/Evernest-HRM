@@ -1,216 +1,87 @@
 # Current State
 
-## Status
+> **Last updated:** 2026-05-31 (Post Stage 2F-1 Financials)
+> **Branch:** `crm-dev`
 
-CRM planning base complete.
+## Status Summary
 
-Stage 1 Phase 1 schema/types prepared in the repo. The Supabase
-migration has been authored but still needs review and application to
-the target Supabase project.
+The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy). The core workflow from raw WhatsApp intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials are fully implemented on `crm-dev`.
 
-Gemini audit approved Stage 1 Phase 1 with one minor fix: CRM leads now
-include `next_followup_at` for scheduled human follow-up tracking.
+### Latest Known Feature / Hardening Commits
+- `7df4746 fix(crm): production-hardening sweep across Stage 1/2 — A-1, terminal locks, activity union`
+- `235b12c docs: sync CRM Stage 2 implementation state`
+- `7e27dbb feat: add CRM client closure and refund flow`
+- `c6e5928 feat: Phase 2C applications + Phase 2D country milestones + transaction policy`
+- `2fa2e43 feat: Phase 2B client documents + Gemini audit fix-ups (migration 0017)`
 
-Stage 1 decisions locked on 2026-05-12 — see `STAGE_1_DECISIONS.md`.
-Implementation spec for Codex — see `CODEX_STAGE_1_PACKET.md`.
+## Feature State by Stage
 
-Phase 1 implementation is complete: CRM schema foundation, CRM
-TypeScript domain types, and CRM planning state notes are in place.
+### Stage 1 (Lead Management) - Completed
+- **Raw Inbox vs. Leads:** Raw incoming messages are separate from qualified leads.
+- **Explicit Promotion:** Lead promotion from the raw inbox is a deliberate manual action.
+- **Parser:** A rule-based structured parser extracts data on intake creation. (Gemini AI parser is deferred).
+- **Assignment Routing:** The receiving source WhatsApp number drives primary ownership. Fallback counselor routing is supported per number. Assignment rules engine acts strictly as a fallback mechanism for complex cases.
+- **Transfers:** Counselor-to-counselor transfers/handoffs are a first-class workflow with an explicit request/accept/reject flow.
+- **Workbenches:** Lead detail includes a counselor workbench for notes, status changes, and follow-up scheduling. A read-only follow-up board tracks due tasks.
 
-Stage 1 Phase 2 admin config/raw inbox UI has been implemented in the
-existing HRM app. It adds super-admin CRM admin screens, WhatsApp number
-mapping, campaign/source mapping, a raw inbox view, and manual/mock raw
-intake creation for testing. Real WhatsApp API/webhook integration,
-parser, auto-assignment, Gemini integration, and downstream client/case
-systems remain pending.
+### Stage 2A-2E (Client Lifecycle) - Completed
+- **Phase 2A (Conversion):** A lead only converts to a client when `agreement_signed_at` and `advance_paid_at` are provided. A unique client code is generated.
+- **Phase 2B (Documents):** Private document registry utilizing Supabase Storage and 15-minute signed URLs. Re-uploads use a `superseded_by_id` pointer for audit trails.
+- **Phase 2C (Applications):** Per-university application rows. A client can have at most one accepted application.
+- **Phase 2D (Visa Milestones):** Country-driven milestone checklists. A client cannot enter `visa_submitted` unless required milestones are `done` or `not_applicable`.
+- **Phase 2E (Closure):** Closure states include `pre_departure`, `departed`, `alumni` (successful completion), and `withdrawn_refunded` (failure/withdrawal). Terminal clients (`alumni`, `withdrawn_refunded`) are locked from normal workflow mutations. Phase 2E actions are fully RPC-first for atomic writes.
 
-Stage 1 Phase 3 has been implemented on `crm-dev`: raw inbox detail,
-structured rule-based parsing for the 7-question reply, raw intake
-promotion to CRM leads, CRM lead list/detail pages, activity timeline
-display, and super-admin manual lead assignment. This remains manual and
-rule-based only; no real WhatsApp API, webhook, Gemini integration,
-auto-assignment engine, invoice/document/client portal, or HRM task sync
-has been added.
+### Phase 2F-1 (Client Financials) - Completed
+- **Financials Tab:** `/crm/clients/[id]/financials` tracks client-level payments and refunds.
+- **Terminal State Lock:** Payments are allowed only on non-terminal clients. Refunds are NOT allowed on `alumni` clients (hardened in both UI and Postgres RPC `crm_record_client_refund`).
+- **Refund Policy:** Refunds are restricted to the `withdrawn_refunded` closure path and are strictly a `super_admin` action.
 
-Stage 1 Phase 4 has been implemented on `crm-dev`: super-admin
-assignment rule management, deterministic assignment rule matching, and
-an explicit "Auto-assign by rules" action on lead detail. Rules can
-match product/category, country, city, branch, WhatsApp number, and
-campaign/source, then assign directly to a required employee/counselor.
-Branch is only optional matching metadata in Stage 1, not the primary
-assignment target. Assignment does not auto-run after promotion yet.
+## Pending / Planned Work
 
-Stage 1 Phase 5 has been implemented on `crm-dev`: WhatsApp number
-ownership is now the primary assignment model. Each WhatsApp number can
-have an `assigned_employee_id`. On promotion, the raw intake's source
-WhatsApp number (or its campaign's parent WhatsApp number) is resolved
-and the lead is auto-assigned to that counselor using
-`method = auto_source_owner`. The existing rule engine remains
-unchanged and runs only as a fallback when no source owner matches. The
-"Auto-assign by rules" button on the lead detail page is now
-"Auto-assign lead" and runs the waterfall:
+- **Admin Financials:** (Next Immediate) Separate, company-wide view combining CRM inflow (payments/refunds) with HRM outflow (payroll).
+- **Full Regression Testing:** Manual smoke testing across Stage 2 lifecycle paths.
+- **WhatsApp API MVP:** Webhook verification, receiving incoming Meta messages, mapping `phone_number_id` to `crm_whatsapp_numbers`, and raw inbox creation + auto-parse. (No auto-promote/chatbot yet).
+- **UX Polish:** Refining the activity timeline visuals (Atomic CRM style) and lead boards after functional finalization.
+- **Gemini Chatbot / Parser:** Deferred.
+- **Stage 3 Client Portal:** Deferred.
 
-  1. lead already assigned → no-op
-  2. WhatsApp number owner (lead → number, else campaign → number)
-  3. assignment rule engine (priority + specificity, unchanged)
-  4. otherwise: sent_to_review
+## Current Migrations Map
+- `0009_crm_stage_1_foundation.sql`
+- `0010_crm_assignment_rules_phase_4.sql`
+- `0011_crm_number_ownership.sql`
+- `0012_crm_whatsapp_number_fallback.sql`
+- `0013_crm_lead_transfers.sql`
+- `0014_crm_followup_activity_types.sql`
+- `0015_crm_clients_phase_2a.sql`
+- `0017_crm_client_documents_phase_2b.sql`
+- `0018_crm_client_applications_phase_2c.sql`
+- `0019_crm_client_country_milestones_phase_2d.sql`
+- `0020_crm_client_closure_phase_2e.sql`
+- `0021_crm_refund_policy_hardening.sql`
 
-Campaigns inherit ownership through their parent WhatsApp number. There
-is no `assigned_employee_id` on `crm_campaign_sources`. The parser
-remains for qualification and reporting only — it is not part of the
-assignment path.
+## Current Route Inventory
 
-Stage 1 Phase 5 now also supports temporary per-number fallback
-counselor routing. Each `crm_whatsapp_numbers` row can define an active
-`fallback_employee_id` with optional reason/start/end window. When the
-fallback is active and within its time window, new leads from that
-receiving number route to the fallback counselor; otherwise they route
-to the default `assigned_employee_id`. Campaigns still inherit through
-their parent WhatsApp number. Existing assigned leads are not
-automatically reassigned.
+**Staff Routes:**
+- `/crm/inbox` (List) & `/crm/inbox/[id]` (Detail)
+- `/crm/leads` (List) & `/crm/leads/[id]` (Detail)
+- `/crm/leads/follow-ups` (Board)
+- `/crm/transfers` (Pending requests)
+- `/crm/clients` (List)
+- `/crm/clients/[id]` (Detail)
+- `/crm/clients/[id]/documents`
+- `/crm/clients/[id]/applications`
+- `/crm/clients/[id]/visa`
+- `/crm/clients/[id]/closure`
+- `/crm/clients/[id]/financials`
 
-Stage 1 Phase 4.5 cleanup has also landed: manual/mock raw intake now
-auto-runs the rule-based parser on creation while promotion remains
-explicit, the sidebar groups CRM links separately from HRM/admin links
-with raw inbox hidden from non-super-admin users, and fallback-window
-evaluation now has one shared helper.
+**Admin Routes:**
+- `/admin/crm`
+- `/admin/crm/whatsapp-numbers`
+- `/admin/crm/campaign-sources`
+- `/admin/crm/assignment-rules`
+- `/admin/crm/transfers`
+- `/admin/crm/clients/conversion-queue`
+- `/admin/crm/clients/doc-review`
 
-Stage 1 Phase 5 transfer/handoff foundation migration has been added:
-pending counselor-to-counselor handoff requests live in
-`crm_lead_transfers`, not `crm_lead_assignments`. Actual ownership
-changes still belong in `crm_lead_assignments` only after a transfer is
-accepted or admin-overridden. Transfer UI and server actions are not
-built yet.
-
-Stage 1 T10B has been implemented on `crm-dev`: the lead detail page now
-has a counselor lead workbench for internal notes, lead status updates,
-follow-up scheduling, and follow-up completion. These actions write to
-`crm_lead_activities` using `note_added`, `status_changed`,
-`followup_scheduled`, and `followup_completed`, and follow-up scheduling
-uses the existing `crm_leads.next_followup_at` column.
-
-Stage 1 T10C has been implemented on `crm-dev`: `/crm/leads/follow-ups`
-now provides a read-only due/overdue follow-up board grouped by
-`crm_leads.next_followup_at`, with server-side PKT bucket math, URL
-filters, counselor scoping, and no drag/drop or mutation actions.
-
-## Current Goal
-
-Stage 2 is feature-complete from lead conversion through alumni /
-withdrawn closure. Next work should focus on manual end-to-end testing,
-RPC migration of older multi-table Stage 2A-2D actions, T10D activity
-timeline polish, and Stage 3 client portal planning.
-
-## Working Philosophy
-
-- WhatsApp-first, not form-first.
-- CRM is the control layer.
-- HRM remains the employee/task/payroll foundation.
-- Postgres/Supabase preferred.
-- Avoid chatbot logic.
-- Avoid overengineering.
-- Plan before implementation.
-
-## Current Stage 1 Boundary
-
-Stage 1 ends at:
-
-Raw WhatsApp message -> structured intake -> parsed lead details -> assigned branch/agent -> human follow-up.
-
-Stage 1 excludes:
-
-- Full AI chatbot
-- Full Meta spend sync
-- Client portal
-- Invoice system
-- University database
-- Commission/payroll integration
-- Advanced reporting
-
----
-
-## Stage 2 — Phase 2A landed (2026-05-22)
-
-Conversion event + client shell + admin conversion queue shipped.
-
-- Tables added: `crm_clients`, `crm_client_activities`, `crm_client_payments` (migration `0015_crm_clients_phase_2a.sql`).
-- Routes added: `/crm/clients`, `/crm/clients/[id]`, `/admin/crm/clients/conversion-queue`.
-- Conversion panel added to `/crm/leads/[id]` (visible to assigned counselor + super_admin).
-
-### Schema decisions resolved during 2A
-
-- **Lead → Client UUID strategy: FK-link.** `crm_clients.id` is its own uuid; `crm_clients.lead_id` is a NOT NULL UNIQUE FK to `crm_leads.id`. (Plan §13 open Q resolved.)
-- **Client code format: `EN-{YYYY}-{4-digit zero-padded sequence}`** generated via a global Postgres sequence `crm_client_code_seq`. The year prefix is the creation year in Asia/Karachi. Example: `EN-2026-0001`. (Plan §13 open Q resolved.)
-- **Conversion gate location:** `agreement_signed_at` and `advance_paid_at` live on the **client** row, not the lead. The conversion form is the only way to populate them; this implicitly enforces the gate. (Resolves contradiction between Plan §3 and Plan §8.1.)
-
-## Stage 2 — Phase 2B landed (2026-05-23)
-
-Document registry + upload + review shipped.
-
-- Table added: `crm_client_documents` (migration `0017_crm_client_documents_phase_2b.sql`).
-- Storage bucket: `crm-client-docs` (private, signed URLs, 15-min TTL).
-- Routes added: `/crm/clients/[id]/documents`, `/admin/crm/clients/doc-review`.
-- Doc state machine: `uploaded → under_review → approved | rejected_resubmit | expired`.
-- Re-upload supported via `superseded_by_id`; old file kept in Storage for audit.
-- Doc registry codes locked in `lib/types/crm.ts` (`CRM_DOC_CODES`), including `apostille_academic_docs` and `apostille_visa_docs` for country-specific visa stage docs.
-
-### Permission model for clients + documents
-
-- View clients: super_admin + assigned counselor + **branch_manager / assistant_manager / manager / admin_hr in same branch** (`canViewCrmClient`).
-- Verify documents (upload / claim / approve / reject): super_admin + assigned counselor + **Operations department** (`canVerifyClientDoc`). Branch managers may view but cannot verify unless also the assigned counselor.
-- The "Operations" department name is hardcoded in `lib/crm/permissions-clients.ts` (`OPS_DEPARTMENT_NAME`). Move to settings table when RBAC migration lands.
-
-## Stage 2 — Phase 2C landed (2026-05-23)
-
-Per-university applications shipped.
-
-- Table added: `crm_client_applications` (migration `0018_crm_client_applications_phase_2c.sql`).
-- Enums: `crm_client_application_status` (draft → submitted → under_review → offer | rejected | waitlisted → accepted | declined | withdrawn), `crm_client_application_intake_term` (fall | spring | summer).
-- Partial unique index: at most one application per client may be in `accepted` status.
-- Routes added: `/crm/clients/[id]/applications`.
-- Server actions: createApplication, updateApplicationFields, transitionApplicationStatus, deleteApplication.
-- Auto-bump rules per Plan §4: an app moving to `submitted` bumps client `onboarding|doc_review|uni_selection` → `applying`; any app in `offer` while client is `applying` bumps to `offer_in_hand`; moving an app to `accepted` bumps client to `offer_accepted` (one accepted per client enforced).
-- Permission predicate added: `canEditClientApplication`.
-
-## Stage 2 — Phase 2D landed (2026-05-23)
-
-Country milestone overlay + visa-stage gate shipped.
-
-- Table added: `crm_client_country_milestones` (migration `0019_crm_client_country_milestones_phase_2d.sql`).
-- Enum: `crm_client_milestone_status` (not_started | in_progress | done | not_applicable).
-- Registry: `CRM_COUNTRY_MILESTONES` in `lib/types/crm.ts` covering 11 countries (italy, south_korea, russia, germany, hungary, us, canada, france, cyprus, turkey, azerbaijan).
-- Route added: `/crm/clients/[id]/visa`.
-- Lazy idempotent seeding via `ensureClientMilestonesSeeded` on first visit.
-- Gate: client cannot transition to `visa_submitted` while any required milestone is unfinished.
-- Status transitions: offer_accepted → visa_prep (forward), visa_prep → visa_submitted (forward, gated), plus super_admin rollbacks both directions.
-- Permission predicates added: `canEditClientMilestone`, `canEditClientStatus`.
-
-### Transaction policy locked (2026-05-23)
-
-Gemini audits of Phases 2A–2D surfaced repeat "orphan row on partial failure" bugs from chaining multiple Supabase writes in a single server action. Locked rule in `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14:
-
-> Any server action that mutates more than one table — or mutates one table and then writes to a `crm_*_activities` table — MUST be implemented as a Postgres function (RPC) and invoked via `admin.rpc(...)`.
-
-- Older 2A-2D multi-table actions still need future RPC/transaction hardening; backlog in `CRM_BOARD.md` tracks the open items.
-- Phase 2E and beyond will be RPC-first from the start.
-
-## Stage 2 — Phase 2E landed (2026-05-23)
-
-Closure flow shipped.
-
-- Tables added: `crm_client_visa_decisions`, `crm_client_refunds`.
-- Columns added to `crm_clients`: 11 new columns for flight/accommodation/briefing, departure/arrival, alumni, and withdrawal metadata.
-- Migration: `0020_crm_client_closure_phase_2e.sql` with 8 Postgres RPCs.
-- First RPC-first phase per Plan §14 transaction policy. Zero compensation patches introduced; partial-failure atomicity now enforced at the DB level for all new closure mutations.
-- RPCs: `crm_record_visa_decision`, `crm_transition_to_pre_departure`, `crm_rollback_to_visa_prep`, `crm_update_pre_departure_fields`, `crm_transition_to_departed`, `crm_transition_to_alumni`, `crm_withdraw_client`, `crm_record_client_refund`.
-- Routes: `/crm/clients/[id]/closure` (new), `/crm/clients/[id]/visa` (extended with decision recording).
-- Permissions added: `canWithdrawClient`, `canRecordClientRefund` (both super_admin only).
-- Status transitions added:
-  - `visa_submitted | visa_decision` → `visa_decision` (record visa decision)
-  - `visa_decision` (granted) → `pre_departure`
-  - `visa_decision` (refused | additional_info_requested) → `visa_prep`
-  - `pre_departure` → `departed`
-  - `departed` → `alumni`
-  - any non-terminal → `withdrawn_refunded` (super_admin only)
-
-Stage 2 is now feature-complete from conversion to alumni / withdrawn. Stage 3 = client portal.
+## Known Backlog & Technical Debt
+- **RPC Migration:** Older Stage 2A-2D multi-table actions (e.g., `convertLeadToClient`, document verification, milestone updates) use sequential TypeScript database writes with manual fallback deletions. They should opportunistically be migrated to Postgres RPCs (following the Stage 2E/2F pattern) to ensure atomic transaction safety.

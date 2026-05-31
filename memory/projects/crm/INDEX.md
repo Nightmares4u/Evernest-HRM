@@ -1,103 +1,103 @@
-# EN CRM — Agent Reference Index
+# EN CRM Documentation Index
 
-> **Read this file FIRST before any other CRM doc.**
-> **Last updated:** 2026-05-23.
->
-> Purpose: tell agents (Claude / Codex / GPT / Gemini) which docs to load
-> for which kind of task. Everything outside this list is either archived
-> or doesn't exist.
+## 1. Purpose
 
----
+This index serves as the master entry point and source of truth for the EN CRM module. It tells agents (Claude, Codex, Gemini, GPT) which documents to read, outlines the current implementation state, and provides operating rules to prevent architectural drift or scope creep.
 
-## How to use this file
+## 2. Current Source of Truth
 
-1. Identify what your task is in the table below.
-2. Open ONLY the docs the table tells you to open. Don't grab everything.
-3. If your task isn't in the table, default to: `CURRENT_STATE.md` +
-   `CRM_MASTER_CONTEXT.md` and stop there until you know more.
-4. **Never read anything from `archive/`** — those docs are pre-Stage-1
-   or superseded. Treat that directory as deleted.
+- **Repo:** `~/EN HRM` (EN CRM is a module built inside the existing HRM monorepo)
+- **Branch:** `crm-dev`
+- **Warning:** The old `evernest-crm-starter` repo is for reference/inspiration only. Do not treat its code or docs as the current implementation state. `crm-dev` is the only source of truth.
 
----
+## 3. Read These First
 
-## Active docs — what each one is for
+1. **`CURRENT_STATE.md`** - The factual record of what is actually implemented and shipped.
+2. **`CRM_BOARD.md`** - The operational task board, backlog, and immediate next steps.
+3. **`CLIENT_LIFECYCLE_STAGE_2_PLAN.md`** - Detailed lifecycle rules for Stage 2 (Conversion, Docs, Applications, Visa, Closure, Financials).
+4. **`STAGE_1_DECISIONS.md`** - Locked architectural and assignment rules for Stage 1 (WhatsApp intake, assignment routing).
+5. **`CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md`** - Long-form architectural overview and agent handoff guide.
 
-### Operating state
+> **Warning:** Do not treat stale docs or plans as implementation truth. Always verify against `CURRENT_STATE.md` and the actual codebase.
 
-| Doc | Use when |
-|---|---|
-| **`CURRENT_STATE.md`** | You need to know what's actually shipped right now. Single source of truth. Updated after every feature lands. |
-| **`CRM_BOARD.md`** | You need to know the active task backlog and priorities. |
+## 4. Current Implementation Snapshot
 
-### Architecture and philosophy
+- **Stage 1 (Lead Management):** Complete.
+- **Stage 2A-2E (Client Lifecycle):** Complete.
+- **Phase 2F-1 (Client Financials & Refund Policy):** Complete.
+- **Admin Financials:** Planned / Next.
+- **WhatsApp API:** Pending (Meta/WABA setup pending).
+- **Gemini Parser / Chatbot:** Deferred.
 
-| Doc | Use when |
-|---|---|
-| **`CRM_MASTER_CONTEXT.md`** | You need the CRM's philosophy: WhatsApp-first, parser vs assignment, transfers as first-class, etc. |
-| **`STAGE_1_DECISIONS.md`** | You need the locked decisions from Stage 1 (roles allowed, what Stage 1 does and does not do). |
-| **`CRM_HRM_INTEGRATION.md`** | You're touching anything that crosses HRM ↔ CRM (employees, branches, roles, tasks). |
-| **`CRM_SETTINGS_INTEGRATION_NOTES.md`** | You're working on permissions, roles, settings, or anything that needs to align with the future System Settings RBAC plan. |
+## 5. Current Route Map
 
-### Plans
+**Staff CRM (Lead Management):**
+- `/crm/inbox` & `/crm/inbox/[id]`
+- `/crm/leads` & `/crm/leads/[id]`
+- `/crm/leads/follow-ups`
+- `/crm/transfers`
 
-| Doc | Use when |
-|---|---|
-| **`CLIENT_LIFECYCLE_STAGE_2_PLAN.md`** | You're building anything Stage 2 (client lifecycle): conversion, documents, applications, country milestones, closure. **All Phase 2A–2F plans live here, in §11.** |
-| **`WHATSAPP_META_PIPELINE.md`** | You're working on the WhatsApp ingestion architecture (Meta API, webhooks, parser pipeline). |
-| **`WHATSAPP_STAGE_1_INTAKE.md`** | You're working on Stage 1 raw intake specifics (mock or real). |
+**Client Lifecycle (Stage 2):**
+- `/crm/clients` & `/crm/clients/[id]`
+- `/crm/clients/[id]/documents`
+- `/crm/clients/[id]/applications`
+- `/crm/clients/[id]/visa`
+- `/crm/clients/[id]/closure`
 
-### Reference (read-only, copy-with-attribution rules)
+**Financials:**
+- `/crm/clients/[id]/financials` (Client-level financials)
 
-| Doc | Use when |
-|---|---|
-| **`REFERENCE_CODE_EXTRACTION_MAP.md`** | You need UI/UX patterns from open-source CRMs. Lists C-01 through C-14 candidates (Atomic CRM MIT, Krayin MIT, Frappe AGPL inspiration-only, etc.). |
-| **`REFERENCE_CRM_INTEGRATION_AUDIT.md`** | Companion to the extraction map — license verification + architectural notes. |
-| **`GEMINI_AUDIT_2026_05_23.md`** | Historical Gemini audit of Stage 2A-2E. Use for known risks/backlog only; verify against current code before treating findings as active. |
+**Admin CRM:**
+- `/admin/crm`
+- `/admin/crm/whatsapp-numbers`
+- `/admin/crm/campaign-sources`
+- `/admin/crm/assignment-rules`
+- `/admin/crm/transfers`
+- `/admin/crm/clients/conversion-queue`
+- `/admin/crm/clients/doc-review`
 
-### Agent continuity
+**Future / Planned Routes:**
+- `/admin/financials` or `/admin/crm/financials` (Admin Financials)
+- `/api/webhooks/whatsapp` (WhatsApp API Webhook)
 
-| Doc | Use when |
-|---|---|
-| **`CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md`** | You're a new agent picking up the project. Long-form architectural overview. |
-| **`INDEX.md`** | This file. |
+## 6. Current Migration Map
 
----
+- `0009_crm_stage_1_foundation.sql`
+- `0010_crm_assignment_rules_phase_4.sql`
+- `0011_crm_number_ownership.sql`
+- `0012_crm_whatsapp_number_fallback.sql`
+- `0013_crm_lead_transfers.sql`
+- `0014_crm_followup_activity_types.sql`
+- `0015_crm_clients_phase_2a.sql`
+- `0017_crm_client_documents_phase_2b.sql`
+- `0018_crm_client_applications_phase_2c.sql`
+- `0019_crm_client_country_milestones_phase_2d.sql`
+- `0020_crm_client_closure_phase_2e.sql`
+- `0021_crm_refund_policy_hardening.sql`
 
-## Task → docs mapping (quick lookup)
+## 7. Current Next Tasks
 
-| Task | Docs to load |
-|---|---|
-| "What's the current state of the CRM?" | `CURRENT_STATE.md` |
-| "What features are next?" | `CRM_BOARD.md` + `CURRENT_STATE.md` |
-| "Build Phase 2B (documents)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §6, §11 + `CURRENT_STATE.md` |
-| "Build Phase 2C (applications)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §5, §11 + `CURRENT_STATE.md` |
-| "Build Phase 2D (country milestones / visa)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §7, §11 + `CURRENT_STATE.md` |
-| "Build Phase 2E (closure / pre-departure / alumni / refund)" | `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §4, §11, §14 + `CURRENT_STATE.md` |
-| "Any server action that touches >1 table" | **MANDATORY:** `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14 (RPC pattern) |
-| "Add a new permission check" | `CRM_SETTINGS_INTEGRATION_NOTES.md` + `STAGE_1_DECISIONS.md` |
-| "Anything that touches HRM employees/branches/roles" | `CRM_HRM_INTEGRATION.md` |
-| "Adapt UI from external CRMs" | `REFERENCE_CODE_EXTRACTION_MAP.md` + `REFERENCE_CRM_INTEGRATION_AUDIT.md` |
-| "Add WhatsApp webhook handling" | `WHATSAPP_META_PIPELINE.md` + `WHATSAPP_STAGE_1_INTAKE.md` |
-| "Onboard onto the CRM project" | `CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md` then this INDEX |
-| "Audit CRM documentation consistency" | `CURRENT_STATE.md` + `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` + `CRM_BOARD.md` + `CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md` + latest `GEMINI_AUDIT_*.md` |
+1. **Admin Financials:** (Company-wide inflow/outflow, combining CRM and HRM).
+2. **Full Regression Testing:** (Manual smoke tests for Stage 2 features).
+3. **WhatsApp API MVP:** (Webhook verification, receive message, map to `phone_number_id`, create raw inbox, auto-parse).
+4. **UX Polish:** (After functional completion).
+5. **RPC Backlog:** (Opportunistically migrate older Stage 2A-2D multi-table writes to RPCs).
 
----
+## 8. Deferred / Do Not Build Yet
 
-## Update rules for this index
+- **Stage 3 Client Portal:** (Deferred until staff-side CRM is stable).
+- **Gemini Chatbot / Parser:** (Rule-based parser remains default).
+- **Invoices:** (Not needed yet).
+- **Commissions:** (Out of scope for now).
+- **HRM Task Sync:** (CRM has its own follow-up tracking).
+- **Ad-spend Automation:** (Meta spend sync is deferred).
 
-- When a new active doc lands → add it here with its purpose.
-- When a doc is superseded → move it to `archive/` and remove its row.
-- When CURRENT_STATE changes → update it, but **leave this INDEX alone**
-  unless the doc list changes.
-- This INDEX is documentation about documentation. It doesn't describe
-  features.
+## 9. Agent Operating Rules
 
----
-
-## What's NOT here
-
-- Migration files. Those live in `supabase/migrations/`.
-- Code. Routes live in `app/(dashboard)/crm/*` and `app/(dashboard)/admin/crm/*`.
-- HRM docs. Those live in `memory/projects/hrm/` (separate INDEX should
-  exist there eventually — not yet).
-- Run-of-the-mill todos. Those live in `CRM_BOARD.md`.
+- **Read current docs first:** Always check `INDEX.md`, `CURRENT_STATE.md`, and `CRM_BOARD.md` before coding.
+- **No broad feature creep:** Stick to the immediate task. Do not build deferred features.
+- **No `git add .`:** Do not blindly stage files.
+- **No commit / push:** Do not commit or push unless explicitly asked by the user.
+- **Always report:** Detail the files changed, build/typecheck status, and migrations needed. Provide a safe `git add` command for the user.
+- **Schema changes = Migrations:** Never alter the database without a new migration file.
+- **Multi-table mutations:** MUST use Postgres RPCs (functions) or, if unavoidable in legacy code, implement manual compensation to prevent orphan rows.

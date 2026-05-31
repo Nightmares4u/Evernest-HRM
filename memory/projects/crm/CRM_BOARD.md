@@ -1,203 +1,72 @@
 # CRM Board
 
-## Backlog
+## Done
 
-- Finalize MVP branch scope
-- Finalize MVP product scope
-- Choose first 2-3 WhatsApp numbers for Stage 1
-- Map first WhatsApp numbers to products/campaigns/branches
-- Decide WhatsApp Cloud API direct versus BSP
-- Confirm Stage 1 greeting text
-- Define mandatory fields before assignment
-- Define low-confidence review owner
-- Confirm initial agents and branch owners
-- Map current WhatsApp numbers
-- Map current Meta campaigns
-- Define lead quality labels
-- Define high-priority lead criteria
-- Define sales lead statuses
-- Define case/application statuses
-- Define document checklist templates
-- Define invoice numbering format
-- Define payment methods
-- Define role permissions
-- Decide same HRM repo versus separate CRM repo
-- Audit candidate CRM repos if provided
-
-## Planning
-
-- CRM master context
-- Project charter
-- WhatsApp and Meta pipeline
-- Stage 1 WhatsApp intake
-- Product requirements
-- Conceptual data model
-- MVP scope
-- CRM/HRM integration
-- Reporting KPIs
-- Automation plan
-- Repo audit criteria
-- Open questions
-- Implementation plan
-
-## Ready For Decision
-
-- WhatsApp-first approach
-- Postgres/Supabase data foundation
-- HRM as employee/task/payroll source
-- No chatbot in MVP
-- No full WhatsApp API before pipeline clarity
-- Manual/CSV campaign data before Meta API if needed
-- Hybrid multiple-number strategy
-- Rule-based parsing before Gemini fallback
-- Raw inbox before qualified CRM lead
-
-## Ready For Build
-
-- Real WhatsApp Cloud API/webhook intake
-- Gemini fallback only after rule-based parser review
-- Round-robin assignment after rule review
-- HRM task sync for follow-up work
+- CRM planning directory created and Initial planning files drafted.
+- Stage 1 Phase 1 schema/types foundation.
+- Stage 1 Phase 2 admin config and raw inbox UI.
+- Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment.
+- Stage 1 Phase 4 employee-direct assignment rules UI and explicit rule-based auto-assignment.
+- Stage 1 Phase 5 WhatsApp number ownership as primary assignment; rules demoted to fallback.
+- Stage 1 Phase 5 temporary per-number fallback counselor routing for leave/break coverage.
+- Stage 1 Phase 4.5 raw intake auto-parse, grouped CRM sidebar navigation, and fallback helper cleanup.
+- Stage 1 Phase 5 lead transfer/handoff schema foundation.
+- CRM follow-up activity enum values for scheduled/completed timeline events.
+- **T10B:** Lead notes + status update + follow-up scheduling UI/actions.
+- **T10C:** Due/overdue follow-up board.
+- Stage 2A: Conversion + client shell.
+- Stage 2B: Document registry + upload + review.
+- Stage 2C: Per-university applications.
+- Stage 2D: Country milestones + visa gate.
+- Stage 2E: Closure, visa decisions, pre-departure, departed, alumni, withdrawals/refunds (RPC-hardened).
+- Stage 2F-1: Client financials / refund policy hardening.
 
 ## In Progress
 
-- **T10D:** Activity timeline polish
+- None.
 
-## Done
+## Next Immediate
 
-- CRM AI Handoff and Reference Architecture knowledge base created
-- CRM planning directory created
-- Initial planning files drafted
-- Stage 1 WhatsApp intake plan drafted
-- Stage 1 data model additions drafted
-- Stage 1 MVP boundaries drafted
-- Stage 1 Phase 1 schema/types foundation
-- Stage 1 Phase 2 admin config and raw inbox UI
-- Stage 1 Phase 3 raw detail, rule-based parser, lead promotion, lead views, and manual assignment
-- Stage 1 Phase 4 employee-direct assignment rules UI and explicit rule-based auto-assignment
-- Stage 1 Phase 5 WhatsApp number ownership as primary assignment; rules demoted to fallback
-- Stage 1 Phase 5 temporary per-number fallback counselor routing for leave/break coverage
-- Stage 1 Phase 4.5 raw intake auto-parse, grouped CRM sidebar navigation, and fallback helper cleanup
-- Stage 1 Phase 5 lead transfer/handoff schema foundation
-- CRM follow-up activity enum values for scheduled/completed timeline events
-- **T10B:** Lead notes + status update + follow-up scheduling UI/actions
-- **T10C:** Due/overdue follow-up board
-- Stage 2A: conversion + client shell
-- Stage 2B: document registry + upload + review
-- Stage 2C: per-university applications
-- Stage 2D: country milestones + visa gate
-- Stage 2E: closure, visa decisions, pre-departure, departed, alumni, withdrawals/refunds
+- **Admin Financials:** `/admin/crm/financials` or `/admin/financials`. Company-wide inflow/outflow combining CRM payments/refunds and HRM payroll.
+- **Full Regression Testing:** Manual end-to-end testing of Stage 2 lifecycle paths and smoke-test verifications.
+- **WhatsApp API MVP:** Real WhatsApp Cloud API/webhook intake (Meta WABA setup). Webhook verification, message reception, mapping to `phone_number_id`, and raw inbox creation.
+- **T10D (UX Polish):** Activity timeline polish (Atomic CRM styling) post-functional completion.
+- **T11 (UX Polish):** Lead Board / Pipeline UI.
 
-## Assignment model (Stage 1)
+## Backlog
 
-- WhatsApp number ownership is the primary source of truth for CRM
-  assignment. Each `crm_whatsapp_numbers` row may have an
-  `assigned_employee_id`.
-- Campaigns inherit ownership through their parent WhatsApp number;
-  there is no `assigned_employee_id` on `crm_campaign_sources`.
-- Promotion auto-assigns from the source owner. The lead detail
-  "Auto-assign lead" button runs the same waterfall on demand.
-- A WhatsApp number can temporarily route new leads to a per-number
-  fallback counselor using `fallback_employee_id`, `fallback_active`,
-  optional reason, and optional start/end timestamps. This does not
-  change the default owner and does not reassign existing leads.
-- The rule engine remains as fallback for advanced/edge cases (shared
-  numbers, transferred campaigns, B2B routing). It is not the default
-  path.
-- The structured parser is for qualification and reporting only — never
-  for primary assignment.
-- Manual/mock raw intake auto-runs the rule-based parser on creation,
-  but lead promotion remains an explicit human action.
-- CRM sidebar links are grouped separately from HRM/admin navigation;
-  raw inbox remains visible to super admins only for now.
-- Pending transfer/handoff requests live in `crm_lead_transfers`.
-  Actual assignment changes remain in `crm_lead_assignments` only after
-  acceptance or admin override. Transfer UI/actions are still pending.
-- Follow-up activity types now include `followup_scheduled` and
-  `followup_completed`; the lead detail workbench can schedule and
-  complete follow-ups using `crm_leads.next_followup_at`.
+- **RPC Migration (High Technical Debt):** Migrate remaining Stage 2A-2D multi-table direct-write actions (e.g., `convertLeadToClient`, `recordClientPayment`) to Postgres RPCs to guarantee transaction atomicity (fixing known Gemini Audit A-1, A-2, A-8, A-9, A-10).
+- **T12:** KPI / Reporting Dashboard.
+- **T13:** RLS / Permission Hardening (Ensure counselors only see their assigned leads).
+- Finalize MVP branch scope and product scope.
+- Define low-confidence review owner.
+- Confirm initial agents and branch owners.
+- Map current Meta campaigns and WhatsApp numbers.
+- Define invoice numbering format and payment methods.
 
-## Risks
+## Deferred / Do Not Build Yet
 
-- WhatsApp attribution may be weak without number/campaign discipline.
+- **Stage 3 Client Portal:** Client-side auth and document uploads.
+- **Gemini Parser / Chatbot:** Fallback AI for raw intake. (Rule-based parsing remains the default).
+- **Invoices:** Deferred.
+- **Commissions:** Deferred.
+- **HRM Task Sync:** Deferred.
+- **Ad-spend Automation:** Meta spend sync deferred.
+
+## Known Risks / Technical Debt
+
+- **Multi-table Write Atomicity:** As flagged in the Gemini 2026-05-23 Audit, `convertLeadToClient` and other Stage 2A-2D actions perform sequential Supabase writes using a manual compensation pattern. These are vulnerable to partial failure and need to be refactored into atomic Postgres RPCs (following the Stage 2E pattern).
+- WhatsApp attribution may be weak without strict number/campaign discipline.
 - Existing WhatsApp numbers may be staff-owned or inconsistently used.
-- A generic CRM repo may fight EN's WhatsApp-first workflow.
 - Combining sales statuses and case statuses may create reporting confusion.
-- Full automation too early may recreate prior low-quality lead clogging.
-- Duplicate HRM employee/branch tables would create long-term data drift.
-- Using Gemini on every message may create avoidable cost.
-- Treating every "hi/details?" as a qualified lead will pollute CRM metrics.
 
----
+## Manual Tests Still Needed
 
-## Backlog from Gemini audit 2026-05-23
-
-These are real findings, parked because they're either non-trivial or
-low-impact at current scale. Tackle when capacity allows.
-
-### Multi-table write atomicity (HIGH per Gemini, LOW probability at 14-person scale)
-
-- **A-1** `convertLeadToClient` — three inserts (client / payment / activity)
-  not wrapped in a transaction. Partial failure can leave an orphan client
-  row without an initial payment. File: `app/(dashboard)/crm/clients/actions.ts`.
-- **A-2** `recordClientPayment` — payment + activity writes pre-date the
-  RPC policy. A compensation delete exists if activity insert fails, but
-  it should still be converted to RPC for true atomicity. Same file.
-
-**Fix path:** wrap each in a Postgres RPC function (Supabase JS client has
-no native transactions). One RPC per multi-table operation.
-
-### Performance polish
-
-- **C-1** `listDocsAwaitingReview` — two reads run sequentially instead of
-  `Promise.all`. Trivial. File: `lib/db/crm.ts` (around the
-  `listDocsAwaitingReview` function).
-
-### Closed by 2026-05-23 fix-up commit
-
-- A-3 (branch manager visibility) — fixed via `canViewCrmClient` predicate.
-- A-4 (document view access cascade) — fixed in `getClientDocumentAccess`.
-- A-5 (payment_id in activity payload) — fixed in `recordClientPayment`.
-- B-1 (conversion gate location) — clarified in CURRENT_STATE.md.
-- B-2 (UUID strategy doc) — documented in CURRENT_STATE.md.
-- B-3 (apostille doc code) — added to `CRM_DOC_CODES`.
-- D-1 (storage path sanitization) — verified safe in
-  `app/(dashboard)/crm/clients/documents/actions.ts`.
-- E-1 (client code format doc) — documented in CURRENT_STATE.md.
-
----
-
-## Backlog from Gemini 2C/2D audit (2026-05-23)
-
-### Transaction integrity (RPC migration)
-
-The transaction policy in `CLIENT_LIFECYCLE_STAGE_2_PLAN.md` §14
-mandates Postgres RPC for any multi-table mutation. Existing Stage 2A-2D
-actions that pre-date the rule have either compensation patches (a
-stopgap) or direct multi-table writes. Convert opportunistically. Phase
-2E is RPC-first and does not introduce new compensation patches.
-
-**Still leaking / highest priority:**
-- A-1 `convertLeadToClient` in `app/(dashboard)/crm/clients/actions.ts`
-  — three sequential inserts (client / payment / activity). Failure of
-  payment or activity insert leaves an orphan client row that blocks
-  re-conversion.
-- A-2 `recordClientPayment` in same file — payment + activity insert
-  sequence. Compensation exists, but RPC is still the target pattern.
-
-**Compensation patched (technical debt, less urgent):**
-- Phase 2B document upload/decision paths in
-  `app/(dashboard)/crm/clients/documents/actions.ts`.
-- Phase 2C application create/status/delete paths in
-  `app/(dashboard)/crm/clients/applications/actions.ts`.
-- A-8 `setMilestoneStatus` in `app/(dashboard)/crm/clients/visa/actions.ts`
-- A-9 `updateClientStatusWithActivity` in same file
-- A-10 `ensureClientMilestonesSeeded` in `lib/db/crm.ts`
-
-**Fix path:** one RPC per action. Template in Plan §14. Each = ~30 lines
-SQL + 3-line action refactor.
-
-### Performance polish (Phase 2B Gemini audit)
-
-- C-1 `listDocsAwaitingReview` in `lib/db/crm.ts` — two reads run
-  sequentially instead of `Promise.all`. Trivial perf fix.
+- Complete regression testing for raw intake auto-parse & promotion.
+- Source owner assignment, fallback routing, and campaign inheritance.
+- Assignment rule fallback logic.
+- Transfer request, accept, reject, cancel, and admin override.
+- Follow-up schedule and completion.
+- Notes and status transitions.
+- Counselor visibility vs. super-admin visibility checks.
+- Verification of older Stage 2A-2D manual compensation rollbacks during simulated failures.
