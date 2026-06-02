@@ -15,7 +15,7 @@ import type { EmployeeProfileVM } from "@/lib/db/queries";
 type Search = { error?: string; ok?: string };
 
 const INPUT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
 export default async function ProfilePage({
   searchParams,
@@ -37,7 +37,7 @@ export default async function ProfilePage({
           {me.appUser.role === "super_admin" && (
             <Link
               href="/employees"
-              className="mt-4 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500"
+              className="mt-4 inline-block text-sm font-medium text-blue-600 hover:text-blue-500"
             >
               Open employee directory
             </Link>
@@ -119,7 +119,7 @@ function PersonalProfileForm({ employee }: { employee: EmployeeProfileVM }) {
         <div className="md:col-span-2">
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Save profile details
           </button>

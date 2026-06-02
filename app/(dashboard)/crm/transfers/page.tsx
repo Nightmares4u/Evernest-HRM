@@ -17,12 +17,12 @@ import type { CrmTransferStatus } from "@/lib/types/crm";
 
 type Search = { error?: string; ok?: string };
 
-const STATUS_TONES: Record<CrmTransferStatus, "green" | "amber" | "red" | "gray" | "indigo"> = {
+const STATUS_TONES: Record<CrmTransferStatus, "green" | "amber" | "red" | "gray" | "blue"> = {
   pending: "amber",
   accepted: "green",
   rejected: "red",
   cancelled: "gray",
-  admin_override: "indigo",
+  admin_override: "blue",
 };
 
 export default async function CrmTransfersPage({
@@ -135,7 +135,7 @@ function IncomingTransferCard({ transfer }: { transfer: CrmLeadTransferVM }) {
           </label>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Accept lead
           </button>
@@ -210,7 +210,7 @@ function LeadSummary({ transfer }: { transfer: CrmLeadTransferVM }) {
     <div>
       <Link
         href={`/crm/leads/${transfer.lead_id}`}
-        className="font-medium text-indigo-600 hover:text-indigo-500"
+        className="font-medium text-blue-600 hover:text-blue-500"
       >
         {title}
       </Link>

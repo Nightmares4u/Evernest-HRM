@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Chip } from "@/components/StatusChip";
+import {
+  ArrowRightLeft,
+  Circle,
+  CheckCircle2,
+  CreditCard,
+  FileText,
+  Flag,
+  GraduationCap,
+  Plane,
+} from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDateTime } from "@/lib/crm/format";
 import {
@@ -10,18 +19,29 @@ import {
   listCrmClientDocuments,
 } from "@/lib/db/crm";
 import type {
-  CrmClientActivity,
   CrmClientPayment,
   CrmClientStatus,
 } from "@/lib/types/crm";
+
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { DataTable, Td } from "@/components/ui/DataTable";
+import { LifecycleTabs } from "@/components/ui/LifecycleTabs";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import {
+  ActivityTimeline,
+  type TimelineItem,
+  type TimelineTone,
+} from "@/components/ui/ActivityTimeline";
 
 type Search = { error?: string; ok?: string };
 
 const STATUS_TONES: Record<
   CrmClientStatus,
-  "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal"
+  "green" | "amber" | "red" | "blue" | "gray" | "yellow" | "teal"
 > = {
-  onboarding: "indigo",
+  onboarding: "blue",
   doc_review: "yellow",
   uni_selection: "blue",
   applying: "amber",
@@ -34,6 +54,22 @@ const STATUS_TONES: Record<
   departed: "green",
   alumni: "gray",
   withdrawn_refunded: "red",
+};
+
+const NEXT_ACTION: Record<CrmClientStatus, string> = {
+  onboarding: "Collect and verify the client's required documents.",
+  doc_review: "Review the documents awaiting approval.",
+  uni_selection: "Shortlist universities and open applications.",
+  applying: "Submit applications and track decisions.",
+  offer_in_hand: "Review offers with the client and accept one.",
+  offer_accepted: "Begin visa preparation.",
+  visa_prep: "Complete the required visa milestones, then submit the file.",
+  visa_submitted: "Await the embassy decision.",
+  visa_decision: "Record the embassy's visa decision.",
+  pre_departure: "Finalise flight, accommodation and pre-departure briefing.",
+  departed: "Confirm arrival and mark the client as alumni.",
+  alumni: "Lifecycle complete — client is an alumnus.",
+  withdrawn_refunded: "Client withdrawn and refunded — terminal state.",
 };
 
 export default async function CrmClientDetailPage({
@@ -57,223 +93,204 @@ export default async function CrmClientDetailPage({
     listCrmClientApplications(client.id),
     getCrmClientForVisaPage(client.id),
   ]);
-  const docsAwaitingReview = documents.filter((document) =>
-    document.doc_state === "uploaded" || document.doc_state === "under_review"
+  const docsAwaitingReview = documents.filter(
+    (document) =>
+      document.doc_state === "uploaded" || document.doc_state === "under_review"
   ).length;
-  const applicationsInFlight = applications.filter((application) =>
-    application.status === "submitted" ||
-    application.status === "under_review" ||
-    application.status === "waitlisted"
+  const applicationsInFlight = applications.filter(
+    (application) =>
+      application.status === "submitted" ||
+      application.status === "under_review" ||
+      application.status === "waitlisted"
   ).length;
   const showVisaBadge =
     Boolean(visaData?.country) &&
     (client.status === "offer_accepted" ||
       client.status === "visa_prep" ||
       client.status === "visa_submitted");
-  const visaMilestonesRemaining = visaData?.isBlockedFromVisaSubmitted.missing.length ?? 0;
+  const visaMilestonesRemaining =
+    visaData?.isBlockedFromVisaSubmitted.missing.length ?? 0;
   const closureBadgeCount =
     client.status === "pre_departure" &&
-    (!client.flight_date || !client.accommodation_details || !client.briefing_completed_at)
+    (!client.flight_date ||
+      !client.accommodation_details ||
+      !client.briefing_completed_at)
       ? 1
       : 0;
 
+  const tabs = [
+    { href: `/crm/clients/${client.id}/documents`, label: "Documents", badge: docsAwaitingReview, badgeTone: "yellow" as const },
+    { href: `/crm/clients/${client.id}/applications`, label: "Applications", badge: applicationsInFlight, badgeTone: "blue" as const },
+    { href: `/crm/clients/${client.id}/visa`, label: "Visa Stage", badge: showVisaBadge ? visaMilestonesRemaining : 0, badgeTone: "red" as const },
+    { href: `/crm/clients/${client.id}/financials`, label: "Financials" },
+    { href: `/crm/clients/${client.id}/closure`, label: "Closure", badge: closureBadgeCount, badgeTone: "amber" as const },
+  ];
+
+  const isTerminal =
+    client.status === "alumni" || client.status === "withdrawn_refunded";
+
+  const timelineItems: TimelineItem[] = activities.map((activity) => {
+    const visual = activityVisual(activity.activity_type);
+    return {
+      id: activity.id,
+      title: formatLabel(activity.activity_type),
+      description: activity.description,
+      at: formatCrmDateTime(activity.created_at),
+      icon: visual.icon,
+      tone: visual.tone,
+    };
+  });
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link href="/crm/clients" className="text-sm text-indigo-600 hover:text-indigo-500">
-              CRM clients
+      <PageHeader
+        title={client.client_code}
+        description={client.lead_customer_name || client.lead_customer_phone}
+        breadcrumbs={
+          <Breadcrumbs
+            items={[
+              { label: "CRM clients", href: "/crm/clients" },
+              { label: client.client_code },
+            ]}
+          />
+        }
+        action={
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/crm/leads/${client.lead_id}`}
+              className="text-sm font-medium text-blue-700 transition-colors hover:text-blue-900"
+            >
+              Back to lead
             </Link>
-            <span className="text-sm text-gray-400">/</span>
-            <span className="text-sm text-gray-500">{client.client_code}</span>
+            <StatusBadge label={formatLabel(client.status)} tone={STATUS_TONES[client.status]} />
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">
-            {client.client_code}
-          </h1>
-          <p className="text-sm text-gray-500">
-            {client.lead_customer_name || client.lead_customer_phone}
-          </p>
-        </div>
-        <Chip label={formatLabel(client.status)} tone={STATUS_TONES[client.status]} />
-      </header>
+        }
+      />
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <nav className="flex flex-wrap gap-2">
-        <Link
-          href={`/crm/clients/${client.id}/documents`}
-          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Documents
-          {docsAwaitingReview > 0 && (
-            <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-              {docsAwaitingReview}
-            </span>
-          )}
-        </Link>
-        <Link
-          href={`/crm/clients/${client.id}/applications`}
-          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Applications
-          {applicationsInFlight > 0 && (
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
-              {applicationsInFlight}
-            </span>
-          )}
-        </Link>
-        <Link
-          href={`/crm/clients/${client.id}/visa`}
-          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Visa stage
-          {showVisaBadge && visaMilestonesRemaining > 0 && (
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-              {visaMilestonesRemaining}
-            </span>
-          )}
-        </Link>
-        <Link
-          href={`/crm/clients/${client.id}/financials`}
-          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Financials
-        </Link>
-        <Link
-          href={`/crm/clients/${client.id}/closure`}
-          className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Closure
-          {closureBadgeCount > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-              {closureBadgeCount}
-            </span>
-          )}
-        </Link>
-      </nav>
-
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5 lg:col-span-2">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">Client shell</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                Phase 2A read-only client record created from a converted lead.
-              </p>
-            </div>
-            <Link
-              href={`/crm/leads/${client.lead_id}`}
-              className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
-            >
-              Back to lead
-            </Link>
+      <div
+        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-5 py-4 ${
+          isTerminal ? "border-gray-200 bg-gray-50" : "border-blue-100 bg-blue-50/60"
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${
+              isTerminal ? "bg-gray-200 text-gray-600" : "bg-blue-900 text-white"
+            }`}
+          >
+            <Flag className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              Next required action
+            </p>
+            <p className="text-sm font-medium text-gray-900">{NEXT_ACTION[client.status]}</p>
           </div>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Info label="Assigned counselor" value={client.assigned_agent_name ?? "Unassigned"} />
-            <Info
-              label="Branch"
-              value={client.branch_code ? `${client.branch_code} - ${client.branch_name}` : "-"}
-            />
-            <Info label="Target country" value={client.target_country ?? "-"} />
-            <Info label="Target level" value={client.target_level ?? "-"} />
-            <Info label="Agreement signed" value={formatCrmDateTime(client.agreement_signed_at)} />
-            <Info label="Advance paid" value={formatCrmDateTime(client.advance_paid_at)} />
-            <Info label="Advance amount" value={formatMoney(client.advance_amount, client.currency)} />
-            <Info label="Total fee" value={formatMoney(client.total_fee, client.currency)} />
-            <Info label="Created" value={formatCrmDateTime(client.created_at)} />
-          </dl>
+        </div>
+        <StatusBadge label={formatLabel(client.status)} tone={STATUS_TONES[client.status]} />
+      </div>
+
+      <LifecycleTabs tabs={tabs} />
+
+      <section className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <SectionCard
+            title="Client shell"
+            description="Phase 2A read-only client record created from a converted lead."
+          >
+            <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Info label="Assigned counselor" value={client.assigned_agent_name ?? "Unassigned"} />
+              <Info
+                label="Branch"
+                value={client.branch_code ? `${client.branch_code} - ${client.branch_name}` : "-"}
+              />
+              <Info label="Target country" value={client.target_country ?? "-"} />
+              <Info label="Target level" value={client.target_level ?? "-"} />
+              <Info label="Agreement signed" value={formatCrmDateTime(client.agreement_signed_at)} />
+              <Info label="Advance paid" value={formatCrmDateTime(client.advance_paid_at)} />
+              <Info label="Advance amount" value={formatMoney(client.advance_amount, client.currency)} />
+              <Info label="Total fee" value={formatMoney(client.total_fee, client.currency)} />
+              <Info label="Created" value={formatCrmDateTime(client.created_at)} />
+            </dl>
+          </SectionCard>
+
+          <Payments payments={payments} />
         </div>
 
-        <Timeline activities={activities} />
+        <div className="lg:col-span-1">
+          <SectionCard
+            title="Activity timeline"
+            description={`${activities.length} event${activities.length === 1 ? "" : "s"}`}
+          >
+            <div className="mt-4">
+              <ActivityTimeline items={timelineItems} />
+            </div>
+          </SectionCard>
+        </div>
       </section>
-
-      <Payments payments={payments} />
     </div>
   );
 }
 
 function Payments({ payments }: { payments: CrmClientPayment[] }) {
+  if (payments.length === 0) {
+    return (
+      <SectionCard title="Payments">
+        <p className="mt-2 text-sm text-gray-500">No payments recorded yet.</p>
+      </SectionCard>
+    );
+  }
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Payments</h2>
-      {payments.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-500">No payments recorded yet.</p>
-      ) : (
-        <div className="mt-4 overflow-hidden rounded-md border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-100 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Paid at</Th>
-                <Th>Amount</Th>
-                <Th>Method</Th>
-                <Th>Reference</Th>
-                <Th>Notes</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {payments.map((payment) => (
-                <tr key={payment.id}>
-                  <Td>{formatCrmDateTime(payment.paid_at)}</Td>
-                  <Td>{formatMoney(payment.amount, payment.currency)}</Td>
-                  <Td>{payment.method ?? "-"}</Td>
-                  <Td>{payment.reference ?? "-"}</Td>
-                  <Td>{payment.notes ?? "-"}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+    <SectionCard title="Payments" description={`${payments.length} recorded`}>
+      <div className="mt-4">
+        <DataTable columns={["Paid at", "Amount", "Method", "Reference", "Notes"]}>
+          {payments.map((payment) => (
+            <tr key={payment.id} className="hover:bg-gray-50">
+              <Td>{formatCrmDateTime(payment.paid_at)}</Td>
+              <Td className="font-medium text-gray-900">{formatMoney(payment.amount, payment.currency)}</Td>
+              <Td>{payment.method ?? "-"}</Td>
+              <Td>{payment.reference ?? "-"}</Td>
+              <Td>{payment.notes ?? "-"}</Td>
+            </tr>
+          ))}
+        </DataTable>
+      </div>
+    </SectionCard>
   );
 }
 
-function Timeline({ activities }: { activities: CrmClientActivity[] }) {
-  return (
-    <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Activity timeline</h2>
-      {activities.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-500">No client activity yet.</p>
-      ) : (
-        <ul className="mt-4 space-y-3">
-          {activities.map((activity) => (
-            <li key={activity.id} className="border-l-2 border-indigo-100 pl-3 text-sm">
-              <div className="font-medium text-gray-900">
-                {formatLabel(activity.activity_type)}
-              </div>
-              <div className="text-gray-500">{activity.description ?? "-"}</div>
-              <div className="mt-1 text-xs text-gray-400">
-                {formatCrmDateTime(activity.created_at)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+function activityVisual(type: string): {
+  icon: React.ReactNode;
+  tone: TimelineTone;
+} {
+  const t = type.toLowerCase();
+  if (t.includes("payment") || t.includes("refund"))
+    return { icon: <CreditCard className="h-4 w-4" />, tone: "green" };
+  if (t.includes("document") || t.includes("doc"))
+    return { icon: <FileText className="h-4 w-4" />, tone: "blue" };
+  if (t.includes("application") || t.includes("offer") || t.includes("uni"))
+    return { icon: <GraduationCap className="h-4 w-4" />, tone: "amber" };
+  if (t.includes("visa"))
+    return { icon: <Plane className="h-4 w-4" />, tone: "teal" };
+  if (t.includes("transfer") || t.includes("assign"))
+    return { icon: <ArrowRightLeft className="h-4 w-4" />, tone: "amber" };
+  if (t.includes("withdraw") || t.includes("alumni") || t.includes("depart") || t.includes("closure"))
+    return { icon: <Flag className="h-4 w-4" />, tone: "gray" };
+  if (t.includes("status") || t.includes("convert") || t.includes("created"))
+    return { icon: <CheckCircle2 className="h-4 w-4" />, tone: "blue" };
+  return { icon: <Circle className="h-3 w-3" />, tone: "gray" };
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
-      <dd className="mt-1 text-sm text-gray-900">{value}</dd>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</dt>
+      <dd className="mt-1 text-sm font-medium text-gray-900">{value}</dd>
     </div>
   );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-      {children}
-    </th>
-  );
-}
-
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-4 py-3 align-top">{children}</td>;
 }
 
 function formatLabel(value: string): string {
@@ -299,5 +316,5 @@ function Notice({
     tone === "green"
       ? "border-green-200 bg-green-50 text-green-700"
       : "border-red-200 bg-red-50 text-red-700";
-  return <div className={`rounded-md border px-4 py-2 text-sm ${classes}`}>{children}</div>;
+  return <div className={`rounded-md border px-4 py-3 text-sm shadow-sm ${classes}`}>{children}</div>;
 }

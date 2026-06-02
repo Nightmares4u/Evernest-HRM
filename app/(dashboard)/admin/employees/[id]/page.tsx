@@ -81,7 +81,7 @@ const USER_ROLES: { value: UserRole; label: string }[] = [
 ];
 const EMPLOYMENT_STATUSES: EmploymentStatus[] = ["active", "inactive", "terminated"];
 const INPUT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
 type Search = { year?: string; month?: string; day?: string; error?: string; ok?: string };
 
@@ -181,7 +181,7 @@ export default async function EmployeeControlPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs text-gray-500">
-            <Link href="/employees" className="text-indigo-600 hover:text-indigo-500">
+            <Link href="/employees" className="text-blue-600 hover:text-blue-500">
               Employees
             </Link>{" "}
             / Attendance control
@@ -193,7 +193,7 @@ export default async function EmployeeControlPage({
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           <Chip label={employee.branch_code ?? "no branch"} tone="gray" />
-          <Chip label={employee.user_role} tone="indigo" />
+          <Chip label={employee.user_role} tone="blue" />
           {employee.attendance_exempt && <Chip label="attendance exempt" tone="gray" />}
           {employee.remote_allowed && <Chip label="remote allowed" tone="blue" />}
         </div>
@@ -230,7 +230,7 @@ export default async function EmployeeControlPage({
         <Stat label="Pending review" value={yearTotals.pendingReview} tone="yellow" />
         <Stat label="On leave" value={yearTotals.onLeave} tone="blue" />
         <Stat label="Day off" value={yearTotals.dayOff} tone="gray" />
-        <Stat label="Remote" value={yearTotals.remote} tone="indigo" />
+        <Stat label="Remote" value={yearTotals.remote} tone="blue" />
         <Stat label="Worked hours" value={Math.round(yearTotals.workedMinutes / 60)} tone="green" />
         <Stat
           label="Deduction days"
@@ -267,7 +267,7 @@ export default async function EmployeeControlPage({
                 key={name}
                 href={`?year=${year}&month=${m}`}
                 className={`rounded-lg bg-white p-3 shadow ring-1 ring-black/5 hover:bg-gray-50 ${
-                  m === month ? "outline outline-2 outline-indigo-300" : ""
+                  m === month ? "outline outline-2 outline-blue-300" : ""
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -479,7 +479,7 @@ function ProfilePanel({
             </div>
           </div>
           <div className="mt-4 flex justify-end">
-            <button type="submit" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+            <button type="submit" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">
               Save employee
             </button>
           </div>
@@ -543,7 +543,7 @@ function PersonalPayrollPanel({
         <div className="flex items-end justify-end md:col-span-2">
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Save personal details
           </button>
@@ -615,7 +615,7 @@ function CalendarGrid({
               href={`?year=${year}&month=${month}&day=${day.iso}`}
               className={`min-h-[8.25rem] border-b border-r border-gray-100 p-2 text-left transition hover:bg-gray-50 ${
                 !day.inMonth ? "bg-gray-50/60 text-gray-400" : display.bg
-              } ${selectedDay === day.iso ? "outline outline-2 outline-indigo-400" : ""}`}
+              } ${selectedDay === day.iso ? "outline outline-2 outline-blue-400" : ""}`}
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="text-xs font-semibold text-gray-700">{Number(day.iso.slice(8, 10))}</span>
@@ -632,7 +632,7 @@ function CalendarGrid({
                   </p>
                 ))}
                 {tasks.slice(0, 2).map((task) => (
-                  <p key={task.id} className="truncate text-indigo-700">
+                  <p key={task.id} className="truncate text-blue-700">
                     {task.title}
                   </p>
                 ))}
@@ -779,7 +779,7 @@ function DayPanel({
           </Link>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Save override
           </button>
@@ -827,7 +827,7 @@ function TaskPanel({
       </div>
       <Link
         href="/admin/tasks/history?range=this_month"
-        className="mt-3 inline-block text-sm text-indigo-600 hover:text-indigo-500"
+        className="mt-3 inline-block text-sm text-blue-600 hover:text-blue-500"
       >
         Done task history →
       </Link>
@@ -835,7 +835,7 @@ function TaskPanel({
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string | number; tone: "green" | "amber" | "orange" | "red" | "blue" | "gray" | "indigo" | "yellow" }) {
+function Stat({ label, value, tone }: { label: string; value: string | number; tone: "green" | "amber" | "orange" | "red" | "blue" | "gray" | "blue" | "yellow" }) {
   const valueClass = {
     green: "text-green-700",
     amber: "text-amber-700",
@@ -843,7 +843,6 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
     red: "text-red-700",
     blue: "text-blue-700",
     gray: "text-gray-700",
-    indigo: "text-indigo-700",
     yellow: "text-yellow-700",
   }[tone];
   return (
@@ -887,7 +886,7 @@ function Checkbox({
         type="checkbox"
         name={name}
         defaultChecked={checked}
-        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
       />
       {label}
     </label>

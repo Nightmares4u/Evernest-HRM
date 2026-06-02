@@ -83,7 +83,7 @@ export default async function MyTasksHistoryPage({
           <h1 className="text-2xl font-semibold text-gray-900">My done tasks</h1>
           <p className="text-sm text-gray-500">
             History of tasks you&apos;ve completed. Switch back to{" "}
-            <Link href="/tasks" className="text-indigo-600 hover:text-indigo-500">
+            <Link href="/tasks" className="text-blue-600 hover:text-blue-500">
               active tasks
             </Link>
             .
@@ -139,7 +139,7 @@ function RangeTabs({
           href={`${basePath}?range=${r.key}`}
           className={`rounded-md px-3 py-1 ring-1 ring-inset ${
             current === r.key
-              ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+              ? "bg-blue-50 text-blue-700 ring-blue-200"
               : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
           }`}
         >
@@ -166,7 +166,7 @@ function Stat({ label, value }: { label: string; value: number }) {
 function priorityTone(p: string) {
   if (p === "urgent") return "red" as const;
   if (p === "low") return "gray" as const;
-  return "indigo" as const;
+  return "blue" as const;
 }
 
 function DoneRow({ t }: { t: TaskRowVM }) {

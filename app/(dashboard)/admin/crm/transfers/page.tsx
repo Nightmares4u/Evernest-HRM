@@ -26,12 +26,12 @@ const STATUSES: StatusFilter[] = [
   "admin_override",
 ];
 
-const STATUS_TONES: Record<CrmTransferStatus, "green" | "amber" | "red" | "gray" | "indigo"> = {
+const STATUS_TONES: Record<CrmTransferStatus, "green" | "amber" | "red" | "gray" | "blue"> = {
   pending: "amber",
   accepted: "green",
   rejected: "red",
   cancelled: "gray",
-  admin_override: "indigo",
+  admin_override: "blue",
 };
 
 export default async function AdminCrmTransfersPage({
@@ -54,7 +54,7 @@ export default async function AdminCrmTransfersPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Link href="/admin/crm" className="text-sm text-indigo-600 hover:text-indigo-500">
+            <Link href="/admin/crm" className="text-sm text-blue-600 hover:text-blue-500">
               CRM admin
             </Link>
             <span className="text-sm text-gray-400">/</span>
@@ -96,7 +96,7 @@ export default async function AdminCrmTransfersPage({
           </label>
           <button
             type="submit"
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+            className="rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
           >
             Filter
           </button>
@@ -170,7 +170,7 @@ function TransferMonitorCard({ transfer }: { transfer: CrmLeadTransferVM }) {
             </label>
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Force accept
             </button>
@@ -217,7 +217,7 @@ function LeadSummary({ transfer }: { transfer: CrmLeadTransferVM }) {
     <div>
       <Link
         href={`/crm/leads/${transfer.lead_id}`}
-        className="font-medium text-indigo-600 hover:text-indigo-500"
+        className="font-medium text-blue-600 hover:text-blue-500"
       >
         {title}
       </Link>

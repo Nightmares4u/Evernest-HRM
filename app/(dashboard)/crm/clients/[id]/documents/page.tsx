@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Chip } from "@/components/StatusChip";
 import { formatCrmDateTime } from "@/lib/crm/format";
 import {
   getCrmClientDocumentPageData,
@@ -26,11 +25,18 @@ import {
 } from "../../documents/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
 
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatCard } from "@/components/ui/StatCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { DataTable, Td } from "@/components/ui/DataTable";
+import { LifecycleTabs } from "@/components/ui/LifecycleTabs";
+
 type Search = { error?: string; ok?: string };
 
 const DOC_STATE_TONES: Record<
   CrmClientDocState,
-  "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal"
+  "green" | "amber" | "red" | "blue" | "gray" | "blue" | "yellow" | "teal"
 > = {
   uploaded: "blue",
   under_review: "yellow",
@@ -58,68 +64,72 @@ export default async function ClientDocumentsPage({
 
   if (!access) notFound();
 
+  const { client } = access;
   const latestDocuments = documents.filter((document) => !document.superseded_by_id);
   const latestByCode = new Map(latestDocuments.map((d) => [d.doc_code, d]));
   const history = groupHistory(documents);
 
   const stats = computeStats(latestByCode);
   const expanded = new Set<CrmDocCategory>(
-    defaultExpandedDocCategories(access.client.target_level)
+    defaultExpandedDocCategories(client.target_level)
   );
+
+  const docsAwaitingReview = latestDocuments.filter((d) =>
+    d.doc_state === "uploaded" || d.doc_state === "under_review"
+  ).length;
+
+  const tabs = [
+    { href: `/crm/clients/${client.id}/documents`, label: "Documents", badge: docsAwaitingReview, badgeTone: "yellow" as const },
+    { href: `/crm/clients/${client.id}/applications`, label: "Applications" },
+    { href: `/crm/clients/${client.id}/visa`, label: "Visa Stage" },
+    { href: `/crm/clients/${client.id}/financials`, label: "Financials" },
+    { href: `/crm/clients/${client.id}/closure`, label: "Closure" },
+  ];
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-sm">
-            <Link href="/crm/clients" className="text-indigo-600 hover:text-indigo-500">
+      <PageHeader
+        title="Client Documents"
+        description={`${client.lead_customer_name || client.lead_customer_phone} ${client.target_level ? `· ${formatLevel(client.target_level)}` : ""} ${client.target_country ? `· ${client.target_country}` : ""}`}
+        breadcrumbs={
+          <div className="flex items-center gap-2 mb-2 text-sm">
+            <Link href="/crm/clients" className="font-medium text-blue-600 hover:text-blue-500 transition-colors">
               CRM clients
             </Link>
             <span className="text-gray-400">/</span>
             <Link
-              href={`/crm/clients/${access.client.id}`}
-              className="text-indigo-600 hover:text-indigo-500"
+              href={`/crm/clients/${client.id}`}
+              className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
             >
-              {access.client.client_code}
+              {client.client_code}
             </Link>
             <span className="text-gray-400">/</span>
             <span className="text-gray-500">Documents</span>
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">Client documents</h1>
-          <p className="text-sm text-gray-500">
-            {access.client.lead_customer_name || access.client.lead_customer_phone}
-            {access.client.target_level && (
-              <>
-                {" "}·{" "}
-                <span className="font-medium text-gray-700">
-                  {formatLevel(access.client.target_level)}
-                </span>
-              </>
-            )}
-            {access.client.target_country && <> · {access.client.target_country}</>}
-          </p>
-        </div>
-        <Link
-          href={`/crm/clients/${access.client.id}`}
-          className="rounded-md bg-white px-3 py-1.5 text-sm text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Back to client shell
-        </Link>
-      </header>
+        }
+        action={
+          <Link
+            href={`/crm/clients/${client.id}`}
+            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
+          >
+            Back to client shell
+          </Link>
+        }
+      />
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      {/* Stat strip */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <LifecycleTabs tabs={tabs} />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Approved" value={stats.approved} tone="green" />
         <StatCard label="Pending review" value={stats.pending} tone="amber" />
         <StatCard label="Needs resubmit" value={stats.rejected} tone="red" />
         <StatCard label="Not uploaded" value={stats.missing} tone="gray" />
-      </section>
+      </div>
 
-      {/* Categorized doc registry */}
-      <section className="space-y-3">
+      <div className="space-y-4">
         {CRM_DOC_CATEGORIES.map((category) => {
           const codesInCategory = CRM_DOC_CODES.filter(
             (code) => CRM_DOC_CODE_CATEGORY[code] === category.code
@@ -136,32 +146,32 @@ export default async function ClientDocumentsPage({
               <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-5 py-4">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900">{category.label}</h2>
-                  <p className="text-xs text-gray-500">{category.description}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{category.description}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   {counts.approved > 0 && (
-                    <Chip label={`${counts.approved} approved`} tone="green" />
+                    <StatusBadge label={`${counts.approved} approved`} tone="green" />
                   )}
                   {counts.pending > 0 && (
-                    <Chip label={`${counts.pending} pending`} tone="amber" />
+                    <StatusBadge label={`${counts.pending} pending`} tone="amber" />
                   )}
                   {counts.rejected > 0 && (
-                    <Chip label={`${counts.rejected} needs resubmit`} tone="red" />
+                    <StatusBadge label={`${counts.rejected} needs resubmit`} tone="red" />
                   )}
                   {counts.missing > 0 && (
-                    <Chip label={`${counts.missing} not uploaded`} tone="gray" />
+                    <StatusBadge label={`${counts.missing} missing`} tone="gray" />
                   )}
                 </div>
               </summary>
 
-              <div className="border-t border-gray-100 px-5 py-4">
-                <div className="grid gap-3 lg:grid-cols-2">
+              <div className="border-t border-gray-100 bg-gray-50/50 px-5 py-4">
+                <div className="grid gap-4 lg:grid-cols-2">
                   {codesInCategory.map((code) => {
                     const document = latestByCode.get(code);
                     return (
                       <DocSlot
                         key={code}
-                        clientId={access.client.id}
+                        clientId={client.id}
                         code={code}
                         document={document}
                         history={history.get(code) ?? []}
@@ -174,7 +184,7 @@ export default async function ClientDocumentsPage({
             </details>
           );
         })}
-      </section>
+      </div>
     </div>
   );
 }
@@ -209,61 +219,58 @@ function DocSlot({
     : "ring-gray-200";
 
   return (
-    <article className={`rounded-lg bg-white p-4 ring-1 ring-inset ${ringColor}`}>
-      {/* Header row: doc name + state chip */}
+    <article className={`rounded-lg bg-white p-4 shadow-sm ring-1 ring-inset ${ringColor}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-gray-900">
             {CRM_DOC_CODE_LABELS[code]}
           </h3>
-          <p className="text-[11px] uppercase tracking-wide text-gray-400">{code}</p>
+          <p className="text-[11px] uppercase tracking-wide text-gray-400 mt-0.5">{code}</p>
         </div>
         {hasFile ? (
-          <Chip label={formatLabel(state)} tone={DOC_STATE_TONES[state]} />
+          <StatusBadge label={formatLabel(state)} tone={DOC_STATE_TONES[state]} />
         ) : (
-          <Chip label="Not uploaded" tone="gray" />
+          <StatusBadge label="Not uploaded" tone="gray" />
         )}
       </div>
 
-      {/* File details (only if a doc exists) */}
       {hasFile && document && (
-        <div className="mt-3 space-y-1 text-xs text-gray-600">
-          <div className="truncate font-medium text-gray-700">
+        <div className="mt-4 space-y-1.5 text-xs text-gray-600">
+          <div className="truncate font-medium text-gray-800">
             {document.file_name}
             <span className="ml-2 text-gray-400">· {formatFileSize(document.file_size)}</span>
           </div>
           <div>
-            Uploaded by {document.uploader_name ?? "—"} ·{" "}
+            <span className="text-gray-400">Uploaded by</span> {document.uploader_name ?? "—"} <span className="text-gray-400">·</span>{" "}
             {formatCrmDateTime(document.uploaded_at)}
           </div>
           {document.reviewer_name && (
             <div>
-              Reviewed by {document.reviewer_name} ·{" "}
+              <span className="text-gray-400">Reviewed by</span> {document.reviewer_name} <span className="text-gray-400">·</span>{" "}
               {formatCrmDateTime(document.reviewed_at)}
             </div>
           )}
           {document.decision_note && isRejected && (
-            <div className="mt-2 rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
-              {document.decision_note}
+            <div className="mt-2 rounded-md bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-700">
+              <span className="font-semibold">Rejection reason:</span> {document.decision_note}
             </div>
           )}
         </div>
       )}
 
-      {/* Actions */}
       {hasFile && document && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <form action={downloadClientDocument}>
             <input type="hidden" name="client_id" value={clientId} />
             <input type="hidden" name="document_id" value={document.id} />
-            <button className="rounded-md bg-white px-2.5 py-1 text-xs text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50">
+            <button className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors">
               Download
             </button>
           </form>
           {canManage && document.doc_state === "uploaded" && (
             <form action={claimDocumentForReviewForm}>
               <input type="hidden" name="document_id" value={document.id} />
-              <button className="rounded-md bg-white px-2.5 py-1 text-xs text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50">
+              <button className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors">
                 Claim for review
               </button>
             </form>
@@ -271,7 +278,7 @@ function DocSlot({
           {canDecide && (
             <form action={approveClientDocumentForm}>
               <input type="hidden" name="document_id" value={document.id} />
-              <button className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-500">
+              <button className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-500 transition-colors">
                 Approve
               </button>
             </form>
@@ -279,7 +286,6 @@ function DocSlot({
         </div>
       )}
 
-      {/* Reject form (inline) */}
       {canDecide && document && (
         <form action={rejectClientDocumentForm} className="mt-3 flex flex-wrap items-end gap-2">
           <input type="hidden" name="document_id" value={document.id} />
@@ -287,49 +293,39 @@ function DocSlot({
             name="note"
             required
             placeholder="Rejection reason"
-            className="min-w-0 flex-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-900"
+            className="min-w-0 flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-900 focus:border-red-500 focus:ring-red-500 outline-none"
           />
-          <button className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500">
+          <button className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 transition-colors">
             Reject
           </button>
         </form>
       )}
 
-      {/* Upload / Re-upload */}
-      <details className="mt-3 rounded-md border border-dashed border-gray-200 bg-gray-50">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-700">
-          {hasFile ? "Re-upload / history" : "Upload file"}
+      <details className="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50/50">
+        <summary className="cursor-pointer px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-100/50 transition-colors">
+          {hasFile ? "Re-upload / History" : "Upload file"}
         </summary>
-        <div className="space-y-3 px-3 py-3">
+        <div className="space-y-4 p-4 border-t border-dashed border-gray-200">
           <CompactUploadForm clientId={clientId} code={code} />
           {history.length > 1 && (
-            <div className="rounded-md border border-gray-200 bg-white">
-              <table className="min-w-full divide-y divide-gray-100 text-xs">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <Th>Version</Th>
-                    <Th>Status</Th>
-                    <Th>Uploaded</Th>
+            <div className="mt-4">
+              <DataTable columns={["Version", "Status", "Uploaded"]}>
+                {history.map((row) => (
+                  <tr key={row.id} className="hover:bg-gray-50">
+                    <Td>
+                      <div className="font-medium text-gray-900">{row.file_name}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{formatFileSize(row.file_size)}</div>
+                    </Td>
+                    <Td>
+                      <StatusBadge
+                        label={formatLabel(effectiveDocState(row))}
+                        tone={DOC_STATE_TONES[effectiveDocState(row)]}
+                      />
+                    </Td>
+                    <Td className="whitespace-nowrap text-xs">{formatCrmDateTime(row.uploaded_at)}</Td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {history.map((row) => (
-                    <tr key={row.id}>
-                      <Td>
-                        <div className="font-medium text-gray-900">{row.file_name}</div>
-                        <div className="text-[11px] text-gray-400">{formatFileSize(row.file_size)}</div>
-                      </Td>
-                      <Td>
-                        <Chip
-                          label={formatLabel(effectiveDocState(row))}
-                          tone={DOC_STATE_TONES[effectiveDocState(row)]}
-                        />
-                      </Td>
-                      <Td className="whitespace-nowrap">{formatCrmDateTime(row.uploaded_at)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </DataTable>
             </div>
           )}
         </div>
@@ -340,7 +336,7 @@ function DocSlot({
 
 function CompactUploadForm({ clientId, code }: { clientId: string; code: CrmDocCode }) {
   return (
-    <form action={uploadClientDocumentForm} className="space-y-2">
+    <form action={uploadClientDocumentForm} className="space-y-3">
       <input type="hidden" name="client_id" value={clientId} />
       <input type="hidden" name="doc_code" value={code} />
       <input
@@ -348,21 +344,21 @@ function CompactUploadForm({ clientId, code }: { clientId: string; code: CrmDocC
         type="file"
         required
         accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.docx,application/pdf,image/jpeg,image/png,image/heic,image/heif,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        className="block w-full text-xs text-gray-700 file:mr-2 file:rounded-md file:border-0 file:bg-gray-900 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-white"
+        className="block w-full text-xs text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-blue-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-blue-800 file:transition-colors"
       />
-      <div className="grid gap-2 sm:grid-cols-[8rem_1fr_auto]">
+      <div className="flex flex-wrap gap-2">
         <input
           name="expires_at"
           type="date"
           placeholder="Expires"
-          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-900"
+          className="w-32 rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         />
         <input
           name="note"
           placeholder="Note (optional)"
-          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-900"
+          className="flex-1 min-w-[120px] rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         />
-        <button className="rounded-md bg-gray-900 px-3 py-1 text-xs font-semibold text-white hover:bg-gray-800">
+        <button className="rounded-md bg-blue-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-800 transition-colors">
           Upload
         </button>
       </div>
@@ -370,31 +366,6 @@ function CompactUploadForm({ clientId, code }: { clientId: string; code: CrmDocC
         PDF, JPG, PNG, HEIC, or DOCX · Max 25 MB
       </p>
     </form>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "green" | "amber" | "red" | "gray";
-}) {
-  const toneClass =
-    tone === "green"
-      ? "bg-green-50 ring-green-200 text-green-900"
-      : tone === "amber"
-      ? "bg-amber-50 ring-amber-200 text-amber-900"
-      : tone === "red"
-      ? "bg-red-50 ring-red-200 text-red-900"
-      : "bg-gray-50 ring-gray-200 text-gray-900";
-  return (
-    <div className={`rounded-lg p-4 ring-1 ring-inset ${toneClass}`}>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
-      <div className="text-xs font-medium uppercase tracking-wide opacity-80">{label}</div>
-    </div>
   );
 }
 
@@ -406,7 +377,6 @@ function bucketOf(state: CrmClientDocState | "missing"): DocStateBucket {
   if (state === "approved") return "approved";
   if (state === "rejected_resubmit") return "rejected";
   if (state === "missing") return "missing";
-  // uploaded | under_review | expired all roll into "pending"
   return "pending";
 }
 
@@ -488,18 +458,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-3 py-2 align-top ${className}`}>{children}</td>;
-}
-
 function Notice({
   children,
   tone,
@@ -511,5 +469,5 @@ function Notice({
     tone === "green"
       ? "border-green-200 bg-green-50 text-green-700"
       : "border-red-200 bg-red-50 text-red-700";
-  return <div className={`rounded-md border px-4 py-2 text-sm ${classes}`}>{children}</div>;
+  return <div className={`rounded-md border px-4 py-3 text-sm shadow-sm ${classes}`}>{children}</div>;
 }

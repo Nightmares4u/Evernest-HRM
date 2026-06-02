@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDateTime } from "@/lib/crm/format";
-import { getCrmClientForClosurePage } from "@/lib/db/crm";
+import {
+  getCrmClientForClosurePage,
+  listCrmClientApplications,
+  listCrmClientDocuments,
+} from "@/lib/db/crm";
 import {
   CRM_CLIENT_VISA_DECISION_LABELS,
   type CrmClientRefund,
@@ -20,13 +23,27 @@ import {
   withdrawClientAction,
 } from "../../closure/actions";
 
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { DataTable, Td } from "@/components/ui/DataTable";
+import { DangerZone } from "@/components/ui/DangerZone";
+import { LifecycleTabs } from "@/components/ui/LifecycleTabs";
+
 type Search = { error?: string; ok?: string };
+
+const FIELD =
+  "w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-600 focus:ring-blue-600 outline-none";
+const BTN_PRIMARY =
+  "rounded-md bg-blue-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 transition-colors";
+const BTN_GREEN =
+  "rounded-md bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-500 transition-colors";
 
 const CLIENT_STATUS_TONES: Record<
   CrmClientStatus,
-  "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal"
+  "green" | "amber" | "red" | "blue" | "gray" | "yellow" | "teal"
 > = {
-  onboarding: "indigo",
+  onboarding: "blue",
   doc_review: "yellow",
   uni_selection: "blue",
   applying: "amber",
@@ -53,7 +70,12 @@ export default async function ClientClosurePage({
   if (!me) redirect("/login");
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
-  const data = await getCrmClientForClosurePage(id);
+  const [data, documents, applications] = await Promise.all([
+    getCrmClientForClosurePage(id),
+    listCrmClientDocuments(id),
+    listCrmClientApplications(id),
+  ]);
+
   if (!data) notFound();
 
   const { client, visaDecisions, refunds } = data;
@@ -62,34 +84,62 @@ export default async function ClientClosurePage({
   const canRecordRefundForStatus =
     data.canRecordRefund && client.status === "withdrawn_refunded";
 
+  const docsAwaitingReview = documents.filter(
+    (document) =>
+      document.doc_state === "uploaded" || document.doc_state === "under_review"
+  ).length;
+  const applicationsInFlight = applications.filter(
+    (application) =>
+      application.status === "submitted" ||
+      application.status === "under_review" ||
+      application.status === "waitlisted"
+  ).length;
+  // Assume visa milestone is cleared if they are in closure.
+  const visaMilestonesRemaining = 0;
+  const closureBadgeCount =
+    client.status === "pre_departure" &&
+    (!client.flight_date ||
+      !client.accommodation_details ||
+      !client.briefing_completed_at)
+      ? 1
+      : 0;
+
+  const tabs = [
+    { href: `/crm/clients/${client.id}/documents`, label: "Documents", badge: docsAwaitingReview, badgeTone: "yellow" as const },
+    { href: `/crm/clients/${client.id}/applications`, label: "Applications", badge: applicationsInFlight, badgeTone: "blue" as const },
+    { href: `/crm/clients/${client.id}/visa`, label: "Visa Stage", badge: visaMilestonesRemaining, badgeTone: "red" as const },
+    { href: `/crm/clients/${client.id}/financials`, label: "Financials" },
+    { href: `/crm/clients/${client.id}/closure`, label: "Closure", badge: closureBadgeCount, badgeTone: "amber" as const },
+  ];
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link href="/crm/clients" className="text-sm text-indigo-600 hover:text-indigo-500">
+      <PageHeader
+        title="Closure"
+        description={`${client.lead_customer_name || client.lead_customer_phone}`}
+        breadcrumbs={
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <Link href="/crm/clients" className="font-medium text-blue-700 transition-colors hover:text-blue-900">
               CRM clients
             </Link>
-            <span className="text-sm text-gray-400">/</span>
+            <span className="text-gray-400">/</span>
             <Link
               href={`/crm/clients/${client.id}`}
-              className="text-sm text-indigo-600 hover:text-indigo-500"
+              className="font-medium text-blue-700 transition-colors hover:text-blue-900"
             >
               {client.client_code}
             </Link>
-            <span className="text-sm text-gray-400">/</span>
-            <span className="text-sm text-gray-500">Closure</span>
+            <span className="text-gray-400">/</span>
+            <span className="text-gray-500">Closure</span>
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">Closure</h1>
-          <p className="text-sm text-gray-500">
-            {client.lead_customer_name || client.lead_customer_phone}
-          </p>
-        </div>
-        <Chip label={formatLabel(client.status)} tone={CLIENT_STATUS_TONES[client.status]} />
-      </header>
+        }
+        action={<StatusBadge label={formatLabel(client.status)} tone={CLIENT_STATUS_TONES[client.status]} />}
+      />
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
+
+      <LifecycleTabs tabs={tabs} />
 
       <VisaDecisionSummary decisions={visaDecisions} />
 
@@ -106,13 +156,12 @@ export default async function ClientClosurePage({
       {client.status === "withdrawn_refunded" && <WithdrawnPanel client={client} />}
 
       {!["pre_departure", "departed", "alumni", "withdrawn_refunded"].includes(client.status) && (
-        <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-          <h2 className="text-sm font-semibold text-gray-900">Closure status</h2>
+        <SectionCard title="Closure status">
           <p className="mt-2 text-sm text-gray-500">
             Closure controls become available after a granted visa decision moves the client to
             pre-departure. Withdrawals are still available to super admins before terminal closure.
           </p>
-        </section>
+        </SectionCard>
       )}
 
       {data.canWithdraw && canWithdrawFromStatus && <WithdrawPanel clientId={client.id} />}
@@ -137,18 +186,17 @@ function PreDeparturePanel({
     client.flight_date != null && new Date(client.flight_date).getTime() < Date.now();
 
   return (
-    <section className="space-y-4">
-      <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-        <h2 className="text-sm font-semibold text-gray-900">Pre-departure details</h2>
+    <div className="space-y-6">
+      <SectionCard title="Pre-departure details">
         {flightDateIsPast ? (
           <Notice tone="amber">Flight date is in the past. This is a soft warning only.</Notice>
         ) : (
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="text-sm text-gray-500">
             Flight date should be in the future when submitted. This is a soft warning only.
           </p>
         )}
         {canTransitionStatus ? (
-          <form action={updatePreDepartureFieldsAction} className="mt-4 grid gap-3 md:grid-cols-2">
+          <form action={updatePreDepartureFieldsAction} className="mt-6 grid gap-4 md:grid-cols-2">
             <input type="hidden" name="client_id" value={client.id} />
             <DateTimeInput name="flight_date" label="Flight date" value={client.flight_date} />
             <DateTimeInput
@@ -156,11 +204,7 @@ function PreDeparturePanel({
               label="Briefing completed"
               value={client.briefing_completed_at}
             />
-            <TextArea
-              name="flight_details"
-              label="Flight details"
-              value={client.flight_details}
-            />
+            <TextArea name="flight_details" label="Flight details" value={client.flight_details} />
             <TextArea
               name="accommodation_details"
               label="Accommodation details"
@@ -172,38 +216,33 @@ function PreDeparturePanel({
                 name="briefing_notes"
                 rows={3}
                 defaultValue={client.briefing_notes ?? ""}
-                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+                className={FIELD}
               />
             </label>
-            <div className="md:col-span-2">
-              <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-                Save pre-departure details
-              </button>
+            <div className="flex justify-end md:col-span-2">
+              <button className={BTN_PRIMARY}>Save pre-departure details</button>
             </div>
           </form>
         ) : (
-          <p className="mt-4 text-sm text-gray-500">
+          <p className="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-500">
             Only the assigned counselor or super admin can update pre-departure details.
           </p>
         )}
-      </div>
+      </SectionCard>
 
       {canTransitionStatus && (
-        <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-          <h2 className="text-sm font-semibold text-gray-900">Mark departed</h2>
-          <form action={markDepartedAction} className="mt-4 grid gap-3 md:grid-cols-[14rem_1fr_auto]">
+        <SectionCard title="Mark departed">
+          <form action={markDepartedAction} className="mt-4 grid gap-4 md:grid-cols-[14rem_1fr_auto]">
             <input type="hidden" name="client_id" value={client.id} />
             <DateInput name="departure_date" label="Departure date" required />
             <TextInput name="note" label="Note" />
             <div className="flex items-end">
-              <button className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500">
-                Mark departed
-              </button>
+              <button className={`w-full md:w-auto ${BTN_GREEN}`}>Mark departed</button>
             </div>
           </form>
-        </div>
+        </SectionCard>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -215,12 +254,11 @@ function DepartedPanel({
   canTransitionStatus: boolean;
 }) {
   return (
-    <section className="space-y-4">
+    <div className="space-y-6">
       <SummaryCard title="Departure summary" client={client} />
       {canTransitionStatus && (
-        <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-          <h2 className="text-sm font-semibold text-gray-900">Confirm arrival and mark alumni</h2>
-          <form action={markAlumniAction} className="mt-4 grid gap-3 md:grid-cols-2">
+        <SectionCard title="Confirm arrival and mark alumni">
+          <form action={markAlumniAction} className="mt-4 grid gap-4 md:grid-cols-2">
             <input type="hidden" name="client_id" value={client.id} />
             <DateInput name="arrival_date" label="Arrival date" />
             <label className="space-y-1 text-xs font-medium text-gray-600 md:col-span-2">
@@ -228,58 +266,50 @@ function DepartedPanel({
               <textarea
                 name="alumni_notes"
                 rows={3}
-                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:ring-green-500 outline-none"
               />
             </label>
-            <div className="md:col-span-2">
-              <button className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500">
-                Mark alumni
-              </button>
+            <div className="flex justify-end md:col-span-2">
+              <button className={BTN_GREEN}>Mark alumni</button>
             </div>
           </form>
-        </div>
+        </SectionCard>
       )}
-    </section>
+    </div>
   );
 }
 
 function AlumniPanel({ client }: { client: CrmClientVM }) {
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h2 className="text-sm font-semibold text-gray-900">Alumni summary</h2>
-        <Chip label="Closure complete" tone="green" />
-      </div>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <SectionCard title="Alumni summary" action={<StatusBadge label="Closure complete" tone="green" />}>
+      <dl className="mt-4 grid gap-6 rounded-lg border border-gray-100 bg-gray-50/50 p-5 sm:grid-cols-2 lg:grid-cols-4">
         <Info label="Departed" value={formatCrmDateTime(client.departure_date)} />
         <Info label="Arrived" value={formatCrmDateTime(client.arrival_date)} />
         <Info label="Alumni started" value={formatCrmDateTime(client.alumni_started_at)} />
         <Info label="Alumni notes" value={client.alumni_notes ?? "-"} />
       </dl>
-    </section>
+    </SectionCard>
   );
 }
 
 function WithdrawnPanel({ client }: { client: CrmClientVM }) {
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Withdrawal summary</h2>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+    <SectionCard title="Withdrawal summary">
+      <dl className="mt-4 grid gap-6 rounded-lg border border-red-100 bg-red-50/30 p-5 sm:grid-cols-2">
         <Info label="Withdrawn at" value={formatCrmDateTime(client.withdrawn_at)} />
         <Info label="Reason" value={client.withdrawn_reason ?? "-"} />
       </dl>
-    </section>
+    </SectionCard>
   );
 }
 
 function WithdrawPanel({ clientId }: { clientId: string }) {
   return (
-    <section className="rounded-lg border border-red-200 bg-red-50 p-5">
-      <h2 className="text-sm font-semibold text-red-900">Withdraw client</h2>
-      <p className="mt-2 text-sm text-red-700">
-        This is a one-way action for Stage 2. Re-opening withdrawn clients is out of scope.
-      </p>
-      <form action={withdrawClientAction} className="mt-4 grid gap-3 md:grid-cols-3">
+    <DangerZone
+      title="Withdraw client"
+      warningText="This is a one-way action for Stage 2. Re-opening withdrawn clients is out of scope."
+    >
+      <form action={withdrawClientAction} className="mt-4 grid gap-4 md:grid-cols-3">
         <input type="hidden" name="client_id" value={clientId} />
         <label className="space-y-1 text-xs font-medium text-red-900 md:col-span-3">
           <span>Reason</span>
@@ -287,18 +317,18 @@ function WithdrawPanel({ clientId }: { clientId: string }) {
             name="reason"
             required
             rows={3}
-            className="w-full rounded-md border border-red-200 px-3 py-2 text-sm text-gray-900"
+            className="w-full rounded-md border border-red-200 px-3 py-2 text-sm text-gray-900 focus:border-red-500 focus:ring-red-500 outline-none"
           />
         </label>
         <NumberInput name="refund_amount" label="Refund amount" min="0.01" step="0.01" />
         <TextInput name="refund_currency" label="Refund currency" defaultValue="PKR" />
-        <div className="flex items-end">
-          <button className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500">
+        <div className="flex items-end md:col-span-3 lg:col-span-1">
+          <button className="w-full rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-500">
             Withdraw client
           </button>
         </div>
       </form>
-    </section>
+    </DangerZone>
   );
 }
 
@@ -312,80 +342,77 @@ function RefundsPanel({
   canRecordRefund: boolean;
 }) {
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Refund history</h2>
+    <SectionCard title="Refund history">
       {refunds.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-500">No refunds recorded.</p>
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          No refunds recorded.
+        </p>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-md border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-100 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Refunded at</Th>
-                <Th>Amount</Th>
-                <Th>Reason</Th>
-                <Th>Recorded by</Th>
+        <div className="mt-4">
+          <DataTable columns={["Refunded at", "Amount", "Reason", "Recorded by"]}>
+            {refunds.map((refund) => (
+              <tr key={refund.id} className="hover:bg-gray-50">
+                <Td>{formatCrmDateTime(refund.refunded_at)}</Td>
+                <Td className="font-medium text-gray-900">{formatMoney(refund.amount, refund.currency)}</Td>
+                <Td>{refund.reason}</Td>
+                <Td>{refund.recorded_by_user_id ?? "-"}</Td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {refunds.map((refund) => (
-                <tr key={refund.id}>
-                  <Td>{formatCrmDateTime(refund.refunded_at)}</Td>
-                  <Td>{formatMoney(refund.amount, refund.currency)}</Td>
-                  <Td>{refund.reason}</Td>
-                  <Td>{refund.recorded_by_user_id ?? "-"}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </DataTable>
         </div>
       )}
 
       {canRecordRefund && (
-        <form action={recordClientRefundAction} className="mt-5 grid gap-3 md:grid-cols-[12rem_10rem_1fr_auto]">
+        <form
+          action={recordClientRefundAction}
+          className="mt-6 grid gap-4 border-t border-gray-100 pt-6 md:grid-cols-[12rem_10rem_1fr_auto]"
+        >
           <input type="hidden" name="client_id" value={clientId} />
           <NumberInput name="amount" label="Amount" min="0.01" step="0.01" required />
           <TextInput name="currency" label="Currency" defaultValue="PKR" />
           <TextInput name="reason" label="Reason" required />
           <div className="flex items-end">
-            <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-              Record refund
-            </button>
+            <button className={`w-full md:w-auto ${BTN_PRIMARY}`}>Record refund</button>
           </div>
         </form>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
 function VisaDecisionSummary({ decisions }: { decisions: CrmClientVisaDecision[] }) {
   if (decisions.length === 0) return null;
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Visa decisions</h2>
-      <ul className="mt-4 divide-y divide-gray-100">
+    <SectionCard title="Visa decisions">
+      <ul className="mt-4 divide-y divide-gray-100 rounded-lg border border-gray-100">
         {decisions.map((decision) => (
-          <li key={decision.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+          <li
+            key={decision.id}
+            className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+          >
             <div>
-              <div className="font-medium text-gray-900">
+              <div className="font-semibold text-gray-900">
                 {CRM_CLIENT_VISA_DECISION_LABELS[decision.outcome]}
               </div>
-              <div className="text-xs text-gray-500">{formatCrmDateTime(decision.decided_at)}</div>
-              {decision.note && <div className="mt-1 text-sm text-gray-600">{decision.note}</div>}
+              <div className="mt-0.5 text-xs text-gray-500">{formatCrmDateTime(decision.decided_at)}</div>
+              {decision.note && (
+                <div className="mt-2 rounded border border-gray-100 bg-white p-2 text-sm italic text-gray-600">
+                  &ldquo;{decision.note}&rdquo;
+                </div>
+              )}
             </div>
-            <Chip label={CRM_CLIENT_VISA_DECISION_LABELS[decision.outcome]} tone={visaDecisionTone(decision.outcome)} />
+            <StatusBadge label={CRM_CLIENT_VISA_DECISION_LABELS[decision.outcome]} tone={visaDecisionTone(decision.outcome)} />
           </li>
         ))}
       </ul>
-    </section>
+    </SectionCard>
   );
 }
 
 function SummaryCard({ title, client }: { title: string; client: CrmClientVM }) {
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <SectionCard title={title}>
+      <dl className="mt-4 grid gap-6 rounded-lg border border-gray-100 bg-gray-50/50 p-5 sm:grid-cols-2 lg:grid-cols-3">
         <Info label="Flight date" value={formatCrmDateTime(client.flight_date)} />
         <Info label="Flight details" value={client.flight_details ?? "-"} />
         <Info label="Accommodation" value={client.accommodation_details ?? "-"} />
@@ -393,7 +420,7 @@ function SummaryCard({ title, client }: { title: string; client: CrmClientVM }) 
         <Info label="Briefing notes" value={client.briefing_notes ?? "-"} />
         <Info label="Departure date" value={formatCrmDateTime(client.departure_date)} />
       </dl>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -411,12 +438,7 @@ function TextInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        required={required}
-        defaultValue={defaultValue}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} required={required} defaultValue={defaultValue} className={FIELD} />
     </label>
   );
 }
@@ -433,12 +455,7 @@ function TextArea({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <textarea
-        name={name}
-        rows={3}
-        defaultValue={value ?? ""}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <textarea name={name} rows={3} defaultValue={value ?? ""} className={FIELD} />
     </label>
   );
 }
@@ -459,14 +476,7 @@ function NumberInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        type="number"
-        min={min}
-        step={step}
-        required={required}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} type="number" min={min} step={step} required={required} className={FIELD} />
     </label>
   );
 }
@@ -483,12 +493,7 @@ function DateInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        type="date"
-        required={required}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} type="date" required={required} className={FIELD} />
     </label>
   );
 }
@@ -505,12 +510,7 @@ function DateTimeInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        type="datetime-local"
-        defaultValue={dateTimeInputValue(value)}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} type="datetime-local" defaultValue={dateTimeInputValue(value)} className={FIELD} />
     </label>
   );
 }
@@ -518,22 +518,10 @@ function DateTimeInput({
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
-      <dd className="mt-1 text-sm text-gray-900">{value}</dd>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</dt>
+      <dd className="mt-1 text-sm font-medium text-gray-900">{value}</dd>
     </div>
   );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-      {children}
-    </th>
-  );
-}
-
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-4 py-3 align-top">{children}</td>;
 }
 
 function dateTimeInputValue(iso: string | null): string {
@@ -542,7 +530,7 @@ function dateTimeInputValue(iso: string | null): string {
 
 function visaDecisionTone(
   outcome: CrmClientVisaDecisionOutcome
-): "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal" {
+): "green" | "amber" | "red" {
   if (outcome === "granted") return "green";
   if (outcome === "refused") return "red";
   return "amber";
@@ -573,5 +561,5 @@ function Notice({
       : tone === "amber"
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : "border-red-200 bg-red-50 text-red-700";
-  return <div className={`rounded-md border px-4 py-2 text-sm ${classes}`}>{children}</div>;
+  return <div className={`rounded-md border px-4 py-3 text-sm shadow-sm ${classes}`}>{children}</div>;
 }

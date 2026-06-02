@@ -31,7 +31,7 @@ const INPUT =
   "w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900";
 
 const STATUS_TONES = {
-  new: "indigo",
+  new: "blue",
   assigned: "blue",
   contacted: "amber",
   qualified: "green",
@@ -42,13 +42,13 @@ const STATUS_TONES = {
 
 const TRANSFER_STATUS_TONES: Record<
   CrmTransferStatus,
-  "green" | "amber" | "red" | "gray" | "indigo"
+  "green" | "amber" | "red" | "gray" | "blue"
 > = {
   pending: "amber",
   accepted: "green",
   rejected: "red",
   cancelled: "gray",
-  admin_override: "indigo",
+  admin_override: "blue",
 };
 
 const CRM_LEAD_STATUS_OPTIONS: CrmLeadStatus[] = [
@@ -94,7 +94,7 @@ export default async function CrmLeadDetailPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Link href="/crm/leads" className="text-sm text-indigo-600 hover:text-indigo-500">
+            <Link href="/crm/leads" className="text-sm text-blue-600 hover:text-blue-500">
               CRM leads
             </Link>
             <span className="text-sm text-gray-400">/</span>
@@ -141,7 +141,7 @@ export default async function CrmLeadDetailPage({
                 <input type="hidden" name="lead_id" value={lead.id} />
                 <button
                   type="submit"
-                  className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+                  className="w-full rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
                 >
                   Auto-assign lead
                 </button>
@@ -168,7 +168,7 @@ export default async function CrmLeadDetailPage({
                 </label>
                 <button
                   type="submit"
-                  className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                  className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
                 >
                   Assign lead
                 </button>
@@ -219,7 +219,7 @@ export default async function CrmLeadDetailPage({
           {lead.raw_inbox && (
             <Link
               href={`/crm/inbox/${lead.raw_inbox.id}`}
-              className="mt-4 inline-flex text-sm font-medium text-indigo-600 hover:text-indigo-500"
+              className="mt-4 inline-flex text-sm font-medium text-blue-600 hover:text-blue-500"
             >
               Open raw intake
             </Link>
@@ -379,10 +379,10 @@ function assignmentMethodLabel(
 function assignmentMethodTone(
   method: string | null,
   reason: string | null = null
-): "indigo" | "blue" | "amber" | "gray" | "teal" {
+): "blue" | "blue" | "amber" | "gray" | "teal" {
   switch (method) {
     case "auto_source_owner":
-      return isFallbackOwnerAssignment(reason) ? "teal" : "indigo";
+      return isFallbackOwnerAssignment(reason) ? "teal" : "blue";
     case "auto_rule":
       return "amber";
     case "manual":
@@ -449,7 +449,7 @@ function LeadWorkbench({
             </label>
             <button
               type="submit"
-              className="mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Add note
             </button>
@@ -482,7 +482,7 @@ function LeadWorkbench({
             </label>
             <button
               type="submit"
-              className="mt-3 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+              className="mt-3 rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
             >
               Update status
             </button>
@@ -521,7 +521,7 @@ function LeadWorkbench({
               </label>
               <button
                 type="submit"
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
               >
                 Schedule follow-up
               </button>
@@ -673,7 +673,7 @@ function ConvertLeadPanel({
           <div className="flex items-end">
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Create client shell
             </button>
@@ -721,7 +721,7 @@ function TransferLeadPanel({
         </div>
         <Link
           href="/crm/transfers"
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+          className="text-sm font-medium text-blue-600 hover:text-blue-500"
         >
           View transfer inbox
         </Link>
@@ -763,7 +763,7 @@ function TransferLeadPanel({
           </label>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Request transfer
           </button>
@@ -836,7 +836,7 @@ function Timeline({
       ) : (
         <ul className="mt-4 space-y-3">
           {items.map((item) => (
-            <li key={item.id} className="border-l-2 border-indigo-100 pl-3 text-sm">
+            <li key={item.id} className="border-l-2 border-blue-100 pl-3 text-sm">
               <div className="font-medium text-gray-900">{item.activity_label}</div>
               <div className="text-gray-500">{item.description ?? "-"}</div>
               <div className="mt-1 text-xs text-gray-400">

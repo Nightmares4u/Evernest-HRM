@@ -26,8 +26,8 @@ type Search = {
 const INPUT =
   "w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900";
 
-const STATUS_TONES: Record<CrmRawStatus, "green" | "amber" | "gray" | "indigo" | "yellow" | "red"> = {
-  raw_new: "indigo",
+const STATUS_TONES: Record<CrmRawStatus, "green" | "amber" | "gray" | "blue" | "yellow" | "red"> = {
+  raw_new: "blue",
   awaiting_details: "amber",
   details_received: "green",
   needs_review: "yellow",
@@ -135,7 +135,7 @@ export default async function CrmInboxPage({
             <div className="flex items-end">
               <button
                 type="submit"
-                className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
               >
                 Create raw intake
               </button>
@@ -187,7 +187,7 @@ export default async function CrmInboxPage({
           <div className="flex items-end gap-2">
             <button
               type="submit"
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+              className="rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
             >
               Filter
             </button>
@@ -235,7 +235,7 @@ export default async function CrmInboxPage({
                     <Td className="font-medium text-gray-900">
                       <Link
                         href={`/crm/inbox/${row.id}`}
-                        className="text-indigo-600 hover:text-indigo-500"
+                        className="text-blue-600 hover:text-blue-500"
                       >
                         {row.sender_phone}
                       </Link>
@@ -290,7 +290,7 @@ export default async function CrmInboxPage({
                       {row.lead_id ? (
                         <Link
                           href={`/crm/leads/${row.lead_id}`}
-                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-500"
                         >
                           Lead linked
                         </Link>

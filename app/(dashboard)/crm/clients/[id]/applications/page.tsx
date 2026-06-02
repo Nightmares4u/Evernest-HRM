@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { canEditClientApplication } from "@/lib/crm/permissions-clients";
 import { formatCrmDateTime } from "@/lib/crm/format";
 import {
   getCrmClientDetail,
+  getCrmClientForVisaPage,
   listClientDocumentsForApplicationPicker,
   listCrmClientApplications,
+  listCrmClientDocuments,
 } from "@/lib/db/crm";
 import {
   CRM_APPLICATION_STATUS_GROUPS,
@@ -16,6 +17,7 @@ import {
   type CrmClientApplicationIntakeTerm,
   type CrmClientApplicationStatus,
   type CrmClientApplicationVM,
+  type CrmClientStatus,
 } from "@/lib/types/crm";
 import {
   createApplication,
@@ -24,12 +26,18 @@ import {
   updateApplicationFields,
 } from "../../applications/actions";
 
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatCard } from "@/components/ui/StatCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { LifecycleTabs } from "@/components/ui/LifecycleTabs";
+
 type Search = { error?: string; ok?: string };
 type OfferDocumentOption = { id: string; doc_code: string; file_name: string };
 
 const STATUS_TONES: Record<
   CrmClientApplicationStatus,
-  "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal"
+  "green" | "amber" | "red" | "blue" | "gray" | "blue" | "yellow" | "teal"
 > = {
   draft: "gray",
   submitted: "blue",
@@ -61,10 +69,12 @@ export default async function ClientApplicationsPage({
   if (!me) redirect("/login");
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
-  const [detail, applications, offerDocuments] = await Promise.all([
+  const [detail, applications, offerDocuments, documents, visaData] = await Promise.all([
     getCrmClientDetail(id),
     listCrmClientApplications(id),
     listClientDocumentsForApplicationPicker(id),
+    listCrmClientDocuments(id),
+    getCrmClientForVisaPage(id),
   ]);
 
   if (!detail) notFound();
@@ -72,57 +82,90 @@ export default async function ClientApplicationsPage({
   const canEdit = canEditClientApplication(me, client);
   const stats = groupStats(applications);
 
+  const docsAwaitingReview = documents.filter((document) =>
+    document.doc_state === "uploaded" || document.doc_state === "under_review"
+  ).length;
+  const applicationsInFlight = applications.filter((application) =>
+    application.status === "submitted" ||
+    application.status === "under_review" ||
+    application.status === "waitlisted"
+  ).length;
+  const showVisaBadge =
+    Boolean(visaData?.country) &&
+    (client.status === "offer_accepted" ||
+      client.status === "visa_prep" ||
+      client.status === "visa_submitted");
+  const visaMilestonesRemaining = visaData?.isBlockedFromVisaSubmitted.missing.length ?? 0;
+  const closureBadgeCount =
+    client.status === "pre_departure" &&
+    (!client.flight_date || !client.accommodation_details || !client.briefing_completed_at)
+      ? 1
+      : 0;
+
+  const tabs = [
+    { href: `/crm/clients/${client.id}/documents`, label: "Documents", badge: docsAwaitingReview, badgeTone: "yellow" as const },
+    { href: `/crm/clients/${client.id}/applications`, label: "Applications", badge: applicationsInFlight, badgeTone: "blue" as const },
+    { href: `/crm/clients/${client.id}/visa`, label: "Visa Stage", badge: showVisaBadge ? visaMilestonesRemaining : 0, badgeTone: "red" as const },
+    { href: `/crm/clients/${client.id}/financials`, label: "Financials" },
+    { href: `/crm/clients/${client.id}/closure`, label: "Closure", badge: closureBadgeCount, badgeTone: "amber" as const },
+  ];
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link href="/crm/clients" className="text-sm text-indigo-600 hover:text-indigo-500">
+      <PageHeader
+        title="Applications"
+        description={`${client.lead_customer_name || client.lead_customer_phone}`}
+        breadcrumbs={
+          <div className="flex items-center gap-2 mb-2 text-sm">
+            <Link href="/crm/clients" className="font-medium text-blue-600 hover:text-blue-500 transition-colors">
               CRM clients
             </Link>
-            <span className="text-sm text-gray-400">/</span>
+            <span className="text-gray-400">/</span>
             <Link
               href={`/crm/clients/${client.id}`}
-              className="text-sm text-indigo-600 hover:text-indigo-500"
+              className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
             >
               {client.client_code}
             </Link>
-            <span className="text-sm text-gray-400">/</span>
-            <span className="text-sm text-gray-500">Applications</span>
+            <span className="text-gray-400">/</span>
+            <span className="text-gray-500">Applications</span>
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">Applications</h1>
-          <p className="text-sm text-gray-500">
-            {client.lead_customer_name || client.lead_customer_phone}
-          </p>
-        </div>
-        <Link
-          href={`/crm/clients/${client.id}`}
-          className="rounded-md bg-white px-3 py-1.5 text-sm text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Client shell
-        </Link>
-      </header>
+        }
+        action={
+          <Link
+            href={`/crm/clients/${client.id}`}
+            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
+          >
+            Back to client shell
+          </Link>
+        }
+      />
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <section className="grid gap-3 md:grid-cols-4">
-        <Stat label="Draft" value={stats.draft} />
-        <Stat label="In flight" value={stats.in_flight} />
-        <Stat label="With outcomes" value={stats.outcomes} />
-        <Stat label="Closed" value={stats.closed} />
+      <LifecycleTabs tabs={tabs} />
+
+      <section className="grid gap-4 md:grid-cols-4">
+        <StatCard label="Draft" value={stats.draft} />
+        <StatCard label="In flight" value={stats.in_flight} />
+        <StatCard label="With outcomes" value={stats.outcomes} />
+        <StatCard label="Closed" value={stats.closed} />
       </section>
 
       {canEdit && (
-        <details className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-          <summary className="cursor-pointer text-sm font-semibold text-gray-900">
-            + Add application
+        <details className="rounded-lg bg-white shadow-sm ring-1 ring-black/5 group">
+          <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-900 list-none flex items-center justify-between">
+            <span>+ Add new application</span>
+            <span className="text-blue-600 group-open:hidden">Expand</span>
           </summary>
-          <CreateApplicationForm clientId={client.id} />
+          <div className="px-5 pb-5 border-t border-gray-100">
+            <CreateApplicationForm clientId={client.id} />
+          </div>
         </details>
       )}
 
-      <section className="space-y-6">
+      <div className="space-y-6">
         {GROUPS.map((group) => {
           const rows = applications.filter((application) =>
             (group.statuses as readonly CrmClientApplicationStatus[]).includes(application.status)
@@ -138,14 +181,14 @@ export default async function ClientApplicationsPage({
             />
           );
         })}
-      </section>
+      </div>
     </div>
   );
 }
 
 function CreateApplicationForm({ clientId }: { clientId: string }) {
   return (
-    <form action={createApplication} className="mt-4 grid gap-3 md:grid-cols-2">
+    <form action={createApplication} className="mt-4 grid gap-4 md:grid-cols-2">
       <input type="hidden" name="client_id" value={clientId} />
       <TextInput name="university_name" label="University name" required />
       <TextInput name="program_name" label="Program name" />
@@ -156,12 +199,12 @@ function CreateApplicationForm({ clientId }: { clientId: string }) {
         <textarea
           name="notes"
           rows={3}
-          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         />
       </label>
       <div className="md:col-span-2">
-        <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-          Add application
+        <button className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-colors">
+          Create application
         </button>
       </div>
     </form>
@@ -182,13 +225,13 @@ function ApplicationGroup({
   offerDocuments: OfferDocumentOption[];
 }) {
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        <span className="text-xs text-gray-500">{applications.length} applications</span>
+        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{applications.length} applications</span>
       </div>
       {applications.length === 0 ? (
-        <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+        <p className="rounded-md border border-dashed border-gray-200 bg-gray-50/50 px-4 py-4 text-sm text-gray-500 text-center">
           No applications in this section.
         </p>
       ) : (
@@ -222,20 +265,20 @@ function ApplicationCard({
   const nextStatuses = validNextStatuses(application.status);
 
   return (
-    <article className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+    <article className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-inset ring-gray-200">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-base font-semibold text-gray-900">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-base font-bold text-gray-900 truncate">
               {application.university_name}
             </h3>
-            <Chip
+            <StatusBadge
               label={CRM_APPLICATION_STATUS_LABELS[application.status]}
               tone={STATUS_TONES[application.status]}
             />
           </div>
-          <p className="mt-1 text-sm text-gray-600">{application.program_name ?? "-"}</p>
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <p className="mt-1 text-sm font-medium text-gray-600">{application.program_name ?? "Program not specified"}</p>
+          <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4 bg-gray-50/50 rounded-lg p-4 border border-gray-100">
             <Info label="Intake" value={formatIntake(application.intake_year, application.intake_term)} />
             <Info label="Decision" value={formatCrmDateTime(application.decision_at)} />
             <Info label="Tuition" value={formatMoney(application.tuition_total, application.offer_amount_currency)} />
@@ -244,35 +287,45 @@ function ApplicationCard({
             <Info label="Offer letter" value={application.offer_letter_file_name ?? "-"} />
           </dl>
           {application.notes && (
-            <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
-              {application.notes}
+            <p className="mt-4 rounded-md bg-gray-50 border border-gray-100 px-4 py-3 text-sm text-gray-700 italic">
+              "{application.notes}"
             </p>
           )}
         </div>
       </div>
 
       {canEdit && (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <details className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium text-gray-700">Edit</summary>
-            <EditApplicationForm application={application} offerDocuments={offerDocuments} />
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <details className="rounded-md border border-gray-200 bg-white group">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 list-none flex items-center justify-between">
+              <span>Edit application details</span>
+              <span className="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div className="border-t border-gray-100 p-4 bg-gray-50/50">
+              <EditApplicationForm application={application} offerDocuments={offerDocuments} />
+            </div>
           </details>
-          <details className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium text-gray-700">Change status</summary>
-            {nextStatuses.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">No valid 2C transitions from this status.</p>
-            ) : (
-              <TransitionForm application={application} nextStatuses={nextStatuses} />
-            )}
+          <details className="rounded-md border border-gray-200 bg-white group">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 list-none flex items-center justify-between">
+              <span>Change application status</span>
+              <span className="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div className="border-t border-gray-100 p-4 bg-gray-50/50">
+              {nextStatuses.length === 0 ? (
+                <p className="text-sm text-gray-500">No valid 2C transitions from this status.</p>
+              ) : (
+                <TransitionForm application={application} nextStatuses={nextStatuses} />
+              )}
+            </div>
           </details>
         </div>
       )}
 
       {isSuperAdmin && application.status === "draft" && (
-        <form action={deleteApplication} className="mt-4">
+        <form action={deleteApplication} className="mt-5 border-t border-gray-100 pt-4 flex justify-end">
           <input type="hidden" name="application_id" value={application.id} />
-          <button className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500">
-            Delete draft
+          <button className="rounded-md bg-white border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors">
+            Delete draft application
           </button>
         </form>
       )}
@@ -288,7 +341,7 @@ function EditApplicationForm({
   offerDocuments: OfferDocumentOption[];
 }) {
   return (
-    <form action={updateApplicationFields} className="mt-4 grid gap-3 md:grid-cols-2">
+    <form action={updateApplicationFields} className="grid gap-4 md:grid-cols-2">
       <input type="hidden" name="application_id" value={application.id} />
       <TextInput name="university_name" label="University name" defaultValue={application.university_name} required />
       <TextInput name="program_name" label="Program name" defaultValue={application.program_name ?? ""} />
@@ -302,7 +355,7 @@ function EditApplicationForm({
         <select
           name="offer_letter_document_id"
           defaultValue={application.offer_letter_document_id ?? ""}
-          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         >
           <option value="">No linked document</option>
           {offerDocuments.map((document) => (
@@ -318,11 +371,11 @@ function EditApplicationForm({
           name="notes"
           rows={3}
           defaultValue={application.notes ?? ""}
-          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         />
       </label>
-      <div className="md:col-span-2">
-        <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+      <div className="md:col-span-2 flex justify-end">
+        <button className="rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 transition-colors">
           Save changes
         </button>
       </div>
@@ -338,14 +391,14 @@ function TransitionForm({
   nextStatuses: CrmClientApplicationStatus[];
 }) {
   return (
-    <form action={transitionApplicationStatus} className="mt-4 grid gap-3 md:grid-cols-2">
+    <form action={transitionApplicationStatus} className="grid gap-4 md:grid-cols-2">
       <input type="hidden" name="application_id" value={application.id} />
       <label className="space-y-1 text-xs font-medium text-gray-600">
         <span>New status</span>
         <select
           name="to_status"
           required
-          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         >
           {nextStatuses.map((status) => (
             <option key={status} value={status}>
@@ -359,18 +412,18 @@ function TransitionForm({
         <input
           name="decision_date"
           type="date"
-          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         />
       </label>
       <label className="space-y-1 text-xs font-medium text-gray-600 md:col-span-2">
         <span>Note</span>
         <input
           name="note"
-          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
         />
       </label>
-      <div className="md:col-span-2">
-        <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+      <div className="md:col-span-2 flex justify-end">
+        <button className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-colors">
           Update status
         </button>
       </div>
@@ -396,7 +449,7 @@ function TextInput({
         name={name}
         defaultValue={defaultValue}
         required={required}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
       />
     </label>
   );
@@ -427,7 +480,7 @@ function NumberInput({
         max={max}
         step={step}
         defaultValue={defaultValue}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
+        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
       />
     </label>
   );
@@ -440,7 +493,7 @@ function TermSelect({ defaultValue = "" }: { defaultValue?: CrmClientApplication
       <select
         name="intake_term"
         defaultValue={defaultValue}
-        className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+        className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
       >
         <option value="">No term</option>
         <option value="fall">Fall</option>
@@ -505,17 +558,17 @@ function formatMoney(amount: number | null, currency: string): string {
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
-      <dd className="mt-1 text-gray-900">{value}</dd>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</dt>
+      <dd className="mt-1 text-sm font-medium text-gray-900">{value}</dd>
     </div>
   );
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
+    <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-inset ring-gray-200">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="mt-2 text-3xl font-semibold tabular-nums text-gray-900">{value}</div>
     </div>
   );
 }
@@ -531,5 +584,5 @@ function Notice({
     tone === "green"
       ? "border-green-200 bg-green-50 text-green-700"
       : "border-red-200 bg-red-50 text-red-700";
-  return <div className={`rounded-md border px-4 py-2 text-sm ${classes}`}>{children}</div>;
+  return <div className={`rounded-md border px-4 py-3 text-sm shadow-sm ${classes}`}>{children}</div>;
 }

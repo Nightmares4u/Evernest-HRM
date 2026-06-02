@@ -41,7 +41,7 @@ export default async function AdminLeavePage({
             href="/admin/leave?filter=pending"
             className={`rounded-md px-3 py-1 ring-1 ring-inset ${
               filter === "pending"
-                ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+                ? "bg-blue-50 text-blue-700 ring-blue-200"
                 : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
             }`}
           >
@@ -51,7 +51,7 @@ export default async function AdminLeavePage({
             href="/admin/leave?filter=all"
             className={`rounded-md px-3 py-1 ring-1 ring-inset ${
               filter === "all"
-                ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+                ? "bg-blue-50 text-blue-700 ring-blue-200"
                 : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
             }`}
           >

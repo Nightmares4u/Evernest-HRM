@@ -16,9 +16,9 @@ export type FollowupBucket = {
 
 const STATUS_TONES: Record<
   CrmLeadStatus,
-  "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow"
+  "green" | "amber" | "red" | "blue" | "gray" | "blue" | "yellow"
 > = {
-  new: "indigo",
+  new: "blue",
   assigned: "blue",
   contacted: "amber",
   qualified: "green",

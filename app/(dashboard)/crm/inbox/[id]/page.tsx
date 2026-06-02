@@ -13,7 +13,7 @@ import { getCrmParserSettings, getCrmRawInboxDetail } from "@/lib/db/crm";
 type Search = { error?: string; ok?: string };
 
 const STATUS_TONES = {
-  raw_new: "indigo",
+  raw_new: "blue",
   awaiting_details: "amber",
   details_received: "green",
   needs_review: "yellow",
@@ -46,7 +46,7 @@ export default async function CrmRawInboxDetailPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Link href="/crm/inbox" className="text-sm text-indigo-600 hover:text-indigo-500">
+            <Link href="/crm/inbox" className="text-sm text-blue-600 hover:text-blue-500">
               Raw inbox
             </Link>
             <span className="text-sm text-gray-400">/</span>
@@ -63,7 +63,7 @@ export default async function CrmRawInboxDetailPage({
               <input type="hidden" name="id" value={row.id} />
               <button
                 type="submit"
-                className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-gray-800"
+                className="rounded-md bg-blue-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800"
               >
                 Re-parse details
               </button>
@@ -74,7 +74,7 @@ export default async function CrmRawInboxDetailPage({
               <input type="hidden" name="id" value={row.id} />
               <button
                 type="submit"
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
               >
                 Promote to Lead
               </button>
@@ -126,14 +126,14 @@ export default async function CrmRawInboxDetailPage({
             <div className="mt-4 space-y-2 text-sm">
               <Link
                 href={`/crm/leads/${row.lead.id}`}
-                className="font-medium text-indigo-600 hover:text-indigo-500"
+                className="font-medium text-blue-600 hover:text-blue-500"
               >
                 {row.lead.customer_phone}
               </Link>
               <div className="text-gray-500">
                 {row.lead.interested_country ?? "-"} / {row.lead.city ?? "-"}
               </div>
-              <Chip label={row.lead.status} tone="indigo" />
+              <Chip label={row.lead.status} tone="blue" />
             </div>
           ) : (
             <p className="mt-4 text-sm text-gray-500">Not promoted yet.</p>
@@ -229,7 +229,7 @@ function Timeline({
       ) : (
         <ul className="mt-4 space-y-3">
           {items.map((item) => (
-            <li key={item.id} className="border-l-2 border-indigo-100 pl-3 text-sm">
+            <li key={item.id} className="border-l-2 border-blue-100 pl-3 text-sm">
               <div className="font-medium text-gray-900">{item.activity_label}</div>
               <div className="text-gray-500">{item.description ?? "-"}</div>
               <div className="mt-1 text-xs text-gray-400">

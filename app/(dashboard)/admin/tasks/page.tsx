@@ -81,7 +81,7 @@ export default async function AdminTasksPage({
                   href={`/admin/tasks?view=list&filter=${f.key}`}
                   className={`rounded-md px-3 py-1 ring-1 ring-inset ${
                     filter === f.key
-                      ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+                      ? "bg-blue-50 text-blue-700 ring-blue-200"
                       : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
                   }`}
                 >
@@ -155,7 +155,7 @@ function ViewTabs({
   const cls = (active: boolean) =>
     `rounded-md px-3 py-1 text-xs ring-1 ring-inset ${
       active
-        ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+        ? "bg-blue-50 text-blue-700 ring-blue-200"
         : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
     }`;
   return (
@@ -283,7 +283,7 @@ function AssignForm({
         <div className="lg:col-span-2">
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
           >
             Assign task
           </button>
@@ -346,7 +346,7 @@ function ScheduleSection({
 function priorityTone(p: string) {
   if (p === "urgent") return "red" as const;
   if (p === "low") return "gray" as const;
-  return "indigo" as const;
+  return "blue" as const;
 }
 
 function statusTone(s: string) {

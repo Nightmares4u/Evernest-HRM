@@ -48,7 +48,7 @@ export default async function AdminCrmPage({
         </div>
         <Link
           href="/crm/inbox"
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500"
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
         >
           Open raw inbox
         </Link>
@@ -118,7 +118,7 @@ export default async function AdminCrmPage({
               fallback rules remain available for edge cases.
             </p>
           </div>
-          <Chip label="Stage 1 active" tone="indigo" />
+          <Chip label="Stage 1 active" tone="blue" />
         </div>
       </section>
     </div>

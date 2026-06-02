@@ -14,7 +14,7 @@ function priorityClasses(p: string) {
     return "bg-red-50 text-red-800 border-red-200 hover:bg-red-100";
   if (p === "low")
     return "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100";
-  return "bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100";
+  return "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100";
 }
 
 function statusClasses(s: string) {

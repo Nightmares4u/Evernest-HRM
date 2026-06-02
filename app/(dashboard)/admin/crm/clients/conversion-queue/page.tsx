@@ -18,7 +18,7 @@ export default async function CrmConversionQueuePage() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Link href="/admin/crm" className="text-sm text-indigo-600 hover:text-indigo-500">
+            <Link href="/admin/crm" className="text-sm text-blue-600 hover:text-blue-500">
               CRM admin
             </Link>
             <span className="text-sm text-gray-400">/</span>
@@ -65,7 +65,7 @@ export default async function CrmConversionQueuePage() {
                     <Td>
                       <Link
                         href={`/crm/leads/${lead.lead_id}`}
-                        className="font-medium text-indigo-600 hover:text-indigo-500"
+                        className="font-medium text-blue-600 hover:text-blue-500"
                       >
                         {lead.customer_name || lead.customer_phone}
                       </Link>
@@ -78,7 +78,7 @@ export default async function CrmConversionQueuePage() {
                     <Td>
                       <Link
                         href={`/crm/leads/${lead.lead_id}`}
-                        className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-500"
                       >
                         Open conversion panel
                       </Link>

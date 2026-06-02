@@ -13,6 +13,11 @@ import {
 } from "@/lib/db/financials";
 import type { AttendanceRecord } from "@/lib/types/hrm";
 
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatCard } from "@/components/ui/StatCard";
+import { DataTable, Td } from "@/components/ui/DataTable";
+
 type Search = { month?: string };
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -104,37 +109,34 @@ export default async function AdminFinancialsPage({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Admin Financials</h1>
-          <p className="text-sm text-gray-500">
-            Company-wide CRM inflow vs HRM payroll outflow for {monthLabel(monthKey)}. Read-only.
-            All amounts are in PKR.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <Link
-            href={`/admin/financials?month=${addMonths(monthKey, -1)}`}
-            className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-          >
-            {monthLabel(addMonths(monthKey, -1))}
-          </Link>
-          <Link
-            href={`/admin/financials?month=${todayPKT().slice(0, 7)}`}
-            className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-          >
-            Current month
-          </Link>
-          <Link
-            href={`/admin/financials?month=${addMonths(monthKey, 1)}`}
-            className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-          >
-            {monthLabel(addMonths(monthKey, 1))}
-          </Link>
-        </div>
-      </header>
+      <PageHeader
+        title="Admin Financials"
+        description={`Company-wide CRM inflow vs HRM payroll outflow for ${monthLabel(monthKey)}. Read-only. All amounts are in PKR.`}
+        action={
+          <div className="flex flex-wrap gap-2 text-xs">
+            <Link
+              href={`/admin/financials?month=${addMonths(monthKey, -1)}`}
+              className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              {monthLabel(addMonths(monthKey, -1))}
+            </Link>
+            <Link
+              href={`/admin/financials?month=${todayPKT().slice(0, 7)}`}
+              className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              Current month
+            </Link>
+            <Link
+              href={`/admin/financials?month=${addMonths(monthKey, 1)}`}
+              className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              {monthLabel(addMonths(monthKey, 1))}
+            </Link>
+          </div>
+        }
+      />
 
-      <section className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
+      <SectionCard>
         <form action="/admin/financials" className="flex flex-wrap items-end gap-3">
           <label className="space-y-1 text-xs font-medium text-gray-600">
             <span>Month</span>
@@ -142,73 +144,65 @@ export default async function AdminFinancialsPage({
               type="month"
               name="month"
               defaultValue={monthKey}
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+              className="rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 outline-none"
             />
           </label>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-colors"
           >
             Load month
           </button>
           <Link
             href="/admin/payroll"
-            className="rounded-md bg-white px-4 py-2 text-sm text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+            className="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
           >
             Payroll preview
           </Link>
         </form>
-      </section>
+      </SectionCard>
 
       {hasNonPkr && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Non-PKR payments or refunds detected (
-          {monthly.nonPkrCurrencies.concat(allTime.nonPkrCurrencies).join(", ") || "unknown"}
-          ). They are excluded from totals below. PKR-only is the MVP base; multi-currency support
-          will land in a later feature.
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
+          <strong>Non-PKR detected:</strong> {monthly.nonPkrCurrencies.concat(allTime.nonPkrCurrencies).join(", ") || "unknown"}.
+          Excluded from totals below. Multi-currency support deferred.
         </div>
       )}
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">This month</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label="PKR received" value={PKR.format(monthly.pkrReceived)} tone="green" />
-          <Stat label="PKR refunded" value={PKR.format(monthly.pkrRefunded)} tone="red" />
-          <Stat
+      <SectionCard title="This month">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5 mt-2">
+          <StatCard label="PKR received" value={PKR.format(monthly.pkrReceived)} />
+          <StatCard label="PKR refunded" value={PKR.format(monthly.pkrRefunded)} />
+          <StatCard
             label="Net CRM inflow"
             value={PKR.format(monthly.pkrNetInflow)}
-            tone={monthly.pkrNetInflow >= 0 ? "green" : "red"}
           />
-          <Stat
+          <StatCard
             label="PKR payroll outflow"
             value={PKR.format(payrollOutflow)}
-            tone="amber"
             hint="Preview-based estimate"
           />
-          <Stat
+          <StatCard
             label="Net after payroll"
             value={PKR.format(netAfterPayroll)}
-            tone={netAfterPayroll >= 0 ? "green" : "red"}
           />
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="mt-4 text-xs text-gray-500">
           Payroll outflow uses the existing payroll preview helper (no finalized payroll-run table
           exists yet). Treat it as an estimate until payroll runs are finalized in a future phase.
         </p>
-      </section>
+      </SectionCard>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">All time (CRM)</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <Stat label="PKR received" value={PKR.format(allTime.pkrReceived)} tone="green" />
-          <Stat label="PKR refunded" value={PKR.format(allTime.pkrRefunded)} tone="red" />
-          <Stat
+      <SectionCard title="All time (CRM)">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 mt-2">
+          <StatCard label="PKR received" value={PKR.format(allTime.pkrReceived)} />
+          <StatCard label="PKR refunded" value={PKR.format(allTime.pkrRefunded)} />
+          <StatCard
             label="Net CRM inflow"
             value={PKR.format(allTime.pkrNetInflow)}
-            tone={allTime.pkrNetInflow >= 0 ? "green" : "red"}
           />
         </div>
-      </section>
+      </SectionCard>
 
       <RecentPayments rows={monthly.payments.slice(0, RECENT_LIMIT)} />
       <RecentRefunds rows={monthly.refunds.slice(0, RECENT_LIMIT)} />
@@ -217,161 +211,85 @@ export default async function AdminFinancialsPage({
 }
 
 function RecentPayments({ rows }: { rows: AdminPaymentRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <SectionCard title="Recent payments this month">
+        <p className="text-sm text-gray-500">No payments recorded in this month.</p>
+      </SectionCard>
+    );
+  }
+
   return (
-    <section className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
-      <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-semibold text-gray-700">Recent payments this month</h2>
-        <span className="text-xs text-gray-500">{rows.length} shown</span>
-      </div>
-      {rows.length === 0 ? (
-        <p className="px-4 pb-4 text-sm text-gray-500">No payments recorded in this month.</p>
-      ) : (
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <Th>Paid at</Th>
-              <Th>Client</Th>
-              <Th>Branch</Th>
-              <Th>Counselor</Th>
-              <Th className="text-right">Amount</Th>
-              <Th>Currency</Th>
-              <Th>Method</Th>
-              <Th>Recorded by</Th>
-              <Th />
+    <SectionCard title="Recent payments this month" description={`${rows.length} shown`}>
+      <div className="mt-4">
+        <DataTable columns={["Paid at", "Client", "Branch", "Counselor", "Amount", "Currency", "Method", "Recorded by", ""]}>
+          {rows.map((row) => (
+            <tr key={row.id} className="hover:bg-gray-50">
+              <Td>{formatDateTime(row.paid_at)}</Td>
+              <Td>
+                <div className="font-medium text-gray-900">{row.client_code}</div>
+                <div className="text-xs text-gray-500">{row.customer_name ?? "—"}</div>
+              </Td>
+              <Td>{row.branch_code ?? row.branch_name ?? "—"}</Td>
+              <Td>{row.agent_name ?? "—"}</Td>
+              <Td className="text-right tabular-nums font-medium">{row.amount.toLocaleString("en-PK")}</Td>
+              <Td>{row.currency}</Td>
+              <Td>{row.method ?? "—"}</Td>
+              <Td>{row.recorder_name ?? "—"}</Td>
+              <Td>
+                <Link
+                  href={`/crm/clients/${row.client_id}/financials`}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-500"
+                >
+                  Open →
+                </Link>
+              </Td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50">
-                <Td>{formatDateTime(row.paid_at)}</Td>
-                <Td>
-                  <div className="font-medium text-gray-900">{row.client_code}</div>
-                  <div className="text-xs text-gray-500">{row.customer_name ?? "—"}</div>
-                </Td>
-                <Td>{row.branch_code ?? row.branch_name ?? "—"}</Td>
-                <Td>{row.agent_name ?? "—"}</Td>
-                <Td className="text-right tabular-nums">{row.amount.toLocaleString("en-PK")}</Td>
-                <Td>{row.currency}</Td>
-                <Td>{row.method ?? "—"}</Td>
-                <Td>{row.recorder_name ?? "—"}</Td>
-                <Td>
-                  <Link
-                    href={`/crm/clients/${row.client_id}/financials`}
-                    className="text-xs text-indigo-600 hover:text-indigo-500"
-                  >
-                    Open →
-                  </Link>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
+          ))}
+        </DataTable>
+      </div>
+    </SectionCard>
   );
 }
 
 function RecentRefunds({ rows }: { rows: AdminRefundRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <SectionCard title="Recent refunds this month">
+        <p className="text-sm text-gray-500">No refunds recorded in this month.</p>
+      </SectionCard>
+    );
+  }
+
   return (
-    <section className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
-      <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-semibold text-gray-700">Recent refunds this month</h2>
-        <span className="text-xs text-gray-500">{rows.length} shown</span>
-      </div>
-      {rows.length === 0 ? (
-        <p className="px-4 pb-4 text-sm text-gray-500">No refunds recorded in this month.</p>
-      ) : (
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <Th>Refunded at</Th>
-              <Th>Client</Th>
-              <Th>Branch</Th>
-              <Th>Counselor</Th>
-              <Th className="text-right">Amount</Th>
-              <Th>Currency</Th>
-              <Th>Reason</Th>
-              <Th>Recorded by</Th>
-              <Th />
+    <SectionCard title="Recent refunds this month" description={`${rows.length} shown`}>
+      <div className="mt-4">
+        <DataTable columns={["Refunded at", "Client", "Branch", "Counselor", "Amount", "Currency", "Reason", "Recorded by", ""]}>
+          {rows.map((row) => (
+            <tr key={row.id} className="hover:bg-gray-50">
+              <Td>{formatDateTime(row.refunded_at)}</Td>
+              <Td>
+                <div className="font-medium text-gray-900">{row.client_code}</div>
+                <div className="text-xs text-gray-500">{row.customer_name ?? "—"}</div>
+              </Td>
+              <Td>{row.branch_code ?? row.branch_name ?? "—"}</Td>
+              <Td>{row.agent_name ?? "—"}</Td>
+              <Td className="text-right tabular-nums font-medium">{row.amount.toLocaleString("en-PK")}</Td>
+              <Td>{row.currency}</Td>
+              <Td>{row.reason}</Td>
+              <Td>{row.recorder_name ?? "—"}</Td>
+              <Td>
+                <Link
+                  href={`/crm/clients/${row.client_id}/closure`}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-500"
+                >
+                  Open →
+                </Link>
+              </Td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50">
-                <Td>{formatDateTime(row.refunded_at)}</Td>
-                <Td>
-                  <div className="font-medium text-gray-900">{row.client_code}</div>
-                  <div className="text-xs text-gray-500">{row.customer_name ?? "—"}</div>
-                </Td>
-                <Td>{row.branch_code ?? row.branch_name ?? "—"}</Td>
-                <Td>{row.agent_name ?? "—"}</Td>
-                <Td className="text-right tabular-nums">{row.amount.toLocaleString("en-PK")}</Td>
-                <Td>{row.currency}</Td>
-                <Td>{row.reason}</Td>
-                <Td>{row.recorder_name ?? "—"}</Td>
-                <Td>
-                  <Link
-                    href={`/crm/clients/${row.client_id}/closure`}
-                    className="text-xs text-indigo-600 hover:text-indigo-500"
-                  >
-                    Open →
-                  </Link>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
+          ))}
+        </DataTable>
+      </div>
+    </SectionCard>
   );
-}
-
-function Stat({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone: "green" | "red" | "amber" | "gray";
-}) {
-  const valueClass = {
-    green: "text-green-700",
-    red: "text-red-700",
-    amber: "text-amber-700",
-    gray: "text-gray-900",
-  }[tone];
-  return (
-    <div className="overflow-hidden rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
-      <p className="truncate text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-      <p className={`mt-1 text-xl font-semibold tabular-nums ${valueClass}`}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
-    </div>
-  );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-3 py-3 align-top ${className}`}>{children}</td>;
 }

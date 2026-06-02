@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Chip } from "@/components/StatusChip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatCrmDateTime } from "@/lib/crm/format";
-import { getCrmClientFinancialsPage } from "@/lib/db/crm";
+import {
+  getCrmClientFinancialsPage,
+  listCrmClientDocuments,
+  listCrmClientApplications,
+  getCrmClientForVisaPage,
+} from "@/lib/db/crm";
 import type {
   CrmClientPayment,
   CrmClientRefund,
@@ -12,13 +16,25 @@ import type {
 } from "@/lib/types/crm";
 import { recordClientPayment } from "../../actions";
 
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatCard } from "@/components/ui/StatCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { DataTable, Td } from "@/components/ui/DataTable";
+import { LifecycleTabs } from "@/components/ui/LifecycleTabs";
+
 type Search = { error?: string; ok?: string };
+
+const FIELD =
+  "w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-600 focus:ring-blue-600 outline-none";
+const BTN_PRIMARY =
+  "rounded-md bg-blue-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 transition-colors";
 
 const STATUS_TONES: Record<
   CrmClientStatus,
-  "green" | "amber" | "red" | "blue" | "gray" | "indigo" | "yellow" | "teal"
+  "green" | "amber" | "red" | "blue" | "gray" | "yellow" | "teal"
 > = {
-  onboarding: "indigo",
+  onboarding: "blue",
   doc_review: "yellow",
   uni_selection: "blue",
   applying: "amber",
@@ -45,55 +61,84 @@ export default async function ClientFinancialsPage({
   if (!me) redirect("/login");
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
-  const data = await getCrmClientFinancialsPage(id);
+  const [data, documents, applications, visaData] = await Promise.all([
+    getCrmClientFinancialsPage(id),
+    listCrmClientDocuments(id),
+    listCrmClientApplications(id),
+    getCrmClientForVisaPage(id),
+  ]);
+
   if (!data) notFound();
 
   const { client, payments, refunds } = data;
   const isTerminal = client.status === "alumni" || client.status === "withdrawn_refunded";
 
+  const docsAwaitingReview = documents.filter(
+    (document) =>
+      document.doc_state === "uploaded" || document.doc_state === "under_review"
+  ).length;
+  const applicationsInFlight = applications.filter(
+    (application) =>
+      application.status === "submitted" ||
+      application.status === "under_review" ||
+      application.status === "waitlisted"
+  ).length;
+  const showVisaBadge =
+    Boolean(visaData?.country) &&
+    (client.status === "offer_accepted" ||
+      client.status === "visa_prep" ||
+      client.status === "visa_submitted");
+  const visaMilestonesRemaining = visaData?.isBlockedFromVisaSubmitted.missing.length ?? 0;
+  const closureBadgeCount =
+    client.status === "pre_departure" &&
+    (!client.flight_date ||
+      !client.accommodation_details ||
+      !client.briefing_completed_at)
+      ? 1
+      : 0;
+
+  const tabs = [
+    { href: `/crm/clients/${client.id}/documents`, label: "Documents", badge: docsAwaitingReview, badgeTone: "yellow" as const },
+    { href: `/crm/clients/${client.id}/applications`, label: "Applications", badge: applicationsInFlight, badgeTone: "blue" as const },
+    { href: `/crm/clients/${client.id}/visa`, label: "Visa Stage", badge: showVisaBadge ? visaMilestonesRemaining : 0, badgeTone: "red" as const },
+    { href: `/crm/clients/${client.id}/financials`, label: "Financials" },
+    { href: `/crm/clients/${client.id}/closure`, label: "Closure", badge: closureBadgeCount, badgeTone: "amber" as const },
+  ];
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link href="/crm/clients" className="text-sm text-indigo-600 hover:text-indigo-500">
+      <PageHeader
+        title="Financials"
+        description={`${client.lead_customer_name || client.lead_customer_phone}`}
+        breadcrumbs={
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <Link href="/crm/clients" className="font-medium text-blue-700 transition-colors hover:text-blue-900">
               CRM clients
             </Link>
-            <span className="text-sm text-gray-400">/</span>
+            <span className="text-gray-400">/</span>
             <Link
               href={`/crm/clients/${client.id}`}
-              className="text-sm text-indigo-600 hover:text-indigo-500"
+              className="font-medium text-blue-700 transition-colors hover:text-blue-900"
             >
               {client.client_code}
             </Link>
-            <span className="text-sm text-gray-400">/</span>
-            <span className="text-sm text-gray-500">Financials</span>
+            <span className="text-gray-400">/</span>
+            <span className="text-gray-500">Financials</span>
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">Financials</h1>
-          <p className="text-sm text-gray-500">
-            {client.lead_customer_name || client.lead_customer_phone}
-          </p>
-        </div>
-        <Chip label={formatLabel(client.status)} tone={STATUS_TONES[client.status]} />
-      </header>
+        }
+        action={<StatusBadge label={formatLabel(client.status)} tone={STATUS_TONES[client.status]} />}
+      />
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <SummaryCard
-          label="Total received"
-          value={formatMoney(data.totalReceived, client.currency)}
-        />
-        <SummaryCard
-          label="Total refunded"
-          value={formatMoney(data.totalRefunded, client.currency)}
-        />
-        <SummaryCard
-          label="Net received"
-          value={formatMoney(data.netReceived, client.currency)}
-        />
-      </section>
+      <LifecycleTabs tabs={tabs} />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Total received" value={formatMoney(data.totalReceived, client.currency)} tone="green" />
+        <StatCard label="Total refunded" value={formatMoney(data.totalRefunded, client.currency)} tone="red" />
+        <StatCard label="Net received" value={formatMoney(data.netReceived, client.currency)} tone="blue" />
+      </div>
 
       {data.canRecordPayment && <RecordPaymentPanel client={client} />}
 
@@ -107,20 +152,10 @@ export default async function ClientFinancialsPage({
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
-      <dd className="mt-2 text-2xl font-semibold text-gray-900">{value}</dd>
-    </div>
-  );
-}
-
 function RecordPaymentPanel({ client }: { client: CrmClientVM }) {
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Record payment</h2>
-      <form action={recordClientPayment} className="mt-4 grid gap-3 md:grid-cols-3">
+    <SectionCard title="Record payment">
+      <form action={recordClientPayment} className="mt-4 grid gap-4 md:grid-cols-3">
         <input type="hidden" name="client_id" value={client.id} />
         <input type="hidden" name="return_to" value="financials" />
         <NumberInput name="amount" label="Amount" min="0.01" step="0.01" required />
@@ -128,12 +163,7 @@ function RecordPaymentPanel({ client }: { client: CrmClientVM }) {
         <DateTimeInput name="paid_at" label="Paid at" required />
         <label className="space-y-1 text-xs font-medium text-gray-600">
           <span>Method</span>
-          <select
-            name="method"
-            required
-            defaultValue="bank_transfer"
-            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-          >
+          <select name="method" required defaultValue="bank_transfer" className={FIELD}>
             <option value="cash">Cash</option>
             <option value="bank_transfer">Bank transfer</option>
             <option value="card">Card</option>
@@ -143,85 +173,71 @@ function RecordPaymentPanel({ client }: { client: CrmClientVM }) {
         </label>
         <TextInput name="reference" label="Reference" />
         <TextInput name="notes" label="Notes" />
-        <div className="md:col-span-3">
-          <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-            Record payment
-          </button>
+        <div className="mt-2 flex justify-end border-t border-gray-100 pt-4 md:col-span-3">
+          <button className={`w-full md:w-auto ${BTN_PRIMARY}`}>Record payment</button>
         </div>
       </form>
-    </section>
+    </SectionCard>
   );
 }
 
 function PaymentHistory({ payments }: { payments: CrmClientPayment[] }) {
+  if (payments.length === 0) {
+    return (
+      <SectionCard title="Payment history">
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          No payments recorded yet.
+        </p>
+      </SectionCard>
+    );
+  }
+
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Payment history</h2>
-      {payments.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-500">No payments recorded yet.</p>
-      ) : (
-        <div className="mt-4 overflow-hidden rounded-md border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-100 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Paid at</Th>
-                <Th>Amount</Th>
-                <Th>Method</Th>
-                <Th>Reference</Th>
-                <Th>Notes</Th>
-                <Th>Recorded by</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {payments.map((payment) => (
-                <tr key={payment.id}>
-                  <Td>{formatCrmDateTime(payment.paid_at)}</Td>
-                  <Td>{formatMoney(payment.amount, payment.currency)}</Td>
-                  <Td>{payment.method ?? "-"}</Td>
-                  <Td>{payment.reference ?? "-"}</Td>
-                  <Td>{payment.notes ?? "-"}</Td>
-                  <Td>{payment.recorded_by_user_id ?? "-"}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+    <SectionCard title="Payment history" description={`${payments.length} payments recorded`}>
+      <div className="mt-4">
+        <DataTable columns={["Paid at", "Amount", "Method", "Reference", "Notes", "Recorded by"]}>
+          {payments.map((payment) => (
+            <tr key={payment.id} className="hover:bg-gray-50">
+              <Td>{formatCrmDateTime(payment.paid_at)}</Td>
+              <Td className="font-medium text-gray-900">{formatMoney(payment.amount, payment.currency)}</Td>
+              <Td>{payment.method ?? "-"}</Td>
+              <Td>{payment.reference ?? "-"}</Td>
+              <Td>{payment.notes ?? "-"}</Td>
+              <Td>{payment.recorded_by_user_id ?? "-"}</Td>
+            </tr>
+          ))}
+        </DataTable>
+      </div>
+    </SectionCard>
   );
 }
 
 function RefundHistory({ refunds }: { refunds: CrmClientRefund[] }) {
+  if (refunds.length === 0) {
+    return (
+      <SectionCard title="Refund history">
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          No refunds recorded.
+        </p>
+      </SectionCard>
+    );
+  }
+
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-900">Refund history</h2>
-      {refunds.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-500">No refunds recorded.</p>
-      ) : (
-        <div className="mt-4 overflow-hidden rounded-md border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-100 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Refunded at</Th>
-                <Th>Amount</Th>
-                <Th>Reason</Th>
-                <Th>Recorded by</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {refunds.map((refund) => (
-                <tr key={refund.id}>
-                  <Td>{formatCrmDateTime(refund.refunded_at)}</Td>
-                  <Td>{formatMoney(refund.amount, refund.currency)}</Td>
-                  <Td>{refund.reason}</Td>
-                  <Td>{refund.recorded_by_user_id ?? "-"}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+    <SectionCard title="Refund history" description={`${refunds.length} refunds recorded`}>
+      <div className="mt-4">
+        <DataTable columns={["Refunded at", "Amount", "Reason", "Recorded by"]}>
+          {refunds.map((refund) => (
+            <tr key={refund.id} className="hover:bg-gray-50">
+              <Td>{formatCrmDateTime(refund.refunded_at)}</Td>
+              <Td className="font-medium text-gray-900">{formatMoney(refund.amount, refund.currency)}</Td>
+              <Td>{refund.reason}</Td>
+              <Td>{refund.recorded_by_user_id ?? "-"}</Td>
+            </tr>
+          ))}
+        </DataTable>
+      </div>
+    </SectionCard>
   );
 }
 
@@ -239,12 +255,7 @@ function TextInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        required={required}
-        defaultValue={defaultValue}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} required={required} defaultValue={defaultValue} className={FIELD} />
     </label>
   );
 }
@@ -265,14 +276,7 @@ function NumberInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        type="number"
-        min={min}
-        step={step}
-        required={required}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} type="number" min={min} step={step} required={required} className={FIELD} />
     </label>
   );
 }
@@ -289,26 +293,9 @@ function DateTimeInput({
   return (
     <label className="space-y-1 text-xs font-medium text-gray-600">
       <span>{label}</span>
-      <input
-        name={name}
-        type="datetime-local"
-        required={required}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900"
-      />
+      <input name={name} type="datetime-local" required={required} className={FIELD} />
     </label>
   );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-      {children}
-    </th>
-  );
-}
-
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-4 py-3 align-top">{children}</td>;
 }
 
 function formatLabel(value: string): string {
@@ -336,5 +323,5 @@ function Notice({
       : tone === "amber"
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : "border-red-200 bg-red-50 text-red-700";
-  return <div className={`rounded-md border px-4 py-2 text-sm ${classes}`}>{children}</div>;
+  return <div className={`rounded-md border px-4 py-3 text-sm shadow-sm ${classes}`}>{children}</div>;
 }

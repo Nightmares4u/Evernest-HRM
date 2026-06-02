@@ -130,7 +130,7 @@ export default async function CalendarPage({
                 key={name}
                 href={`/calendar?year=${year}&month=${m}`}
                 className={`rounded-lg bg-white p-3 shadow ring-1 ring-black/5 hover:bg-gray-50 ${
-                  m === month ? "outline outline-2 outline-indigo-300" : ""
+                  m === month ? "outline outline-2 outline-blue-300" : ""
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -160,7 +160,7 @@ export default async function CalendarPage({
               {MONTHS[month - 1]} {year}
             </h2>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Chip label={`${tasksByDateCount(tasksByDate, monthStart, monthEnd)} tasks`} tone="indigo" />
+              <Chip label={`${tasksByDateCount(tasksByDate, monthStart, monthEnd)} tasks`} tone="blue" />
               <Chip label={`${holidaysByDateCount(holidaysByDate, monthStart, monthEnd)} holidays`} tone="gray" />
             </div>
           </div>
@@ -225,7 +225,7 @@ function CalendarGrid({
               href={`/calendar?year=${year}&month=${month}&day=${day.iso}`}
               className={`min-h-[8.25rem] border-b border-r border-gray-100 p-2 text-left transition hover:bg-gray-50 ${
                 !day.inMonth ? "bg-gray-50/60 text-gray-400" : display.bg
-              } ${selectedDay === day.iso ? "outline outline-2 outline-indigo-400" : ""}`}
+              } ${selectedDay === day.iso ? "outline outline-2 outline-blue-400" : ""}`}
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="text-xs font-semibold text-gray-700">
@@ -243,7 +243,7 @@ function CalendarGrid({
                   </p>
                 ))}
                 {tasks.slice(0, 2).map((task) => (
-                  <p key={task.id} className="truncate text-indigo-700">
+                  <p key={task.id} className="truncate text-blue-700">
                     {task.title}
                   </p>
                 ))}
@@ -322,7 +322,7 @@ function DayPanel({
 
       <Link
         href={`/calendar?year=${year}&month=${month}`}
-        className="inline-block text-sm text-indigo-600 hover:text-indigo-500"
+        className="inline-block text-sm text-blue-600 hover:text-blue-500"
       >
         Clear selected day
       </Link>

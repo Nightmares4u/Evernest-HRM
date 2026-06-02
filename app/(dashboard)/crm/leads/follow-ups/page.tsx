@@ -159,7 +159,7 @@ export default async function CrmFollowupsPage({
 
           <button
             type="submit"
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+            className="rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
           >
             Filter
           </button>

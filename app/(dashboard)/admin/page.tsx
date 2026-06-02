@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Chip } from "@/components/StatusChip";
 import {
   getAdminPendingCounts,
   isSupabaseConfigured,
@@ -12,6 +11,12 @@ import {
 import { listRedlinedEmployees } from "@/lib/db/tasks";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
+
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatCard } from "@/components/ui/StatCard";
+import { DataTable, Td } from "@/components/ui/DataTable";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 
 const PKR = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -64,14 +69,10 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Admin</h1>
-          <p className="text-sm text-gray-500">
-            Configuration overview and placeholders for upcoming controls.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        title="Admin Command Center"
+        description="Configuration overview and operational controls."
+      />
 
       {!live && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
@@ -79,20 +80,20 @@ export default async function AdminPage() {
         </div>
       )}
 
-      <Section title="Action items">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <SectionCard title="Action Items">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 mt-2">
           <ActionCard
             label="Pending leave"
             value={counts.pending_leave}
             href="/admin/leave?filter=pending"
-            tone={counts.pending_leave > 0 ? "yellow" : "gray"}
+            tone={counts.pending_leave > 0 ? "amber" : "gray"}
             hint={counts.pending_leave === 0 ? "Inbox clear" : "Review and act"}
           />
           <ActionCard
             label="Pending task approvals"
             value={counts.pending_task_approvals}
             href="/admin/tasks?filter=pending_approval"
-            tone={counts.pending_task_approvals > 0 ? "yellow" : "gray"}
+            tone={counts.pending_task_approvals > 0 ? "amber" : "gray"}
             hint={
               counts.pending_task_approvals === 0
                 ? "Nothing waiting"
@@ -123,7 +124,7 @@ export default async function AdminPage() {
             label="Active recurring tasks"
             value={counts.active_recurring}
             href="/admin/tasks/recurring"
-            tone={counts.active_recurring > 0 ? "indigo" : "gray"}
+            tone={counts.active_recurring > 0 ? "blue" : "gray"}
             hint="Manage templates"
           />
           <ActionCard
@@ -138,7 +139,7 @@ export default async function AdminPage() {
               label="Add employee"
               value="New"
               href="/admin/employees/new"
-              tone="indigo"
+              tone="blue"
               hint="Create login + HR profile"
             />
           )}
@@ -152,11 +153,11 @@ export default async function AdminPage() {
             />
           )}
         </div>
-      </Section>
+      </SectionCard>
 
       {redlined.length > 0 && (
-        <Section title={`Redlined (${redlined.length})`}>
-          <div className="rounded-lg border border-red-200 bg-red-50/40 p-4">
+        <SectionCard title={`Redlined (${redlined.length})`}>
+          <div className="rounded-lg border border-red-200 bg-red-50/40 p-4 mt-2">
             <p className="text-xs text-red-800">
               Employees with 3+ overdue undone tasks. Conversation, then
               consider a payroll adjustment if warranted.
@@ -171,13 +172,10 @@ export default async function AdminPage() {
                     {r.full_name}
                   </span>
                   <span className="flex items-center gap-3">
-                    <Chip
-                      label={`${r.overdue_count} overdue`}
-                      tone="red"
-                    />
+                    <StatusBadge label={`${r.overdue_count} overdue`} tone="red" />
                     <Link
                       href={`/admin/tasks?filter=overdue`}
-                      className="text-xs text-indigo-600 hover:text-indigo-500"
+                      className="text-xs font-medium text-blue-600 hover:text-blue-500"
                     >
                       Review →
                     </Link>
@@ -186,150 +184,109 @@ export default async function AdminPage() {
               ))}
             </ul>
           </div>
-        </Section>
+        </SectionCard>
       )}
 
-      <Section title={isSuperAdmin ? "Headcount & payroll" : "Headcount"}>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Employees" value={totalEmployees} />
-          {isSuperAdmin && <Stat label="Monthly payroll" value={PKR.format(totalPayroll)} />}
-          <Stat
-            label="Attendance-exempt"
-            value={exemptCount}
-            hint="Yashal + Marketing"
-          />
-          <Stat label="Remote-allowed" value={remoteAllowed} />
+      <SectionCard title={isSuperAdmin ? "Headcount & Payroll" : "Headcount"}>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mt-2">
+          <StatCard label="Employees" value={totalEmployees} />
+          {isSuperAdmin && <StatCard label="Monthly payroll" value={PKR.format(totalPayroll)} />}
+          <StatCard label="Attendance-exempt" value={exemptCount} hint="Yashal + Marketing" />
+          <StatCard label="Remote-allowed" value={remoteAllowed} />
         </div>
-      </Section>
+      </SectionCard>
 
-      <Section title="Branches">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <SectionCard title="Branch Overview">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 mt-2">
           {employeesByBranch.map(({ branch, count }) => {
-            const defaultShift = shifts.find(
-              (s) => s.id === branch.default_shift_id
-            );
+            const defaultShift = shifts.find((s) => s.id === branch.default_shift_id);
             return (
-              <div
-                key={branch.id}
-                className="rounded-lg bg-white p-4 shadow ring-1 ring-black/5"
-              >
+              <div key={branch.id} className="rounded-lg bg-gray-50 p-4 border border-gray-100">
                 <div className="flex items-baseline justify-between">
                   <h3 className="font-semibold text-gray-900">{branch.name}</h3>
-                  <Chip label={branch.code} tone="gray" />
+                  <StatusBadge label={branch.code} tone="gray" />
                 </div>
                 <dl className="mt-3 space-y-1 text-sm">
-                  <Row label="Employees" value={String(count)} />
-                  <Row
-                    label="Default shift"
-                    value={
-                      defaultShift
-                        ? `${defaultShift.name} (${defaultShift.start_time.slice(0, 5)}–${defaultShift.end_time.slice(0, 5)})`
-                        : "—"
-                    }
-                  />
-                  <Row
-                    label="IP whitelist"
-                    value={
-                      branch.ip_whitelist.length
-                        ? branch.ip_whitelist.join(", ")
-                        : "(none — soft mode)"
-                    }
-                  />
+                  <div className="flex justify-between">
+                    <dt className="text-gray-500">Employees</dt>
+                    <dd className="font-medium">{count}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-gray-500">Shift</dt>
+                    <dd className="font-medium">
+                      {defaultShift ? `${defaultShift.start_time.slice(0, 5)}–${defaultShift.end_time.slice(0, 5)}` : "—"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-gray-500">IP whitelist</dt>
+                    <dd className="font-medium">
+                      {branch.ip_whitelist.length ? branch.ip_whitelist.join(", ") : "(none)"}
+                    </dd>
+                  </div>
                 </dl>
               </div>
             );
           })}
         </div>
-      </Section>
+      </SectionCard>
 
-      <Section title="Departments">
-        <div className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Department</Th>
-                <Th className="text-right">Employees</Th>
+      <SectionCard title="Departments">
+        <div className="mt-4">
+          <DataTable columns={["Department", "Employees"]}>
+            {employeesByDept.map(({ dept, count }) => (
+              <tr key={dept.id} className="hover:bg-gray-50">
+                <Td>{dept.name}</Td>
+                <Td className="text-right tabular-nums">{count}</Td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {employeesByDept.map(({ dept, count }) => (
-                <tr key={dept.id} className="hover:bg-gray-50">
-                  <Td>{dept.name}</Td>
-                  <Td className="text-right tabular-nums">{count}</Td>
+            ))}
+          </DataTable>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Shifts">
+        <div className="mt-4">
+          <DataTable columns={["Shift", "Start", "End", "Late grace (min)", "Half-day < (min)"]}>
+            {shifts.map((s) => (
+              <tr key={s.id} className="hover:bg-gray-50">
+                <Td className="font-medium text-gray-900">{s.name}</Td>
+                <Td className="tabular-nums">{s.start_time.slice(0, 5)}</Td>
+                <Td className="tabular-nums">{s.end_time.slice(0, 5)}</Td>
+                <Td className="text-right tabular-nums">{s.late_grace_minutes}</Td>
+                <Td className="text-right tabular-nums">{s.half_day_threshold_minutes}</Td>
+              </tr>
+            ))}
+          </DataTable>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Remote Roster">
+        <div className="mt-4">
+          <DataTable columns={["Employee", "Branch", "Remote Days", "Attendance"]}>
+            {employees
+              .filter((e) => e.remote_allowed)
+              .map((e) => (
+                <tr key={e.id} className="hover:bg-gray-50">
+                  <Td>
+                    <div className="font-medium text-gray-900">{e.full_name}</div>
+                    <div className="text-xs text-gray-500">{e.email}</div>
+                  </Td>
+                  <Td>{e.branch_code ?? "—"}</Td>
+                  <Td className="text-xs">{formatDays(e.remote_default_days)}</Td>
+                  <Td>
+                    {e.attendance_exempt ? (
+                      <StatusBadge label="exempt — task-based" tone="gray" />
+                    ) : (
+                      <StatusBadge label="enforced" tone="green" />
+                    )}
+                  </Td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+          </DataTable>
         </div>
-      </Section>
+      </SectionCard>
 
-      <Section title="Shifts">
-        <div className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Shift</Th>
-                <Th>Start</Th>
-                <Th>End</Th>
-                <Th className="text-right">Late grace (min)</Th>
-                <Th className="text-right">Half-day &lt; (min)</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {shifts.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <Td className="font-medium text-gray-900">{s.name}</Td>
-                  <Td className="tabular-nums">{s.start_time.slice(0, 5)}</Td>
-                  <Td className="tabular-nums">{s.end_time.slice(0, 5)}</Td>
-                  <Td className="text-right tabular-nums">{s.late_grace_minutes}</Td>
-                  <Td className="text-right tabular-nums">{s.half_day_threshold_minutes}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Remote roster">
-        <div className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <Th>Employee</Th>
-                <Th>Branch</Th>
-                <Th>Default remote days</Th>
-                <Th>Attendance</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {employees
-                .filter((e) => e.remote_allowed)
-                .map((e) => (
-                  <tr key={e.id} className="hover:bg-gray-50">
-                    <Td>
-                      <div className="font-medium text-gray-900">{e.full_name}</div>
-                      <div className="text-xs text-gray-500">{e.email}</div>
-                    </Td>
-                    <Td>{e.branch_code ?? "—"}</Td>
-                    <Td className="text-xs">
-                      {formatDays(e.remote_default_days)}
-                    </Td>
-                    <Td>
-                      {e.attendance_exempt ? (
-                        <Chip label="exempt — task-based" tone="gray" />
-                      ) : (
-                        <Chip label="enforced" tone="green" />
-                      )}
-                    </Td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Quick links">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <SectionCard title="Quick Actions">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-4">
           <QuickLink
             href="/admin/leave"
             title="Leave admin"
@@ -399,27 +356,7 @@ export default async function AdminPage() {
             description="Late grace, half-day threshold, payroll denominators, redline threshold. Stored in settings table."
           />
         </div>
-      </Section>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
-}) {
-  return (
-    <div className="overflow-hidden rounded-lg bg-white p-4 shadow ring-1 ring-black/5">
-      <p className="truncate text-xs font-medium uppercase tracking-wide text-gray-500">
-        {label}
-      </p>
-      <p className="mt-1 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
-      {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
+      </SectionCard>
     </div>
   );
 }
@@ -434,29 +371,27 @@ function ActionCard({
   label: string;
   value: string | number;
   href: string;
-  tone: "green" | "amber" | "yellow" | "indigo" | "gray" | "red";
+  tone: "green" | "amber" | "blue" | "gray" | "red";
   hint?: string;
 }) {
   const ring = {
     green: "ring-green-200",
     amber: "ring-amber-200",
-    yellow: "ring-yellow-200",
-    indigo: "ring-indigo-200",
+    blue: "ring-blue-200",
     gray: "ring-gray-200",
     red: "ring-red-200",
   }[tone];
   const valueClass = {
     green: "text-green-700",
     amber: "text-amber-700",
-    yellow: "text-yellow-700",
-    indigo: "text-indigo-700",
-    gray: "text-gray-700",
+    blue: "text-blue-700",
+    gray: "text-gray-900",
     red: "text-red-700",
   }[tone];
   return (
     <Link
       href={href}
-      className={`block overflow-hidden rounded-lg bg-white p-4 shadow ring-1 ${ring} transition hover:shadow-md`}
+      className={`block overflow-hidden rounded-lg bg-white p-4 shadow-sm ring-1 ${ring} transition hover:shadow-md hover:bg-gray-50/30`}
     >
       <p className="truncate text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
@@ -483,33 +418,15 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="block rounded-lg border border-indigo-200 bg-white p-4 shadow-sm transition hover:bg-indigo-50/40"
+      className="block rounded-lg border border-blue-200 bg-white p-4 shadow-sm transition hover:bg-blue-50/50"
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        {live && <Chip label="live" tone="green" />}
+        {live && <StatusBadge label="live" tone="green" />}
       </div>
       <p className="mt-2 text-xs text-gray-500">{description}</p>
-      <p className="mt-3 text-xs text-indigo-600">Open →</p>
+      <p className="mt-3 text-xs font-medium text-blue-600">Open →</p>
     </Link>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold text-gray-700">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <dt className="text-xs uppercase tracking-wide text-gray-500">{label}</dt>
-      <dd className="text-right text-sm text-gray-700">{value}</dd>
-    </div>
   );
 }
 
@@ -521,46 +438,19 @@ function PendingCard({
   description: string;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-gray-300 bg-white p-4">
+    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50/50 p-4">
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
-        <Chip label="planned" tone="gray" />
+        <StatusBadge label="planned" tone="gray" />
       </div>
       <p className="mt-2 text-xs text-gray-500">{description}</p>
       <button
         type="button"
         disabled
-        className="mt-3 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-400"
+        className="mt-3 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-400 cursor-not-allowed"
       >
         Open (disabled)
       </button>
     </div>
   );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th
-      scope="col"
-      className={`px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-4 py-3 text-sm text-gray-700 ${className}`}>{children}</td>;
 }

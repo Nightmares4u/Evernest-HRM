@@ -111,7 +111,7 @@ export default async function CrmCampaignSourcesPage({
             </label>
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Add source
             </button>
@@ -180,7 +180,7 @@ export default async function CrmCampaignSourcesPage({
                         />
                         <button
                           type="submit"
-                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-500"
                         >
                           {source.is_active ? "Deactivate" : "Activate"}
                         </button>

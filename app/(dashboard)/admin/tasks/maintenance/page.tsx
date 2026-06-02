@@ -7,6 +7,9 @@ import {
   type TaskMaintenanceStatusFilter,
 } from "./actions";
 import { TaskBulkDeleteForm } from "./TaskBulkDeleteForm";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { DangerZone } from "@/components/ui/DangerZone";
+import { SectionCard } from "@/components/ui/SectionCard";
 
 type Search = {
   q?: string;
@@ -53,39 +56,42 @@ export default async function TaskMaintenancePage({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Task Maintenance</h1>
-          <p className="text-sm text-gray-500">
-            Select HRM task rows for permanent cleanup.
-          </p>
-        </div>
-        <Link
-          href="/admin/tasks"
-          className="rounded-md bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
-        >
-          Back to tasks admin
-        </Link>
-      </header>
+      <PageHeader
+        title="Task Maintenance"
+        description="Select HRM task rows for permanent cleanup."
+        action={
+          <Link
+            href="/admin/tasks"
+            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+          >
+            Back to tasks admin
+          </Link>
+        }
+      />
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
 
-      <WarningCard />
+      <DangerZone
+        title="Destructive deletion"
+        warningText="Deletion is permanent. Selected rows are removed from `tasks`, not hidden or archived."
+      >
+        <p className="text-sm text-red-800">
+          Related `task_updates` and `task_attachments` are removed by verified FK cascades.
+          Recurring task templates, employees, users, attendance, payroll, leave, and CRM data
+          are not touched.
+        </p>
+      </DangerZone>
 
-      <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Find tasks</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Default view shows the latest {taskList.limit} matching tasks.
-            </p>
-          </div>
+      <SectionCard
+        title="Find tasks"
+        description={`Default view shows the latest ${taskList.limit} matching tasks.`}
+        action={
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
             {taskList.total.toLocaleString("en-PK")} matched
           </span>
-        </div>
-
+        }
+      >
         <form action="/admin/tasks/maintenance" className="mt-5 grid gap-4 lg:grid-cols-4">
           <label className="space-y-1 text-xs font-medium text-gray-600 lg:col-span-2">
             <span>Search title / description</span>
@@ -133,62 +139,41 @@ export default async function TaskMaintenancePage({
           </label>
 
           <div className="flex items-end gap-2">
-            <button className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+            <button className="rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 transition-colors">
               Apply filters
             </button>
             <Link
               href="/admin/tasks/maintenance"
-              className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+              className="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
             >
               Reset
             </Link>
           </div>
         </form>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Tasks</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Showing {taskList.rows.length.toLocaleString("en-PK")} visible row(s).
-              {taskList.total > taskList.limit
-                ? ` Narrow filters to act beyond the latest ${taskList.limit}.`
-                : ""}
-            </p>
-          </div>
-        </div>
-
+      <SectionCard
+        title="Tasks"
+        description={`Showing ${taskList.rows.length.toLocaleString("en-PK")} visible row(s). ${
+          taskList.total > taskList.limit
+            ? `Narrow filters to act beyond the latest ${taskList.limit}.`
+            : ""
+        }`}
+      >
         {taskList.rows.length === 0 ? (
           <p className="rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
             No tasks match these filters.
           </p>
         ) : (
-          <TaskBulkDeleteForm
-            tasks={taskList.rows}
-            deleteAction={deleteSelectedTaskCleanup}
-          />
+          <div className="mt-4">
+            <TaskBulkDeleteForm
+              tasks={taskList.rows}
+              deleteAction={deleteSelectedTaskCleanup}
+            />
+          </div>
         )}
-      </section>
+      </SectionCard>
     </div>
-  );
-}
-
-function WarningCard() {
-  return (
-    <section className="rounded-lg border border-red-200 bg-red-50 p-5">
-      <h2 className="text-sm font-semibold text-red-900">Destructive deletion</h2>
-      <div className="mt-2 space-y-2 text-sm text-red-800">
-        <p>
-          Deletion is permanent. Selected rows are removed from `tasks`, not hidden or archived.
-        </p>
-        <p>
-          Related `task_updates` and `task_attachments` are removed by verified FK cascades.
-          Recurring task templates, employees, users, attendance, payroll, leave, and CRM data
-          are not touched.
-        </p>
-      </div>
-    </section>
   );
 }
 

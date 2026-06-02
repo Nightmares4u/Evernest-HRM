@@ -113,7 +113,7 @@ export default async function CrmWhatsappNumbersPage({
             </label>
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Add number
             </button>
@@ -187,7 +187,7 @@ export default async function CrmWhatsappNumbersPage({
                         </select>
                         <button
                           type="submit"
-                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-500"
                         >
                           Save
                         </button>
@@ -292,7 +292,7 @@ export default async function CrmWhatsappNumbersPage({
                           </label>
                           <button
                             type="submit"
-                            className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                            className="text-xs font-medium text-blue-600 hover:text-blue-500"
                           >
                             Save fallback
                           </button>
@@ -327,7 +327,7 @@ export default async function CrmWhatsappNumbersPage({
                         />
                         <button
                           type="submit"
-                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-500"
                         >
                           {number.is_active ? "Deactivate" : "Activate"}
                         </button>
