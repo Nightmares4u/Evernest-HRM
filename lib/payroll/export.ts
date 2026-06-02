@@ -249,7 +249,12 @@ function buildEmployeePayrollRow(args: {
   const halfDayRecords = records.filter((record) => HALF_DAY_STATUSES.has(record.status));
   const lateDeductionRecords = everyNth(lateRecords, 3);
   const halfDayDeductionRecords = halfDayRecords.slice(2);
-  const halfDayDeductionDays = halfDayDeductionRecords.length * 0.5;
+  const attendanceExempt = args.employee.attendance_exempt;
+  const absentDays = attendanceExempt ? 0 : absentRecords.length;
+  const lateCount = attendanceExempt ? 0 : lateRecords.length;
+  const lateDeductionDays = attendanceExempt ? 0 : lateDeductionRecords.length;
+  const halfDayCount = attendanceExempt ? 0 : halfDayRecords.length;
+  const halfDayDeductionDays = attendanceExempt ? 0 : halfDayDeductionRecords.length * 0.5;
   const paidHolidays = countPaidHolidays({
     holidays: args.holidays,
     employeeId: args.employee.id,
@@ -263,22 +268,26 @@ function buildEmployeePayrollRow(args: {
     periodStart: args.periodStart,
     periodEnd: args.periodEnd,
   });
-  const deductionAmount = Math.round(
-    absentRecords.reduce(
-      (sum, record) => sum + dailyRateForDate(args.employee, args.holidays, record.date),
-      0
-    ) +
-      lateDeductionRecords.reduce(
-        (sum, record) => sum + dailyRateForDate(args.employee, args.holidays, record.date),
-        0
-      ) +
-      halfDayDeductionRecords.reduce(
-        (sum, record) => sum + dailyRateForDate(args.employee, args.holidays, record.date) * 0.5,
-        0
-      )
-  );
+  const deductionAmount = attendanceExempt
+    ? 0
+    : Math.round(
+        absentRecords.reduce(
+          (sum, record) => sum + dailyRateForDate(args.employee, args.holidays, record.date),
+          0
+        ) +
+          lateDeductionRecords.reduce(
+            (sum, record) => sum + dailyRateForDate(args.employee, args.holidays, record.date),
+            0
+          ) +
+          halfDayDeductionRecords.reduce(
+            (sum, record) =>
+              sum + dailyRateForDate(args.employee, args.holidays, record.date) * 0.5,
+            0
+          )
+      );
   const totalDeductionDays =
-    absentRecords.length + lateDeductionRecords.length + halfDayDeductionDays;
+    absentDays + lateDeductionDays + halfDayDeductionDays;
+  const roundedGrossBasePayable = Math.round(grossBasePayable);
 
   return {
     employeeId: args.employee.id,
@@ -303,15 +312,15 @@ function buildEmployeePayrollRow(args: {
     remoteDays,
     leaveDays,
     paidHolidays,
-    absentDays: absentRecords.length,
-    lateCount: lateRecords.length,
-    lateDeductionDays: lateDeductionRecords.length,
-    halfDayCount: halfDayRecords.length,
+    absentDays,
+    lateCount,
+    lateDeductionDays,
+    halfDayCount,
     halfDayDeductionDays,
     totalDeductionDays,
-    grossBasePayable: Math.round(grossBasePayable),
+    grossBasePayable: roundedGrossBasePayable,
     deductionAmount,
-    netPayable: Math.max(0, Math.round(grossBasePayable) - deductionAmount),
+    netPayable: Math.max(0, roundedGrossBasePayable - deductionAmount),
     notesStatus: args.employee.employment_status === "active" ? "Payroll-ready" : args.employee.employment_status,
   };
 }

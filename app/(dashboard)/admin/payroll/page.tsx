@@ -180,6 +180,7 @@ export default async function AdminPayrollPage({
               <Th>Branch</Th>
               <Th className="text-right">Salary</Th>
               <Th className="text-right">Working days</Th>
+              <Th className="text-right">Present</Th>
               <Th className="text-right">Daily rate</Th>
               <Th className="text-right">Absent</Th>
               <Th className="text-right">Late</Th>
@@ -194,10 +195,20 @@ export default async function AdminPayrollPage({
           <tbody className="divide-y divide-gray-100">
             {previews.map((row) => (
               <tr key={row.employeeId} className="hover:bg-gray-50">
-                <Td className="font-medium text-gray-900">{row.employeeName}</Td>
+                <Td className="font-medium text-gray-900">
+                  <div className="flex flex-col gap-1">
+                    <span>{row.employeeName}</span>
+                    {row.attendanceExempt && (
+                      <span className="w-fit rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                        Attendance exempt
+                      </span>
+                    )}
+                  </div>
+                </Td>
                 <Td>{row.branchCode ?? row.branchName ?? "—"}</Td>
                 <Td className="text-right tabular-nums">{PKR.format(row.monthlySalary)}</Td>
                 <Td className="text-right tabular-nums">{row.scheduledWorkingDays}</Td>
+                <Td className="text-right tabular-nums">{row.presentDays}</Td>
                 <Td className="text-right tabular-nums">{PKR.format(row.dailyDeductionRate)}</Td>
                 <Td className="text-right tabular-nums">{row.absentDays}</Td>
                 <Td className="text-right tabular-nums">{row.lateCount}</Td>

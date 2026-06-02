@@ -8,6 +8,7 @@ export type PayrollPreview = {
   branchCode: string | null;
   monthlySalary: number;
   scheduledWorkingDays: number;
+  presentDays: number;
   dailyDeductionRate: number;
   absentDays: number;
   lateCount: number;
@@ -18,8 +19,18 @@ export type PayrollPreview = {
   totalDeductionDays: number;
   deductionAmount: number;
   estimatedPayable: number;
+  attendanceExempt: boolean;
 };
 
+const PRESENT_STATUSES = new Set([
+  "present",
+  "late",
+  "half_day",
+  "approved_manually",
+  "remote_present",
+  "remote_late",
+  "remote_half_day",
+]);
 const LATE_STATUSES = new Set(["late", "remote_late"]);
 const HALF_DAY_STATUSES = new Set(["half_day", "remote_half_day"]);
 
@@ -62,16 +73,26 @@ export function buildPayrollPreview({
 }: {
   employee: Pick<
     EmployeeWithJoins,
-    "id" | "full_name" | "branch_id" | "branch_name" | "branch_code" | "monthly_salary"
+    | "id"
+    | "full_name"
+    | "branch_id"
+    | "branch_name"
+    | "branch_code"
+    | "monthly_salary"
+    | "attendance_exempt"
   >;
   records: AttendanceRecord[];
   holidays: Holiday[];
   monthStart: string;
   monthEnd: string;
 }): PayrollPreview {
-  const lateCount = records.filter((record) => LATE_STATUSES.has(record.status)).length;
-  const halfDayCount = records.filter((record) => HALF_DAY_STATUSES.has(record.status)).length;
-  const absentDays = records.filter((record) => record.status === "absent").length;
+  const presentDays = records.filter((record) => PRESENT_STATUSES.has(record.status)).length;
+  const countedLateDays = records.filter((record) => LATE_STATUSES.has(record.status)).length;
+  const countedHalfDays = records.filter((record) => HALF_DAY_STATUSES.has(record.status)).length;
+  const countedAbsentDays = records.filter((record) => record.status === "absent").length;
+  const absentDays = employee.attendance_exempt ? 0 : countedAbsentDays;
+  const lateCount = employee.attendance_exempt ? 0 : countedLateDays;
+  const halfDayCount = employee.attendance_exempt ? 0 : countedHalfDays;
   const lateDeductionDays = Math.floor(lateCount / 3);
   const extraHalfDays = Math.max(0, halfDayCount - 2);
   const halfDayDeductionDays = extraHalfDays * 0.5;
@@ -94,6 +115,7 @@ export function buildPayrollPreview({
     branchCode: employee.branch_code,
     monthlySalary: employee.monthly_salary,
     scheduledWorkingDays,
+    presentDays,
     dailyDeductionRate,
     absentDays,
     lateCount,
@@ -104,5 +126,6 @@ export function buildPayrollPreview({
     totalDeductionDays,
     deductionAmount,
     estimatedPayable: Math.max(0, employee.monthly_salary - deductionAmount),
+    attendanceExempt: employee.attendance_exempt,
   };
 }
