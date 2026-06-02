@@ -2,7 +2,7 @@
 
 > Snapshot of where the project actually stands. Update this on every meaningful change.
 
-**Last updated**: Payroll Export Center MVP.
+**Last updated**: Payroll preview visibility fix + individual payroll email backlog.
 
 ## Branch & commits
 
@@ -112,6 +112,7 @@ All cron routes require either `Authorization: Bearer $CRON_SECRET` or `x-cron-s
   - recurring task generation — every morning before office opens, e.g. 08:00 PKT / 03:00 UTC.
 - **Audit log viewer** (`/admin/audit`).
 - **Payroll runs + payslips** UI (`/admin/payroll/runs/*`). Schema is in place (`payroll_runs`, `payslips`). Current payroll export is report-only; it does not generate payslips or mark salary paid.
+- **Individual monthly payroll PDF + email**. Super-admins need a per-employee monthly payroll preview/export action that generates only that employee's PDF and sends it through Resend to `employees.contact_email`. Guardrails: super-admin only, month-scoped, no branch/company data in the employee PDF, disable/send warning when `contact_email` is missing, use existing `lib/payroll/export.ts` row math, and audit-log the send. No schema change expected because `contact_email` already exists on `employees` and is visible to super-admin payroll reads.
 - **Super-admin restriction at handler level**. Currently any signed-in user can hit `/admin/*` URLs; RLS on the underlying tables prevents writes by non-super-admins, but a clean redirect to `/dashboard?error=…` for non-admins would be polite. Add to middleware or admin layout.
 - **Task attachments** (Supabase Storage `task-proofs` bucket; metadata table is ready).
 

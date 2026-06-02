@@ -120,6 +120,13 @@
 - "Finalize Run" button → status `finalized`.
 - Per-payslip disbursement form: `disbursed_amount`, `payment_method`, `payment_reference`, `paid_at` → status `paid`.
 - Printable payslip view: `/admin/payroll/payslips/[id]/print`.
+- Individual monthly payroll PDF/email action for super-admins:
+  - From employee scope in payroll export or employee payroll preview, generate a single-employee monthly PDF only.
+  - Send via existing Resend wrapper to `employees.contact_email`; block or warn if missing.
+  - The attachment must contain only that employee's payroll row/details for the selected month, never company/branch summaries or other employees.
+  - Reuse existing payroll preview/export math, including `attendance_exempt` override and present/leave counts.
+  - Audit-log each send with employee id, month, recipient email, and actor; do not log PDF contents.
+  - No migration expected: `contact_email` already exists on `employees` and is exposed to super-admin payroll reads.
 
 ### Day 13 — Audit log UI + reports refinement
 
