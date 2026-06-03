@@ -35,7 +35,7 @@ export default async function CronAdminPage() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs text-gray-500">
-            <Link href="/admin" className="text-indigo-600 hover:text-indigo-500">
+            <Link href="/admin" className="text-blue-600 hover:text-blue-500">
               Admin
             </Link>{" "}
             / Cron

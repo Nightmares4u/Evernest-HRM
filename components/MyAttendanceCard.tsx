@@ -71,7 +71,7 @@ export async function MyAttendanceCard({ me }: { me: CurrentUser | null }) {
               <dd className="text-right">
                 <Chip
                   label={record.mode}
-                  tone={record.mode === "remote" ? "indigo" : "gray"}
+                  tone={record.mode === "remote" ? "blue" : "gray"}
                 />
               </dd>
             </dl>
@@ -97,7 +97,7 @@ export async function MyAttendanceCard({ me }: { me: CurrentUser | null }) {
             <dd className="text-right">
               <Chip
                 label={record.mode}
-                tone={record.mode === "remote" ? "indigo" : "gray"}
+                tone={record.mode === "remote" ? "blue" : "gray"}
               />
             </dd>
           </dl>

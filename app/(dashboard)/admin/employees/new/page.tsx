@@ -25,7 +25,7 @@ const EMPLOYMENT_STATUSES: { value: EmploymentStatus; label: string }[] = [
 ];
 
 const INPUT_CLASS =
-  "block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+  "block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
 type Search = { error?: string };
 
@@ -53,7 +53,7 @@ export default async function NewEmployeePage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs text-gray-500">
-            <Link href="/employees" className="text-indigo-600 hover:text-indigo-500">
+            <Link href="/employees" className="text-blue-600 hover:text-blue-500">
               Employees
             </Link>{" "}
             / New employee
@@ -252,7 +252,7 @@ export default async function NewEmployeePage({
             <input
               type="checkbox"
               name="attendance_exempt"
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             Attendance exempt
           </label>
@@ -260,7 +260,7 @@ export default async function NewEmployeePage({
             <input
               type="checkbox"
               name="remote_allowed"
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             Remote allowed
           </label>
@@ -268,7 +268,7 @@ export default async function NewEmployeePage({
             <input
               type="checkbox"
               name="custom_shift_enabled"
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             Custom shift override
           </label>
@@ -286,7 +286,7 @@ export default async function NewEmployeePage({
                   type="checkbox"
                   name="remote_default_days"
                   value={index + 1}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 {day}
               </label>
@@ -303,7 +303,7 @@ export default async function NewEmployeePage({
           </Link>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
           >
             Create employee
           </button>

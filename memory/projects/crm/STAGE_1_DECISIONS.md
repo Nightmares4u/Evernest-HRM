@@ -5,9 +5,9 @@ these decisions. Any change requires an explicit revision of this file.
 
 ## Document Precedence
 
-If anything in the older CRM planning docs (CRM_HRM_INTEGRATION.md,
+If anything in the older CRM planning docs (`archive/CRM_HRM_INTEGRATION.md`,
 CRM_DATA_MODEL_V1.md, DATA_MODEL.md, CRM_ARCHITECTURE_DECISION.md,
-MVP_SCOPE.md, CRM_STAGE_1_MVP_SCOPE.md, WHATSAPP_STAGE_1_INTAKE.md,
+MVP_SCOPE.md, CRM_STAGE_1_MVP_SCOPE.md, `archive/WHATSAPP_STAGE_1_INTAKE.md`,
 OPEN_QUESTIONS.md, IMPLEMENTATION_PLAN.md, CURRENT_STATE.md) contradicts
 this file, **this file wins**. The Codex implementation packet
 (`CODEX_STAGE_1_PACKET.md`) is the authoritative build spec derived from
@@ -23,6 +23,12 @@ Stage 1 excludes: real WhatsApp send, Gemini / any LLM, client portal,
 invoices, cases, documents, commissions, payroll integration, Meta spend
 sync, AI chatbot.
 
+> **2026-06-03 integration note:** Real WhatsApp API/send/coexistence work is
+> still paused and is not included in the staged `review/main-plus-ui`
+> integration. The internal `/crm/assistant` Gemini feature is staff
+> documentation Q&A only; it is not a parser fallback, chatbot, WhatsApp
+> automation, or action executor.
+
 ## Locked Answers
 
 ### 1. WhatsApp send path
@@ -33,7 +39,8 @@ Stage 1 is **read-only / mock send**.
 - `auto_greeting_sent` activity is logged when the system *would* send,
   but no outbound HTTP call is made.
 - Managers/employees reply manually outside CRM.
-- Real WhatsApp send is Stage 1.5.
+- Real WhatsApp send/API/coexistence work is future work and paused for the
+  current integration.
 
 ### 2. First WhatsApp number categories
 Italy, Korea, B2B.
@@ -62,9 +69,11 @@ Active CRM branches: **Karachi**, **Lahore**.
 **Not in Stage 1.**
 
 - Parser + manual review queue only.
-- No AI provider env vars.
-- No `lib/ai/` directory.
-- Gemini fallback is Stage 1.5.
+- No Gemini parser fallback.
+- No automated WhatsApp replies.
+- The internal CRM assistant may use `lib/ai/` and `GEMINI_API_KEY`, but it is
+  docs-grounded staff Q&A only and must not parse intake or execute actions.
+- Gemini fallback remains deferred.
 
 ### 6. RLS strategy
 **App-level branch scoping for Stage 1.** Matches current HRM pattern
@@ -89,8 +98,8 @@ in Postgres policies. DB-level branch RLS is deferred.
 
 ### 8. Greeting text
 Use the 7-question greeting from
-`WHATSAPP_STAGE_1_INTAKE.md` § *Greeting and Structured Info Request*
-as the default template.
+`archive/WHATSAPP_STAGE_1_INTAKE.md` § *Greeting and Structured Info
+Request* as the default template.
 
 - Single template for Stage 1 (no per-number variants).
 - Future per-product variants will live on `crm_whatsapp_numbers`.
@@ -131,13 +140,13 @@ HRM repo. Authoritative names for CRM Stage 1:
 
 - HRM tables are unprefixed: `app_users`, `employees`, `branches`,
   `departments`, `tasks`. No `hrm_` prefix exists in this repo.
-- There is no `hrm_clients` table. Converted clients become rows in a
-  future `crm_cases` table (out of Stage 1).
+- There is no `hrm_clients` table. Converted clients now become rows in
+  `crm_clients` as part of Stage 2A.
 - CRM agent identity = HRM `employees.id`. When CRM needs to look up
   the auth user (e.g. for `assigned_to` semantics like HRM tasks use),
   it joins through `employees.user_id` to `app_users.id`.
-- `user_role` enum in this repo:
-  `super_admin | admin_hr | branch_manager | assistant_manager | manager | employee | team_member`.
+- `user_role` enum in the current migrations:
+  `super_admin | admin_hr | branch_manager | manager | employee`.
   Stage 1 must not introduce new roles. Map CRM concepts onto these.
 
 ## Out of Stage 1 / Deferred

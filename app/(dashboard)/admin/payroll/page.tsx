@@ -124,7 +124,7 @@ export default async function AdminPayrollPage({
           </label>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Load month
           </button>

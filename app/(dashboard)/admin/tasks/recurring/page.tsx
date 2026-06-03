@@ -71,7 +71,7 @@ export default async function RecurringTasksPage({
         <form action={generateTasksForToday}>
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
           >
             Generate today&apos;s tasks
           </button>
@@ -214,7 +214,7 @@ export default async function RecurringTasksPage({
           <div className="lg:col-span-2">
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
             >
               Create template
             </button>
@@ -245,7 +245,7 @@ export default async function RecurringTasksPage({
 function priorityTone(p: string) {
   if (p === "urgent") return "red" as const;
   if (p === "low") return "gray" as const;
-  return "indigo" as const;
+  return "blue" as const;
 }
 
 function RecurringRow({
@@ -277,7 +277,7 @@ function RecurringRow({
             ) : (
               <Chip label="paused" tone="gray" />
             )}
-            {t.active && firesToday && <Chip label="fires today" tone="indigo" />}
+            {t.active && firesToday && <Chip label="fires today" tone="blue" />}
           </div>
           <div className="mt-1 text-xs text-gray-500">
             Assignee: {t.assignee_name} &middot; recurrence: {t.recurrence_type}

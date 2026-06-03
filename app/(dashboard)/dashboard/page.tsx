@@ -21,6 +21,11 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import type { AttendanceStatus } from "@/lib/types/hrm";
 
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatCard } from "@/components/ui/StatCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+
 const PRESENT_STATES: AttendanceStatus[] = [
   "present",
   "remote_present",
@@ -94,37 +99,25 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500">
-          {weekdayPKT(today)}
-          {me && (
-            <>
-              {" — signed in as "}
-              <span className="font-medium text-gray-700">
-                {me.appUser.display_name}
-              </span>{" "}
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                {me.appUser.role}
-              </span>
-            </>
-          )}
-        </p>
-      </header>
+      <PageHeader
+        title="Dashboard"
+        description={`${weekdayPKT(today)} ${me ? `— signed in as ${me.appUser.display_name}` : ""}`}
+        action={me && <StatusBadge label={me.appUser.role} tone="blue" />}
+      />
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">
           {error}
         </div>
       )}
       {ok && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 shadow-sm">
           {ok}
         </div>
       )}
 
       {!live && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
           Mock data (no Supabase env).
         </div>
       )}
@@ -132,14 +125,14 @@ export default async function DashboardPage({
       <MyAttendanceCard me={me} />
 
       {myProfileCompletion && !myProfileCompletion.complete && (
-        <section className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <section className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span>
               Complete your profile for HR records and payroll forwarding.
             </span>
             <Link
               href="/profile"
-              className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
+              className="rounded-md bg-white px-4 py-2 text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 hover:bg-amber-100 transition-colors"
             >
               My Profile
             </Link>
@@ -154,27 +147,21 @@ export default async function DashboardPage({
       )}
 
       {me && (
-        <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-gray-700">
-              {canManage
-                ? `${isSuperAdmin ? "Company" : "Branch"} schedule — next ${SCHEDULE_DAYS} days`
-                : `My schedule — next ${SCHEDULE_DAYS} days`}
-              <span className="ml-2 text-xs font-normal text-gray-500">
-                {scheduleTasks.length} task{scheduleTasks.length === 1 ? "" : "s"}
-              </span>
-            </h2>
-            <div className="flex gap-2 text-xs">
+        <SectionCard
+          title={canManage ? `${isSuperAdmin ? "Company" : "Branch"} schedule — next ${SCHEDULE_DAYS} days` : `My schedule — next ${SCHEDULE_DAYS} days`}
+          description={`${scheduleTasks.length} task${scheduleTasks.length === 1 ? "" : "s"} assigned`}
+          action={
+            <div className="flex flex-wrap gap-2 text-xs">
               <Link
                 href="/tasks?view=schedule"
-                className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+                className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
               >
                 My tasks
               </Link>
               {canManage && (
                 <Link
                   href="/admin/tasks?view=schedule"
-                  className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+                  className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
                 >
                   Open admin schedule
                 </Link>
@@ -182,16 +169,17 @@ export default async function DashboardPage({
               {isSuperAdmin && (
                 <Link
                   href="/admin/tasks/history?range=this_month"
-                  className="rounded-md bg-white px-3 py-1 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50"
+                  className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
                 >
                   Company Task History
                 </Link>
               )}
             </div>
-          </div>
-          <div className="mt-3">
+          }
+        >
+          <div className="mt-4">
             {scheduleTasks.length === 0 ? (
-              <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+              <p className="rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-center text-gray-500">
                 {canManage
                   ? "No tasks across your scope in the next 7 days."
                   : `No tasks assigned to you in the next ${SCHEDULE_DAYS} days.`}
@@ -205,94 +193,64 @@ export default async function DashboardPage({
               />
             )}
           </div>
-        </section>
+        </SectionCard>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Present today" value={presentToday} tone="text-green-700" />
-        <StatCard label="Late today" value={lateToday} tone="text-amber-700" />
-        <StatCard label="Absent today" value={absentToday} tone="text-red-700" />
-        <StatCard label="Pending review" value={pendingToday} tone="text-yellow-700" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Present today" value={presentToday} tone="green" />
+        <StatCard label="Late today" value={lateToday} tone="amber" />
+        <StatCard label="Absent today" value={absentToday} tone="red" />
+        <StatCard label="Pending review" value={pendingToday} tone="yellow" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Panel title={isSuperAdmin ? "Headcount & payroll" : "Headcount"}>
-          <dl className="grid grid-cols-2 gap-y-2 text-sm">
-            <dt className="text-gray-500">Total employees</dt>
-            <dd className="text-right font-medium text-gray-900">{totalEmployees}</dd>
+        <SectionCard title={isSuperAdmin ? "Headcount & payroll" : "Headcount"}>
+          <dl className="grid grid-cols-2 gap-y-4 text-sm mt-4">
+            <dt className="text-gray-500 font-medium">Total employees</dt>
+            <dd className="text-right font-semibold text-gray-900">{totalEmployees}</dd>
             {isSuperAdmin && (
               <>
-                <dt className="text-gray-500">Monthly payroll</dt>
-                <dd className="text-right font-medium tabular-nums text-gray-900">
+                <dt className="text-gray-500 font-medium">Monthly payroll</dt>
+                <dd className="text-right font-semibold tabular-nums text-gray-900">
                   {PKR.format(totalPayroll)}
                 </dd>
               </>
             )}
-            <dt className="text-gray-500">Branches</dt>
+            <dt className="text-gray-500 font-medium">Branches</dt>
             <dd className="text-right font-medium text-gray-900">3 (KHI, LHE, RMT)</dd>
-            <dt className="text-gray-500">Departments</dt>
+            <dt className="text-gray-500 font-medium">Departments</dt>
             <dd className="text-right font-medium text-gray-900">6</dd>
           </dl>
           <Link
             href="/employees"
-            className="mt-4 inline-block text-sm text-indigo-600 hover:text-indigo-500"
+            className="mt-6 inline-block text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors"
           >
             View directory →
           </Link>
-        </Panel>
+        </SectionCard>
 
-        <Panel title="Attendance snapshot">
-          <div className="flex flex-wrap gap-2">
-            <Chip label={`${presentToday} present`} tone="green" />
-            <Chip label={`${lateToday} late`} tone="amber" />
-            <Chip label={`${absentToday} absent`} tone="red" />
-            <Chip label={`${pendingToday} pending`} tone="yellow" />
+        <SectionCard title="Attendance snapshot">
+          <div className="flex flex-wrap gap-2 mt-4">
+            <StatusBadge label={`${presentToday} present`} tone="green" />
+            <StatusBadge label={`${lateToday} late`} tone="amber" />
+            <StatusBadge label={`${absentToday} absent`} tone="red" />
+            <StatusBadge label={`${pendingToday} pending`} tone="yellow" />
             {!isSuperAdmin && me && (
-              <Chip
+              <StatusBadge
                 label={`${myTaskCount} task${myTaskCount === 1 ? "" : "s"} in next ${SCHEDULE_DAYS}d`}
-                tone="indigo"
+                tone="blue"
               />
             )}
           </div>
           <Link
             href="/attendance"
-            className="mt-4 inline-block text-sm text-indigo-600 hover:text-indigo-500"
+            className="mt-6 inline-block text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors"
           >
             Open Today panel →
           </Link>
-        </Panel>
+        </SectionCard>
       </div>
     </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: string;
-}) {
-  return (
-    <div className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
-      <div className="p-5">
-        <p className="truncate text-sm font-medium text-gray-500">{label}</p>
-        <p className={`mt-1 text-3xl font-semibold tabular-nums ${tone}`}>
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <h2 className="text-sm font-semibold text-gray-700">{title}</h2>
-      <div className="mt-3">{children}</div>
-    </section>
   );
 }
 
@@ -302,42 +260,39 @@ function PendingAttendanceReviews({
   records: AttendanceRowVM[];
 }) {
   return (
-    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-700">
-          Pending attendance reviews
-          <span className="ml-2 text-xs font-normal text-gray-500">
-            {records.length}
-          </span>
-        </h2>
+    <SectionCard
+      title="Pending attendance reviews"
+      description={`${records.length} requiring attention`}
+      action={
         <Link
           href="/attendance"
-          className="text-xs text-indigo-600 hover:text-indigo-500"
+          className="text-xs font-medium text-blue-600 hover:text-blue-500 transition-colors"
         >
           Open Today panel →
         </Link>
-      </div>
+      }
+    >
       {records.length === 0 ? (
-        <p className="mt-3 rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+        <p className="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-center text-gray-500">
           No attendance records need review today.
         </p>
       ) : (
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-4 space-y-3">
           {records.slice(0, 5).map((r) => (
             <li
               key={r.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-yellow-100 bg-yellow-50/40 px-3 py-2 text-sm"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-yellow-200 bg-yellow-50/40 px-4 py-3 text-sm shadow-sm"
             >
               <div>
-                <p className="font-medium text-gray-900">{r.employee_full_name}</p>
-                <p className="text-xs text-gray-500">
+                <p className="font-semibold text-gray-900">{r.employee_full_name}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
                   {r.branch_code ?? "—"} · {r.mode} · checked in{" "}
                   {formatTimePKT(r.check_in_at)}
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-1">
+              <div className="flex flex-wrap justify-end gap-2">
                 <StatusChip status={r.status} />
-                <Chip label="pending review" tone="yellow" />
+                <StatusBadge label="pending review" tone="yellow" />
                 <GeoStatusChip
                   status={r.verification_status}
                   browserStatus={r.geolocation?.status}
@@ -346,13 +301,13 @@ function PendingAttendanceReviews({
             </li>
           ))}
           {records.length > 5 && (
-            <li className="text-xs text-gray-500">
+            <li className="text-xs font-medium text-gray-500 px-2">
               +{records.length - 5} more in the Today panel.
             </li>
           )}
         </ul>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -364,36 +319,36 @@ function GeoStatusChip({
   browserStatus?: string;
 }) {
   if (status === "location_verified") {
-    return <Chip label="location verified" tone="green" />;
+    return <StatusBadge label="location verified" tone="green" />;
   }
   if (status === "outside_geofence") {
-    return <Chip label="outside geofence" tone="red" />;
+    return <StatusBadge label="outside geofence" tone="red" />;
   }
   if (status === "remote_location_captured") {
-    return <Chip label="remote location captured" tone="indigo" />;
+    return <StatusBadge label="remote location captured" tone="blue" />;
   }
   if (status === "remote_location_missing") {
-    return <Chip label="remote location missing" tone="yellow" />;
+    return <StatusBadge label="remote location missing" tone="yellow" />;
   }
   if (status === "office_geofence_not_configured") {
-    return <Chip label="geofence not configured" tone="gray" />;
+    return <StatusBadge label="geofence not configured" tone="gray" />;
   }
   if (status?.startsWith("location_")) {
-    return <Chip label={status.replaceAll("_", " ")} tone="yellow" />;
+    return <StatusBadge label={status.replaceAll("_", " ")} tone="yellow" />;
   }
 
   if (browserStatus === "granted")
-    return <Chip label="location captured" tone="green" />;
+    return <StatusBadge label="location captured" tone="green" />;
   if (browserStatus === "denied")
-    return <Chip label="location denied" tone="yellow" />;
+    return <StatusBadge label="location denied" tone="yellow" />;
   if (browserStatus === "unavailable")
-    return <Chip label="location unavailable" tone="amber" />;
+    return <StatusBadge label="location unavailable" tone="amber" />;
   if (browserStatus === "timeout")
-    return <Chip label="location timeout" tone="amber" />;
+    return <StatusBadge label="location timeout" tone="amber" />;
   if (browserStatus === "not_supported")
-    return <Chip label="location unsupported" tone="gray" />;
+    return <StatusBadge label="location unsupported" tone="gray" />;
   if (browserStatus === "not_provided")
-    return <Chip label="no location proof" tone="gray" />;
-  if (browserStatus) return <Chip label={`location ${browserStatus}`} tone="gray" />;
-  return <Chip label="location unknown" tone="gray" />;
+    return <StatusBadge label="no location proof" tone="gray" />;
+  if (browserStatus) return <StatusBadge label={`location ${browserStatus}`} tone="gray" />;
+  return <StatusBadge label="location unknown" tone="gray" />;
 }
