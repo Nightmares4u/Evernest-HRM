@@ -306,7 +306,7 @@ export default async function AdminTasksHistoryPage({
           <p className="text-sm text-gray-500">
             Root-level completed task dashboard for {label.toLowerCase()} across all
             employees, branches, and departments/categories.{" "}
-            <Link href="/tasks/history" className="text-indigo-600 hover:text-indigo-500">
+            <Link href="/tasks/history" className="text-blue-600 hover:text-blue-500">
               My completed tasks
             </Link>
           </p>
@@ -408,7 +408,7 @@ function ViewTabs({
   const cls = (active: boolean) =>
     `rounded-md px-3 py-1 text-xs ring-1 ring-inset ${
       active
-        ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+        ? "bg-blue-50 text-blue-700 ring-blue-200"
         : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
     }`;
   return (
@@ -448,7 +448,7 @@ function RangeTabs({
           href={historyHref({ view, group, range: r.key, ...filters })}
           className={`rounded-md px-3 py-1 ring-1 ring-inset ${
             current === r.key
-              ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+              ? "bg-blue-50 text-blue-700 ring-blue-200"
               : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
           }`}
         >
@@ -608,7 +608,7 @@ function FilterBar({
       <div className="flex items-end gap-2 lg:col-span-2">
         <button
           type="submit"
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
         >
           Apply filters
         </button>
@@ -806,7 +806,7 @@ function Stat({
 function priorityTone(priority: string) {
   if (priority === "urgent") return "red" as const;
   if (priority === "low") return "gray" as const;
-  return "indigo" as const;
+  return "blue" as const;
 }
 
 function formatDue(task: EnrichedTask): string {
@@ -825,7 +825,7 @@ function DoneRow({ task }: { task: EnrichedTask }) {
             <span className="font-medium text-gray-900">{task.title}</span>
             <Chip label={task.priority} tone={priorityTone(task.priority)} />
             <Chip label="done" tone="green" />
-            {task.requires_approval && <Chip label="approval-required" tone="indigo" />}
+            {task.requires_approval && <Chip label="approval-required" tone="blue" />}
             {task.requires_approval && task.approved_by && (
               <Chip label="approved" tone="green" />
             )}

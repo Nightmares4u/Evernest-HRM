@@ -59,7 +59,7 @@ export default async function EmployeesPage() {
           {isSuperAdmin && (
             <Link
               href="/admin/employees/new"
-              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
             >
               Add employee
             </Link>
@@ -105,7 +105,7 @@ export default async function EmployeesPage() {
                     {canManage ? (
                       <Link
                         href={`/admin/employees/${e.id}`}
-                        className="text-indigo-700 hover:text-indigo-500"
+                        className="text-blue-700 hover:text-blue-500"
                       >
                         {e.full_name}
                       </Link>

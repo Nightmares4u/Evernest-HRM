@@ -46,6 +46,7 @@ export default async function AdminTasksPage({
   if (!isBranchManagerOrAboveRole(me.appUser.role)) {
     redirect("/dashboard?error=Manager access required");
   }
+  const isSuperAdmin = me.appUser.role === "super_admin";
   const filter: AdminTaskFilter =
     FILTER_OPTIONS.find((f) => f.key === sp.filter)?.key ?? "open";
   const view = sp.view === "schedule" ? "schedule" : "list";
@@ -80,7 +81,7 @@ export default async function AdminTasksPage({
                   href={`/admin/tasks?view=list&filter=${f.key}`}
                   className={`rounded-md px-3 py-1 ring-1 ring-inset ${
                     filter === f.key
-                      ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+                      ? "bg-blue-50 text-blue-700 ring-blue-200"
                       : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
                   }`}
                 >
@@ -108,6 +109,8 @@ export default async function AdminTasksPage({
         </div>
       )}
 
+      {isSuperAdmin && <TaskMaintenanceCard />}
+
       <AssignForm assignees={assignees} today={today} />
 
       {view === "list" ? (
@@ -116,6 +119,27 @@ export default async function AdminTasksPage({
         <ScheduleSection tasks={scheduleTasks} startDate={today} />
       )}
     </div>
+  );
+}
+
+function TaskMaintenanceCard() {
+  return (
+    <section className="rounded-lg border border-red-100 bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Task Maintenance</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Preview and delete test/stale HRM tasks.
+          </p>
+        </div>
+        <Link
+          href="/admin/tasks/maintenance"
+          className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500"
+        >
+          Open maintenance
+        </Link>
+      </div>
+    </section>
   );
 }
 
@@ -131,7 +155,7 @@ function ViewTabs({
   const cls = (active: boolean) =>
     `rounded-md px-3 py-1 text-xs ring-1 ring-inset ${
       active
-        ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+        ? "bg-blue-50 text-blue-700 ring-blue-200"
         : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
     }`;
   return (
@@ -259,7 +283,7 @@ function AssignForm({
         <div className="lg:col-span-2">
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
           >
             Assign task
           </button>
@@ -322,7 +346,7 @@ function ScheduleSection({
 function priorityTone(p: string) {
   if (p === "urgent") return "red" as const;
   if (p === "low") return "gray" as const;
-  return "indigo" as const;
+  return "blue" as const;
 }
 
 function statusTone(s: string) {

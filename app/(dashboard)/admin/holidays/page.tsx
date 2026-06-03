@@ -140,7 +140,7 @@ export default async function AdminHolidaysPage({
           <div className="flex items-end">
             <button
               type="submit"
-              className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Add holiday
             </button>
@@ -180,7 +180,7 @@ export default async function AdminHolidaysPage({
                       ) : (
                         <Chip
                           label={holiday.branch_code ?? holiday.branch_name ?? "branch"}
-                          tone="indigo"
+                          tone="blue"
                         />
                       )}
                     </Td>

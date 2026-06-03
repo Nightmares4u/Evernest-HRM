@@ -134,7 +134,7 @@ export default async function AttendancePage({
                 <Td>
                   <Chip
                     label={r.mode}
-                    tone={r.mode === "remote" ? "indigo" : "gray"}
+                    tone={r.mode === "remote" ? "blue" : "gray"}
                   />
                 </Td>
                 <Td className="tabular-nums text-xs text-gray-500">
@@ -220,7 +220,7 @@ function OverrideForm({
 }) {
   return (
     <details className="group relative inline-block text-left">
-      <summary className="cursor-pointer list-none rounded-md border border-indigo-200 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+      <summary className="cursor-pointer list-none rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50">
         Override
       </summary>
       <div className="mt-2 w-80 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-lg ring-1 ring-black/5">
@@ -300,7 +300,7 @@ function OverrideForm({
             </a>
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-500"
             >
               Save override
             </button>
@@ -348,7 +348,7 @@ function VerificationStatusChip({
     return <Chip label="outside geofence" tone="red" />;
   }
   if (status === "remote_location_captured") {
-    return <Chip label="remote location captured" tone="indigo" />;
+    return <Chip label="remote location captured" tone="blue" />;
   }
   if (status === "remote_location_missing") {
     return <Chip label="remote location missing" tone="yellow" />;

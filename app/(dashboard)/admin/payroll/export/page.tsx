@@ -77,7 +77,7 @@ export default async function PayrollExportPage({
             <PrintButton />
             <Link
               href={`/admin/payroll/export/csv?${csvParams}`}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
             >
               Download CSV
             </Link>
@@ -237,7 +237,7 @@ function FilterForm({
         <div className="flex items-end">
           <button
             type="submit"
-            className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Generate report
           </button>
@@ -368,7 +368,7 @@ function formatPeriod(start: string, end: string): string {
 }
 
 const INPUT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+  "mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -39,13 +39,64 @@ export type CrmLeadStatus =
   | "lost"
   | "converted";
 
+export type CrmClientType = "student" | "work_permit" | "b2b";
+
+export type CrmClientStatus =
+  | "onboarding"
+  | "doc_review"
+  | "uni_selection"
+  | "applying"
+  | "offer_in_hand"
+  | "offer_accepted"
+  | "visa_prep"
+  | "visa_submitted"
+  | "visa_decision"
+  | "pre_departure"
+  | "departed"
+  | "alumni"
+  | "withdrawn_refunded";
+
+export type CrmClientDocState =
+  | "uploaded"
+  | "under_review"
+  | "approved"
+  | "rejected_resubmit"
+  | "expired";
+
+export type CrmClientApplicationStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "offer"
+  | "rejected"
+  | "waitlisted"
+  | "accepted"
+  | "declined"
+  | "withdrawn";
+
+export type CrmClientApplicationIntakeTerm = "fall" | "spring" | "summer";
+
+export type CrmClientMilestoneStatus =
+  | "not_started"
+  | "in_progress"
+  | "done"
+  | "not_applicable";
+
+export type CrmClientVisaDecisionOutcome =
+  | "granted"
+  | "refused"
+  | "additional_info_requested";
+
 export type CrmAssignmentStatus = "assigned" | "reassigned" | "unassigned";
 
 export type CrmAssignmentMethod =
   | "auto_rule"
+  | "auto_source_owner"
   | "manual"
   | "manager_override"
-  | "review_queue";
+  | "review_queue"
+  | "transfer_accept"
+  | "transfer_admin_override";
 
 export type CrmActivityType =
   | "raw_message_received"
@@ -60,7 +111,46 @@ export type CrmActivityType =
   | "unassigned"
   | "status_changed"
   | "note_added"
-  | "human_follow_up_started";
+  | "human_follow_up_started"
+  | "followup_scheduled"
+  | "followup_completed"
+  | "transfer_requested"
+  | "transfer_accepted"
+  | "transfer_rejected"
+  | "transfer_cancelled"
+  | "transfer_admin_override"
+  // Stage 2 client lifecycle activity types
+  | "client_created"
+  | "payment_recorded"
+  | "doc_uploaded"
+  | "doc_claimed_for_review"
+  | "doc_approved"
+  | "doc_rejected"
+  | "application_created"
+  | "application_fields_updated"
+  | "application_status_changed"
+  | "application_deleted"
+  | "client_status_auto_bumped"
+  | "milestones_seeded"
+  | "milestone_status_changed"
+  | "client_status_changed"
+  | "client_status_rolled_back"
+  // Stage 2E closure activity types
+  | "visa_decision_recorded"
+  | "client_transitioned_to_pre_departure"
+  | "client_status_rolled_back_to_visa_prep"
+  | "pre_departure_fields_updated"
+  | "client_transitioned_to_departed"
+  | "client_transitioned_to_alumni"
+  | "client_withdrawn"
+  | "client_refund_recorded";
+
+export type CrmTransferStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "admin_override";
 
 export type CrmMessageDirection = "inbound" | "outbound";
 
@@ -85,6 +175,12 @@ export type CrmWhatsappNumber = {
   product_category: CrmInitialProductCategory;
   default_branch_id: string | null;
   default_department_id: string | null;
+  assigned_employee_id: string | null;
+  fallback_employee_id: string | null;
+  fallback_active: boolean;
+  fallback_reason: string | null;
+  fallback_starts_at: string | null;
+  fallback_ends_at: string | null;
   greeting_template: string | null;
   is_api_connected: boolean;
   is_active: boolean;
@@ -161,6 +257,531 @@ export type CrmLead = {
   updated_at: string;
 };
 
+export type CrmClient = {
+  id: string;
+  lead_id: string;
+  client_type: CrmClientType;
+  client_code: string;
+  status: CrmClientStatus;
+  target_country: string | null;
+  target_level: string | null;
+  agreement_signed_at: string;
+  advance_paid_at: string;
+  advance_amount: number | null;
+  total_fee: number | null;
+  currency: string;
+  assigned_agent_id: string | null;
+  branch_id: string | null;
+  created_by_user_id: string | null;
+  flight_date: string | null;
+  flight_details: string | null;
+  accommodation_details: string | null;
+  briefing_completed_at: string | null;
+  briefing_notes: string | null;
+  departure_date: string | null;
+  arrival_date: string | null;
+  alumni_started_at: string | null;
+  alumni_notes: string | null;
+  withdrawn_at: string | null;
+  withdrawn_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientActivity = {
+  id: string;
+  client_id: string;
+  activity_type: string;
+  actor_user_id: string | null;
+  description: string | null;
+  payload: unknown;
+  created_at: string;
+};
+
+export type CrmClientPayment = {
+  id: string;
+  client_id: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  recorded_by_user_id: string | null;
+  created_at: string;
+};
+
+export type CrmClientDocument = {
+  id: string;
+  client_id: string;
+  doc_code: string;
+  doc_state: CrmClientDocState;
+  storage_path: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_by_user_id: string | null;
+  uploaded_at: string;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  decision_note: string | null;
+  superseded_by_id: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientDocumentVM = CrmClientDocument & {
+  uploader_name: string | null;
+  reviewer_name: string | null;
+};
+
+export type CrmClientApplication = {
+  id: string;
+  client_id: string;
+  university_name: string;
+  program_name: string | null;
+  intake_year: number | null;
+  intake_term: CrmClientApplicationIntakeTerm | null;
+  status: CrmClientApplicationStatus;
+  submitted_at: string | null;
+  decision_at: string | null;
+  offer_letter_document_id: string | null;
+  offer_amount_currency: string;
+  tuition_total: number | null;
+  scholarship_amount: number | null;
+  notes: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientApplicationVM = CrmClientApplication & {
+  offer_letter_file_name: string | null;
+};
+
+export type CrmClientVisaDecision = {
+  id: string;
+  client_id: string;
+  outcome: CrmClientVisaDecisionOutcome;
+  decided_at: string;
+  note: string | null;
+  recorded_by_user_id: string | null;
+  created_at: string;
+};
+
+export type CrmClientRefund = {
+  id: string;
+  client_id: string;
+  amount: number;
+  currency: string;
+  refunded_at: string;
+  reason: string;
+  recorded_by_user_id: string | null;
+  created_at: string;
+};
+
+export type CrmClientCountryMilestone = {
+  id: string;
+  client_id: string;
+  milestone_code: string;
+  status: CrmClientMilestoneStatus;
+  due_at: string | null;
+  completed_at: string | null;
+  completed_by_user_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmCountryMilestoneDefinition = {
+  code: string;
+  label: string;
+  required: boolean;
+  description?: string;
+};
+
+export type CrmClientCountryMilestoneVM = CrmClientCountryMilestone & {
+  definition: CrmCountryMilestoneDefinition | null;
+  completed_by_name: string | null;
+};
+
+export type CrmClientVM = CrmClient & {
+  lead_customer_phone: string;
+  lead_customer_name: string | null;
+  assigned_agent_name: string | null;
+  branch_code: string | null;
+  branch_name: string | null;
+};
+
+export const CRM_APPLICATION_STATUS_LABELS: Record<CrmClientApplicationStatus, string> = {
+  draft: "Draft",
+  submitted: "Submitted",
+  under_review: "Under review",
+  offer: "Offer",
+  rejected: "Rejected",
+  waitlisted: "Waitlisted",
+  accepted: "Accepted",
+  declined: "Declined",
+  withdrawn: "Withdrawn",
+};
+
+export const CRM_APPLICATION_STATUS_GROUPS = {
+  draft: ["draft"] as const,
+  in_flight: ["submitted", "under_review", "waitlisted"] as const,
+  outcomes: ["offer", "accepted", "declined", "rejected"] as const,
+  closed: ["withdrawn"] as const,
+};
+
+export const CRM_CLIENT_VISA_DECISION_LABELS:
+  Record<CrmClientVisaDecisionOutcome, string> = {
+    granted: "Granted",
+    refused: "Refused",
+    additional_info_requested: "Additional info requested",
+  };
+
+export const CRM_SUPPORTED_TARGET_COUNTRIES = [
+  "italy",
+  "south_korea",
+  "russia",
+  "germany",
+  "hungary",
+  "us",
+  "canada",
+  "france",
+  "cyprus",
+  "turkey",
+  "azerbaijan",
+] as const;
+
+export type CrmSupportedTargetCountry =
+  (typeof CRM_SUPPORTED_TARGET_COUNTRIES)[number];
+
+export const CRM_COUNTRY_MILESTONES: Record<
+  CrmSupportedTargetCountry,
+  CrmCountryMilestoneDefinition[]
+> = {
+  italy: [
+    {
+      code: "italy_dov",
+      label: "Declaration of Value (DOV)",
+      required: true,
+      description: "CIMEA-issued statement of equivalence.",
+    },
+    { code: "italy_cimea", label: "CIMEA verification", required: true },
+    { code: "italy_embassy_slot", label: "Embassy slot booked", required: true },
+    {
+      code: "italy_language_a2_b1",
+      label: "Italian A2/B1",
+      required: false,
+      description: "Only if program requires Italian-language proficiency.",
+    },
+  ],
+  south_korea: [
+    {
+      code: "korea_topik_or_english",
+      label: "TOPIK or English-medium proof",
+      required: true,
+    },
+    {
+      code: "korea_niied_paperwork",
+      label: "NIIED scholarship paperwork",
+      required: false,
+      description: "Only for government scholarship variants.",
+    },
+  ],
+  russia: [
+    { code: "russia_invitation_letter", label: "University invitation letter", required: true },
+    { code: "russia_apostille", label: "Apostille of academic documents", required: true },
+    { code: "russia_medical_certificate", label: "Medical certificate", required: true },
+    { code: "russia_hiv_test", label: "HIV test certificate", required: true },
+  ],
+  germany: [
+    {
+      code: "germany_aps",
+      label: "APS certificate",
+      required: true,
+      description: "Mandatory for Pakistani students.",
+    },
+    {
+      code: "germany_blocked_account",
+      label: "Blocked account (Sperrkonto)",
+      required: true,
+      description: "Approximately EUR 11,208 for one year.",
+    },
+    {
+      code: "germany_studienkolleg",
+      label: "Studienkolleg path (if needed)",
+      required: false,
+    },
+  ],
+  hungary: [
+    {
+      code: "hungary_stipendium_paperwork",
+      label: "Stipendium Hungaricum paperwork",
+      required: false,
+    },
+    { code: "hungary_criminal_record", label: "Criminal record certificate", required: true },
+  ],
+  us: [
+    { code: "us_sevis_paid", label: "SEVIS I-901 fee paid", required: true },
+    { code: "us_i20_received", label: "I-20 received", required: true },
+    { code: "us_f1_interview_booked", label: "F1 interview slot booked", required: true },
+  ],
+  canada: [
+    {
+      code: "canada_sds_proof",
+      label: "SDS path proof",
+      required: false,
+      description: "Skip if using non-SDS route.",
+    },
+    { code: "canada_gic", label: "GIC certificate (CAD ~20k)", required: true },
+    { code: "canada_biometrics_booked", label: "Biometrics booked", required: true },
+  ],
+  france: [
+    { code: "france_campus_france", label: "Campus France procedure", required: true },
+    {
+      code: "france_language_a2_b1",
+      label: "French A2/B1",
+      required: false,
+      description: "Only if program requires French.",
+    },
+  ],
+  cyprus: [
+    { code: "cyprus_english_proof", label: "English-taught program proof", required: true },
+    { code: "cyprus_financial_proof", label: "Financial proof", required: true },
+  ],
+  turkey: [
+    { code: "turkey_ytb_paperwork", label: "YTB scholarship paperwork", required: false },
+    { code: "turkey_equivalence", label: "Equivalence document", required: true },
+  ],
+  azerbaijan: [
+    {
+      code: "azerbaijan_acceptance_letter",
+      label: "University acceptance letter",
+      required: true,
+    },
+  ],
+};
+
+export function normalizeTargetCountry(
+  value: string | null
+): CrmSupportedTargetCountry | null {
+  const normalized = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (!normalized) return null;
+  if (normalized === "usa" || normalized === "united_states" || normalized === "u_s") return "us";
+  if (normalized === "south_korea" || normalized === "korea") return "south_korea";
+  if ((CRM_SUPPORTED_TARGET_COUNTRIES as readonly string[]).includes(normalized)) {
+    return normalized as CrmSupportedTargetCountry;
+  }
+  return null;
+}
+
+export const CRM_DOC_CODES = [
+  "cnic_front",
+  "cnic_back",
+  "passport_data_page",
+  "passport_photo",
+  "en_agreement_signed",
+  "matric_transcript",
+  "matric_certificate",
+  "olevel_statement_of_result",
+  "olevel_certificates",
+  "inter_transcript",
+  "inter_certificate",
+  "alevel_certificates",
+  "english_test_result",
+  "birth_certificate",
+  "character_certificate",
+  "bachelors_transcript",
+  "bachelors_degree",
+  "hec_equivalency",
+  "sop",
+  "lor_1",
+  "lor_2",
+  "lor_3",
+  "cv",
+  "work_experience_letter",
+  "research_proposal",
+  "supervisor_correspondence",
+  "publications_list",
+  "trade_certificate",
+  "experience_letter",
+  "language_certificate",
+  "job_offer_letter",
+  "driving_license",
+  "bank_statement_6m",
+  "sponsor_affidavit",
+  "sponsor_cnic",
+  "sponsor_bank_statement",
+  "gic_proof",
+  "blocked_account_proof",
+  "medical_certificate",
+  "hiv_test",
+  "apostille_academic_docs",
+  "apostille_visa_docs",
+  "visa_appointment_proof",
+] as const;
+
+export type CrmDocCode = (typeof CRM_DOC_CODES)[number];
+
+export const CRM_DOC_CODE_LABELS: Record<CrmDocCode, string> = {
+  cnic_front: "CNIC front",
+  cnic_back: "CNIC back",
+  passport_data_page: "Passport data page",
+  passport_photo: "Passport-size photo",
+  en_agreement_signed: "EN agreement (signed)",
+  matric_transcript: "Matric transcript",
+  matric_certificate: "Matric certificate",
+  olevel_statement_of_result: "O Level statement of result",
+  olevel_certificates: "O Level certificates",
+  inter_transcript: "Intermediate transcript",
+  inter_certificate: "Intermediate certificate",
+  alevel_certificates: "A Level certificates",
+  english_test_result: "English test result",
+  birth_certificate: "Birth certificate",
+  character_certificate: "Character certificate",
+  bachelors_transcript: "Bachelor's transcript",
+  bachelors_degree: "Bachelor's degree",
+  hec_equivalency: "HEC equivalency",
+  sop: "Statement of Purpose",
+  lor_1: "Letter of recommendation 1",
+  lor_2: "Letter of recommendation 2",
+  lor_3: "Letter of recommendation 3",
+  cv: "CV",
+  work_experience_letter: "Work experience letter",
+  research_proposal: "Research proposal",
+  supervisor_correspondence: "Supervisor correspondence",
+  publications_list: "Publications list",
+  trade_certificate: "Trade certificate",
+  experience_letter: "Experience letter",
+  language_certificate: "Language certificate",
+  job_offer_letter: "Job offer letter",
+  driving_license: "Driving license",
+  bank_statement_6m: "Bank statement - 6 months",
+  sponsor_affidavit: "Sponsor affidavit",
+  sponsor_cnic: "Sponsor CNIC",
+  sponsor_bank_statement: "Sponsor bank statement",
+  gic_proof: "GIC proof",
+  blocked_account_proof: "Blocked account proof",
+  medical_certificate: "Medical certificate",
+  hiv_test: "HIV test",
+  apostille_academic_docs: "Apostille - academic documents",
+  apostille_visa_docs: "Apostille - visa documents",
+  visa_appointment_proof: "Visa appointment proof",
+};
+
+// Document categories — groups codes into sections for the UI.
+// Order here determines render order on the client documents page.
+export const CRM_DOC_CATEGORIES = [
+  {
+    code: "all_applicants",
+    label: "All applicants",
+    description: "Required for every client.",
+  },
+  {
+    code: "bachelors",
+    label: "Bachelor's track",
+    description: "Matric + Intermediate (or O/A Levels) + English test.",
+  },
+  {
+    code: "masters",
+    label: "Master's track",
+    description: "Bachelor's degree, SOP, LORs, CV.",
+  },
+  {
+    code: "phd",
+    label: "PhD track",
+    description: "Research proposal, supervisor correspondence, publications.",
+  },
+  {
+    code: "work_permit",
+    label: "Work permit / Europe",
+    description: "Skill certificates, experience letters, language.",
+  },
+  {
+    code: "visa",
+    label: "Visa stage",
+    description: "Bank statements, sponsor docs, apostille, embassy paperwork.",
+  },
+] as const;
+
+export type CrmDocCategory = (typeof CRM_DOC_CATEGORIES)[number]["code"];
+
+export const CRM_DOC_CODE_CATEGORY: Record<CrmDocCode, CrmDocCategory> = {
+  cnic_front: "all_applicants",
+  cnic_back: "all_applicants",
+  passport_data_page: "all_applicants",
+  passport_photo: "all_applicants",
+  en_agreement_signed: "all_applicants",
+
+  matric_transcript: "bachelors",
+  matric_certificate: "bachelors",
+  olevel_statement_of_result: "bachelors",
+  olevel_certificates: "bachelors",
+  inter_transcript: "bachelors",
+  inter_certificate: "bachelors",
+  alevel_certificates: "bachelors",
+  english_test_result: "bachelors",
+  birth_certificate: "bachelors",
+  character_certificate: "bachelors",
+
+  bachelors_transcript: "masters",
+  bachelors_degree: "masters",
+  hec_equivalency: "masters",
+  sop: "masters",
+  lor_1: "masters",
+  lor_2: "masters",
+  lor_3: "masters",
+  cv: "masters",
+  work_experience_letter: "masters",
+
+  research_proposal: "phd",
+  supervisor_correspondence: "phd",
+  publications_list: "phd",
+
+  trade_certificate: "work_permit",
+  experience_letter: "work_permit",
+  language_certificate: "work_permit",
+  job_offer_letter: "work_permit",
+  driving_license: "work_permit",
+
+  bank_statement_6m: "visa",
+  sponsor_affidavit: "visa",
+  sponsor_cnic: "visa",
+  sponsor_bank_statement: "visa",
+  gic_proof: "visa",
+  blocked_account_proof: "visa",
+  medical_certificate: "visa",
+  hiv_test: "visa",
+  apostille_academic_docs: "visa",
+  apostille_visa_docs: "visa",
+  visa_appointment_proof: "visa",
+};
+
+/**
+ * Returns the default-expanded categories for a client's target_level.
+ * "All applicants" + "Visa stage" are always relevant; the academic track
+ * is the one matching the level.
+ */
+export function defaultExpandedDocCategories(
+  targetLevel: string | null
+): CrmDocCategory[] {
+  const level = (targetLevel ?? "").toLowerCase();
+  const base: CrmDocCategory[] = ["all_applicants"];
+  if (level === "bachelors") return [...base, "bachelors", "visa"];
+  if (level === "masters") return [...base, "bachelors", "masters", "visa"];
+  if (level === "phd") return [...base, "bachelors", "masters", "phd", "visa"];
+  if (level === "work_permit") return [...base, "work_permit", "visa"];
+  return CRM_DOC_CATEGORIES.map((c) => c.code); // unknown level → expand all
+}
+
 export type CrmLeadMessage = {
   id: string;
   raw_inbox_id: string | null;
@@ -184,6 +805,8 @@ export type CrmAssignmentRule = {
   name: string;
   priority: number;
   whatsapp_number_id: string | null;
+  campaign_source_id: string | null;
+  match_branch_id: string | null;
   match_city: string | null;
   match_country: string | null;
   match_product_category: string | null;
@@ -209,6 +832,24 @@ export type CrmLeadAssignment = {
   matched_rule_id: string | null;
   reason: string | null;
   created_at: string;
+};
+
+// ---------- transfers / handoff ----------
+
+export type CrmLeadTransfer = {
+  id: string;
+  lead_id: string;
+  from_employee_id: string | null;
+  from_branch_id: string | null;
+  to_employee_id: string;
+  to_branch_id: string | null;
+  requested_by_user_id: string | null;
+  decided_by_user_id: string | null;
+  reason: string;
+  decision_note: string | null;
+  status: CrmTransferStatus;
+  requested_at: string;
+  decided_at: string | null;
 };
 
 // ---------- activity ----------
