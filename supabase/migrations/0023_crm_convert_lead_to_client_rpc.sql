@@ -122,7 +122,7 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO public.crm_clients (
+  INSERT INTO public.crm_clients AS c (
     lead_id,
     client_type,
     target_country,
@@ -150,7 +150,7 @@ BEGIN
     v_lead.branch_id,
     p_actor_user_id
   )
-  RETURNING id, crm_clients.client_code INTO v_client_id, v_client_code;
+  RETURNING c.id, c.client_code INTO v_client_id, v_client_code;
 
   INSERT INTO public.crm_client_payments (
     client_id,
