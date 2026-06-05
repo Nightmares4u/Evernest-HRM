@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 // Paths that don't require authentication. Cron handlers protect themselves
 // via CRON_SECRET, so they're listed here too.
-const PUBLIC_PATHS = ["/login", "/api/cron"];
+const PUBLIC_PATHS = ["/login", "/api/cron", "/api/webhooks"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(

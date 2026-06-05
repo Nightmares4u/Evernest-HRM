@@ -69,7 +69,14 @@ function buildUserPrompt(messageText: string): string {
 }
 
 function parseGeminiJson(text: string): GeminiParserOutput | null {
-  const cleaned = text.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+  // Gemini 2.5 Flash often wraps JSON in ```json fences despite instructions
+  // not to. Extract the first balanced {...} block to survive code fences,
+  // leading/trailing prose, or trailing truncation of the closing fence.
+  let cleaned = text.trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  cleaned = cleaned.slice(start, end + 1);
   try {
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
     if (typeof parsed.is_relevant !== "boolean") return null;
@@ -131,7 +138,7 @@ export async function runGeminiParserFallback(
   const result = await geminiAsk({
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: buildUserPrompt(messageText),
-    maxOutputTokens: 512,
+    maxOutputTokens: 1024,
     temperature: 0.1,
   });
 
