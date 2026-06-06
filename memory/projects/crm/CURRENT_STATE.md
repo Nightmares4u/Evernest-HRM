@@ -1,32 +1,24 @@
 # Current State
 
-> **Last updated:** 2026-06-03 (Integration branch final-audit prep)
-> **Branch under audit:** `review/main-plus-ui`
-> **Base:** `origin/main`
-> **Merged source:** `ui-revamp-experiment`
-> **CRM source included:** `crm-dev`
-> **Commit status:** all integration changes are staged; no integration commit, push, or merge into `main` yet.
+> **Last updated:** 2026-06-03 (CRM/HRM Integration Live on main)
+> **Branch:** `main`
+> **Status:** Integrated and Pushed.
 
 ## Status Summary
 
-The CRM is feature-complete through Stage 2F-1 (Client Financials & Refund Policy), with Phase 2A/2D multi-table mutations atomically hardened via RPC (migration 0022).
+The CRM is fully integrated into `main`. It is feature-complete through Stage 2F-1 (Client Financials & Refund Policy), with Phase 2A/2D multi-table mutations atomically hardened via RPC (migration 0022).
 A read-only **Admin Financials MVP** now lives at `/admin/financials` and combines CRM payment/refund inflow with HRM payroll-preview outflow (PKR-only).
-An **Internal CRM Assistant MVP** lives at `/crm/assistant` allowing staff to query the CRM planning documentation via Gemini. The integration branch includes production hardening so missing markdown docs fail clearly and missing `GEMINI_API_KEY` does not break the build.
+An **Internal CRM Assistant MVP** lives at `/crm/assistant` allowing staff to query the CRM planning documentation via Gemini.
 An **Admin Task Maintenance** cleanup tool is available at `/admin/tasks/maintenance` for reducing test pollution.
 
-The core workflow from raw WhatsApp/manual intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials is staged on `review/main-plus-ui`.
+The core workflow from raw WhatsApp/manual intake, rule-based parsing, assignment, lead qualification, client conversion, application tracking, visa gating, closure, and basic client financials is live on `main`.
 
 ### Current Integration State
 
-- Integration branch: `review/main-plus-ui`.
-- Base: `origin/main`.
-- Merged source: `ui-revamp-experiment`.
-- CRM source branch included: `crm-dev`.
-- No commit, push, or merge into `main` has been performed.
-- All integration changes are currently staged for a final Claude/manual audit.
-- `0023_crm_convert_lead_to_client_rpc.sql` has already been applied manually in Supabase and must exist before deploying the app code.
-- Production/main payroll preview fixes are preserved: `attendanceExempt` handling, `presentDays` preview visibility, and payroll export exemption logic.
-- `0016_task_workflow.sql` is preserved.
+- **Branch:** `main`.
+- **Status:** Fully merged and pushed.
+- **WhatsApp API:** Webhook/Ingestion implementation in progress (Phase 1 Audit complete).
+- **Gemini Parser:** Fallback implementation in progress.
 
 ### Latest Known Feature / Hardening Commits
 - `69b8506 feat: add internal CRM assistant`
@@ -92,10 +84,22 @@ The core workflow from raw WhatsApp/manual intake, rule-based parsing, assignmen
 - **Still required:** Manual browser smoke testing for desktop/mobile layout, forms, server actions, responsive tables, sidebar behavior, and assistant access.
 
 ### WhatsApp Status
-- WhatsApp API/coexistence work is paused.
-- No WhatsApp webhook/API implementation was added in this integration.
-- CRM remains designed around WhatsApp-first operations, but automatic WhatsApp ingestion is not part of this merge.
-- BSP/coexistence investigation remains external/future work.
+- **Inbound ingestion is LIVE** on branch `whatsapp-integration`: signature-verified Cloud API webhook at `/api/webhooks/whatsapp`, rule parser + Gemini low-confidence fallback (extraction only).
+- **Intake Phase A (ownership-at-receipt) is implemented.** The receiving EN number's owner now owns every inbound at receipt (`crm_raw_inbox.assigned_employee_id` / `branch_id`), independent of message quality. Counselors/branch managers see and enrich their own raw rows pre-promotion; promotion no longer requires super_admin and no longer hard-blocks on missing country/city — incomplete leads are created with `crm_leads.needs_enrichment = true`. Spam stays raw until re-classified. New `ops` role (Layer-1 only). Migrations `0024`, `0025`. Details in `WHATSAPP_INGESTION_PLAN.md` §8.
+- No outbound/automated WhatsApp replies. No auto client conversion. No Gemini lifecycle mutation.
+- WAB2C/BSP coexistence webhook/polling remains external/future work, separate from intake logic.
+
+### CRM Role / Access Scoping (Phase B) — Implemented
+Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` (global admin), `branch_manager`/`assistant_manager`/`manager` (branch), `ops` (cross-branch client-stage), counselor (`team_member`/`employee`, assigned-only).
+
+- **Centralized helpers.** `lib/crm/permissions-leads.ts` now owns raw + lead scoping: `canViewRawIntake`/`canEnrichRawIntake`/`canPromoteRawIntake`, `canViewLead`, `canManageLead`, and `leadScopeForActor` (query-level `all`/`branch`/`assigned`/`none`). `lib/db/crm.ts` `canViewCrmLead` delegates to `canViewLead`.
+- **Raw intake & leads.** super_admin/admin_hr → all; branch_manager+ → their branch; counselor → assigned only; ops → none (raw/unqualified leads are not ops work).
+- **Lead mutations.** `canManageLead` now lets branch managers work (notes/status/follow-up/enrich) any lead in their branch, not just super_admin/assignee. Transfer **requests** remain assigned-counselor/super_admin only (matches the transfer action).
+- **needs_enrichment surfacing.** Leads list shows a "needs enrichment" badge + an enrichment filter (`needs`/`complete`); lead detail shows a missing-fields banner and an editable "Enrich lead details" panel (new `enrichCrmLead` action). Country+city clear the flag. Follow-up/notes are never blocked.
+- **Follow-up board.** Now role-scoped: global admin → all (with counselor picker); branch_manager → branch; counselor → own; ops → none. `listCrmLeadsForFollowupBoard` gained `scopeToBranchId`.
+- **Clients (ops cross-branch).** `canViewCrmClient` + `listCrmClients` now grant `ops` all-branch client access. `canVerifyClientDoc`, `canEditClientMilestone`, `canEditClientApplication`, `canEditClientStatus` now grant the `ops` role directly (department-name check kept as fallback). Branch managers still see their branch; counselors their assigned clients.
+- **Financials excluded for ops.** New `canViewClientFinancials` (= client view but excludes ops) gates `getCrmClientFinancialsPage`. Payments/refunds/withdraw remain super_admin-only.
+- **No migrations.** Phase B is code-only; relies on the `ops` enum + `needs_enrichment` column from `0024`/`0025`.
 
 ## Pending / Planned Work
 
@@ -122,6 +126,8 @@ The core workflow from raw WhatsApp/manual intake, rule-based parsing, assignmen
 - `0021_crm_refund_policy_hardening.sql`
 - `0022_crm_phase_2a_2d_rpc_backfill.sql`
 - `0023_crm_convert_lead_to_client_rpc.sql`
+- `0024_crm_raw_intake_ownership.sql` (raw owner/branch/enrichment columns; `needs_enrichment`/`ready_for_promotion` raw statuses; assigned-counselor RLS)
+- `0025_crm_lead_needs_enrichment_and_ops_role.sql` (`crm_leads.needs_enrichment`; `ops` user_role)
 
 ## Current Route Inventory
 

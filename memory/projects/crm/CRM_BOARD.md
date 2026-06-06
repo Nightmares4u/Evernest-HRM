@@ -42,6 +42,12 @@
 ## In Progress
 
 - Final staged-diff audit and manual browser regression before integration commit.
+- Manual regression of Phase A intake fix + Phase B role/scoping on branch `whatsapp-integration`.
+
+## Phase A / B (branch `whatsapp-integration`) — Done
+
+- **Phase A — Intake assignment + enrichment.** Ownership at receipt, `needs_enrichment` raw/lead states, counselor visibility/enrichment of assigned raw intake, relaxed promotion (no super_admin gate, no hard country/city block), `ops` role added. Migrations `0024`, `0025`. See `WHATSAPP_INGESTION_PLAN.md` §8.
+- **Phase B — Role/scoping helpers (code-only).** Centralized lead/raw scoping in `lib/crm/permissions-leads.ts` (`canViewLead`, `canManageLead`, `leadScopeForActor`); branch managers now manage branch leads; follow-up board role-scoped (branch managers see branch); `needs_enrichment` badge/filter on leads list + editable enrichment panel on lead detail; `ops` granted cross-branch client/doc/application/milestone/status access via role (department-name kept as fallback); `canViewClientFinancials` excludes ops from financials. Partially closes **T13**. See `CURRENT_STATE.md` → "CRM Role / Access Scoping (Phase B)".
 
 ## Next Immediate
 
@@ -55,7 +61,9 @@
 ## Backlog
 
 - **T12:** KPI / Reporting Dashboard.
-- **T13:** RLS / Permission Hardening (Ensure counselors only see their assigned leads).
+- **T13:** RLS / Permission Hardening (Ensure counselors only see their assigned leads). Partially addressed by Phase B app-level helpers; DB-level branch RLS still deferred.
+- **Branch-manager transfer/reassign:** Branch managers can view/work branch leads but cannot yet reassign or initiate transfers for branch leads they are not the assignee of (transfer request + `assignCrmLead` remain assigned-counselor/super_admin). Add a branch-scoped reassign/transfer path when needed; intentionally not built in Phase B to avoid rewriting the transfer system.
+- **HRM Finalization / System-Wide Access Control** (future — do NOT build yet): admin UI to create employee login/auth details and system email/login; create role definitions and assign permissions to roles; employee create/edit pages expose role + permission dropdowns/toggles; role defaults auto-select permissions with per-employee overrides still possible; permissions eventually span HRM + CRM + finance + admin tools; full frontend-managed hiring/firing/replacement flow. This is the migration target from the current minimal helper-based roles to a configurable RBAC/capability layer.
 - Finalize MVP branch scope and product scope.
 - Define low-confidence review owner.
 - Confirm initial agents and branch owners.

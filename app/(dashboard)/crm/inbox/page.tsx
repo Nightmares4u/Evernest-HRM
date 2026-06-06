@@ -31,6 +31,8 @@ const STATUS_TONES: Record<CrmRawStatus, "green" | "amber" | "gray" | "blue" | "
   awaiting_details: "amber",
   details_received: "green",
   needs_review: "yellow",
+  needs_enrichment: "amber",
+  ready_for_promotion: "green",
   qualified: "green",
   spam_duplicate: "red",
 };
@@ -220,6 +222,7 @@ export default async function CrmInboxPage({
                   <Th>Receiving EN number</Th>
                   <Th>Message</Th>
                   <Th>Status</Th>
+                  <Th>Owner</Th>
                   <Th>Product</Th>
                   <Th>Branch</Th>
                   <Th>Campaign/source</Th>
@@ -269,6 +272,11 @@ export default async function CrmInboxPage({
                         label={row.status}
                         tone={STATUS_TONES[row.status] ?? "gray"}
                       />
+                    </Td>
+                    <Td className="text-gray-700">
+                      {row.assigned_employee_name ?? (
+                        <span className="text-xs text-gray-400">Unassigned</span>
+                      )}
                     </Td>
                     <Td>{row.product_category ?? "—"}</Td>
                     <Td>

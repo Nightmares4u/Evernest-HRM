@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
+import { actorFromCurrentUser } from "@/lib/auth/permissions";
+import { canManageLead } from "@/lib/crm/permissions-leads";
 import { createAdminClient } from "@/lib/supabase/server";
 import type { CrmLead, CrmLeadStatus } from "@/lib/types/crm";
 
@@ -33,12 +35,9 @@ function isValidLeadStatus(status: string): status is CrmLeadStatus {
   return CRM_LEAD_STATUSES.includes(status as CrmLeadStatus);
 }
 
-function isSuperAdmin(me: CurrentUser): boolean {
-  return me.appUser.is_active && me.appUser.role === "super_admin";
-}
-
+// super_admin/admin_hr → all; branch_manager+ → branch; counselor → assigned.
 function canWorkLead(me: CurrentUser, lead: CrmLead): boolean {
-  return isSuperAdmin(me) || Boolean(me.employee?.id && me.employee.id === lead.assigned_agent_id);
+  return canManageLead(actorFromCurrentUser(me), lead);
 }
 
 function requireActiveUser(me: CurrentUser | null): ActionResult | null {
@@ -231,6 +230,71 @@ export async function scheduleCrmLeadFollowup(
 
   revalidateCrmLeadPaths(lead.id);
   return ok("Follow-up scheduled.", lead.id);
+}
+
+export async function enrichCrmLead(formData: FormData): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  const authError = requireActiveUser(me);
+  if (authError || !me) return authError ?? error("Sign in required.");
+
+  const leadId = String(formData.get("lead_id") ?? "").trim();
+  if (!leadId) return error("Lead id is required.");
+
+  const { lead, message } = await loadLead(leadId);
+  if (message) return error(message, leadId);
+  if (!lead) return error("Lead not found.", leadId);
+  if (!canWorkLead(me, lead)) {
+    return error(
+      "Only the assigned counselor, branch manager, or super admin can edit lead details.",
+      lead.id
+    );
+  }
+
+  const clean = (key: string): string | null => {
+    const value = String(formData.get(key) ?? "").trim();
+    return value ? value : null;
+  };
+
+  const interested_country = clean("interested_country");
+  const city = clean("city");
+  // Country + city are the minimum qualifying fields; once both are present the
+  // lead is no longer flagged for enrichment.
+  const needsEnrichment = !(interested_country && city);
+
+  const admin = createAdminClient();
+  const { error: updateError } = await admin
+    .from("crm_leads")
+    .update({
+      interested_country,
+      city,
+      last_qualification: clean("last_qualification"),
+      marks_cgpa: clean("marks_cgpa"),
+      study_gap: clean("study_gap"),
+      budget_range: clean("budget_range"),
+      english_test_status: clean("english_test_status"),
+      needs_enrichment: needsEnrichment,
+    })
+    .eq("id", lead.id);
+
+  if (updateError) return error(`Could not save lead details: ${updateError.message}`, lead.id);
+
+  const { error: activityError } = await admin.from("crm_lead_activities").insert({
+    lead_id: lead.id,
+    raw_inbox_id: lead.raw_inbox_id,
+    activity_type: "details_received",
+    actor_user_id: me.authUserId,
+    description: needsEnrichment
+      ? "Lead details edited (still needs enrichment: missing country/city)."
+      : "Lead details enriched.",
+    payload: { source: "lead_enrichment", needs_enrichment: needsEnrichment },
+  });
+
+  if (activityError) {
+    return error(`Lead details saved, but activity failed: ${activityError.message}`, lead.id);
+  }
+
+  revalidateCrmLeadPaths(lead.id);
+  return ok(needsEnrichment ? "Lead details saved." : "Lead enriched and ready.", lead.id);
 }
 
 export async function completeCrmLeadFollowup(

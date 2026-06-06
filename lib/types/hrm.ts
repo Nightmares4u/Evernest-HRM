@@ -53,6 +53,7 @@ export type UserRole =
   | "branch_manager"
   | "assistant_manager"
   | "manager"
+  | "ops"
   | "employee"
   | "team_member";
 

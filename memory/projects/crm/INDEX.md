@@ -7,12 +7,8 @@ This index serves as the master entry point and source of truth for the EN CRM m
 ## 2. Current Source of Truth
 
 - **Repo:** `~/EN HRM` (EN CRM is a module built inside the existing HRM monorepo)
-- **Integration branch under final audit:** `review/main-plus-ui`
-- **Base:** `origin/main`
-- **Merged source:** `ui-revamp-experiment`
-- **CRM source branch included:** `crm-dev`
-- **Commit status:** integration changes are staged only; no integration commit, push, or merge into `main` has been performed yet.
-- **Warning:** The old `evernest-crm-starter` repo is for reference/inspiration only. Do not treat its code or docs as the current implementation state. For the final merge audit, inspect the staged diff on `review/main-plus-ui` against `origin/main`.
+- **Status:** Integrated into `main`.
+- **Base:** `main`
 
 ## 3. Read These First
 
@@ -21,10 +17,11 @@ reference extractions, and old plans are historical context only; they
 must not be treated as current implementation state or current scope.
 
 1. **`CURRENT_STATE.md`** - The factual record of what is actually implemented and shipped.
-2. **`CRM_BOARD.md`** - The operational task board, backlog, and immediate next steps.
-3. **`CLIENT_LIFECYCLE_STAGE_2_PLAN.md`** - Detailed lifecycle rules for Stage 2 (Conversion, Docs, Applications, Visa, Closure, Financials).
-4. **`STAGE_1_DECISIONS.md`** - Locked architectural and assignment rules for Stage 1 (WhatsApp intake, assignment routing).
-5. **`CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md`** - Long-form architectural overview and agent handoff guide.
+2. **`WHATSAPP_INGESTION_PLAN.md`** - The active plan for WhatsApp Cloud API ingestion and Gemini parser fallback.
+3. **`CRM_BOARD.md`** - The operational task board, backlog, and immediate next steps.
+4. **`CLIENT_LIFECYCLE_STAGE_2_PLAN.md`** - Detailed lifecycle rules for Stage 2 (Conversion, Docs, Applications, Visa, Closure, Financials).
+5. **`STAGE_1_DECISIONS.md`** - Locked architectural and assignment rules for Stage 1 (WhatsApp intake, assignment routing).
+6. **`CRM_AI_HANDOFF_AND_REFERENCE_ARCHITECTURE.md`** - Long-form architectural overview and agent handoff guide.
 
 > **Warning:** Do not treat stale docs or plans as implementation truth. Always verify against `CURRENT_STATE.md` and the actual codebase.
 
@@ -58,8 +55,8 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 - **Internal CRM Assistant MVP:** Complete and production-hardened for missing docs / missing Gemini env.
 - **UI/UX Revamp:** Broad dashboard/admin/CRM shell and page polish is staged from `ui-revamp-experiment`. Manual browser smoke testing is still required before final main merge.
 - **Production/Main Fixes Preserved:** origin/main payroll preview/export attendance exemption fix is preserved, including `attendanceExempt`, `presentDays`, and export exemption behavior. `0016_task_workflow.sql` is preserved.
-- **WhatsApp API:** Paused. No WhatsApp webhook/API/coexistence implementation is included in this integration.
-- **Gemini Parser / Chatbot:** Deferred.
+- **WhatsApp API:** Inbound ingestion is now LIVE on branch `whatsapp-integration` (`/api/webhooks/whatsapp`, signature-verified Cloud API). Intake Phase A (ownership-at-receipt + enrichment + relaxed promotion + `ops` role, migrations `0024`/`0025`) is implemented — see `WHATSAPP_INGESTION_PLAN.md` §8. Outbound/auto-reply and WAB2C/BSP coexistence webhook remain out of scope.
+- **Gemini Parser / Chatbot:** Parser fallback is LIVE for low-confidence intake extraction only (no auto-reply, no auto-promote, no lifecycle mutation). Client-facing chatbot still deferred.
 
 ## 5. Current Route Map
 
@@ -112,6 +109,8 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 - `0021_crm_refund_policy_hardening.sql`
 - `0022_crm_phase_2a_2d_rpc_backfill.sql`
 - `0023_crm_convert_lead_to_client_rpc.sql`
+- `0024_crm_raw_intake_ownership.sql`
+- `0025_crm_lead_needs_enrichment_and_ops_role.sql`
 
 ### 6.1 Migration 0023 Apply Status
 

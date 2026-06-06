@@ -2,10 +2,16 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/StatusChip";
 import {
+  enrichRawIntake,
   parseRawInboxDetails,
   promoteRawInboxToLead,
 } from "@/app/(dashboard)/admin/crm/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { actorFromCurrentUser } from "@/lib/auth/permissions";
+import {
+  canEnrichRawIntake,
+  canPromoteRawIntake,
+} from "@/lib/crm/permissions-leads";
 import { formatCrmDateTime } from "@/lib/crm/format";
 import { isRawIntakeReadyToPromote } from "@/lib/crm/intake";
 import { getCrmParserSettings, getCrmRawInboxDetail } from "@/lib/db/crm";
@@ -17,6 +23,8 @@ const STATUS_TONES = {
   awaiting_details: "amber",
   details_received: "green",
   needs_review: "yellow",
+  needs_enrichment: "amber",
+  ready_for_promotion: "green",
   qualified: "green",
   spam_duplicate: "red",
 } as const;
@@ -38,7 +46,16 @@ export default async function CrmRawInboxDetailPage({
   ]);
   if (!row) notFound();
 
-  const canMutate = me.appUser.role === "super_admin";
+  const actor = actorFromCurrentUser(me);
+  const subject = {
+    assigned_employee_id: row.assigned_employee_id,
+    branch_id: row.branch_id,
+    status: row.status,
+    lead_id: row.lead_id,
+  };
+  const isSuperAdmin = me.appUser.role === "super_admin";
+  const canEnrich = canEnrichRawIntake(actor, subject);
+  const canPromote = canPromoteRawIntake(actor, subject);
   const readyToPromote = isRawIntakeReadyToPromote(row, parserSettings);
 
   return (
@@ -58,7 +75,7 @@ export default async function CrmRawInboxDetailPage({
           </p>
         </div>
         <div className="flex gap-2">
-          {canMutate && (
+          {isSuperAdmin && (
             <form action={parseRawInboxDetails}>
               <input type="hidden" name="id" value={row.id} />
               <button
@@ -69,7 +86,7 @@ export default async function CrmRawInboxDetailPage({
               </button>
             </form>
           )}
-          {canMutate && !row.lead_id && (
+          {canPromote && (
             <form action={promoteRawInboxToLead}>
               <input type="hidden" name="id" value={row.id} />
               <button
@@ -111,6 +128,8 @@ export default async function CrmRawInboxDetailPage({
                   : "manual_mock"
               }
             />
+            <Info label="Assigned owner" value={row.assigned_employee_name ?? "Unassigned / review queue"} />
+            <Info label="Branch" value={row.branch_code ? `${row.branch_code} - ${row.branch_name}` : "-"} />
           </dl>
           <div className="mt-5 rounded-md bg-gray-50 p-4 text-sm text-gray-800">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -143,34 +162,73 @@ export default async function CrmRawInboxDetailPage({
 
       <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-gray-900">Parsed/extracted fields</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            {canEnrich ? "Enrich intake fields" : "Parsed/extracted fields"}
+          </h2>
           <Chip
-            label={readyToPromote ? "Ready to promote" : "Needs review"}
-            tone={readyToPromote ? "green" : "yellow"}
+            label={readyToPromote ? "Ready to promote" : "Needs enrichment"}
+            tone={readyToPromote ? "green" : "amber"}
           />
         </div>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Info label="Country interested" value={row.extracted_country ?? "-"} />
-          <Info label="Last qualification" value={row.extracted_qualification ?? "-"} />
-          <Info label="Marks/CGPA" value={row.extracted_marks_cgpa ?? "-"} />
-          <Info label="Study gap" value={row.extracted_study_gap ?? "-"} />
-          <Info label="City" value={row.extracted_city ?? "-"} />
-          <Info label="Budget range" value={row.extracted_budget_range ?? "-"} />
-          <Info label="English test" value={row.extracted_english_test ?? "-"} />
-          <Info
-            label="Confidence"
-            value={row.parser_confidence == null ? "-" : row.parser_confidence.toFixed(2)}
-          />
-        </dl>
-        <p className="mt-3 text-xs text-gray-500">
-          Ready requires confidence at or above {parserSettings.auto_promote.toFixed(2)} with country and city present.
-        </p>
-        {row.missing_fields.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {row.missing_fields.map((field) => (
-              <Chip key={field} label={`missing ${field}`} tone="yellow" />
-            ))}
-          </div>
+
+        {canEnrich ? (
+          <form action={enrichRawIntake} className="mt-4 space-y-4">
+            <input type="hidden" name="id" value={row.id} />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <EnrichField label="Country interested" name="extracted_country" value={row.extracted_country} />
+              <EnrichField label="City" name="extracted_city" value={row.extracted_city} />
+              <EnrichField label="Product / category" name="extracted_product_category" value={row.extracted_product_category} />
+              <EnrichField label="Last qualification" name="extracted_qualification" value={row.extracted_qualification} />
+              <EnrichField label="Marks / CGPA" name="extracted_marks_cgpa" value={row.extracted_marks_cgpa} />
+              <EnrichField label="Study gap" name="extracted_study_gap" value={row.extracted_study_gap} />
+              <EnrichField label="Budget range" name="extracted_budget_range" value={row.extracted_budget_range} />
+              <EnrichField label="English test" name="extracted_english_test" value={row.extracted_english_test} />
+            </div>
+            <label className="block space-y-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+              <span>Enrichment notes</span>
+              <textarea
+                name="enrichment_notes"
+                rows={2}
+                defaultValue={row.enrichment_notes ?? ""}
+                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+                placeholder="Anything the counselor learned that the parser missed"
+              />
+            </label>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                Country + city make the row ready to promote. Other fields improve quality but never block ownership.
+              </p>
+              <button
+                type="submit"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
+              >
+                Save intake fields
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Info label="Country interested" value={row.extracted_country ?? "-"} />
+              <Info label="Last qualification" value={row.extracted_qualification ?? "-"} />
+              <Info label="Marks/CGPA" value={row.extracted_marks_cgpa ?? "-"} />
+              <Info label="Study gap" value={row.extracted_study_gap ?? "-"} />
+              <Info label="City" value={row.extracted_city ?? "-"} />
+              <Info label="Budget range" value={row.extracted_budget_range ?? "-"} />
+              <Info label="English test" value={row.extracted_english_test ?? "-"} />
+              <Info
+                label="Confidence"
+                value={row.parser_confidence == null ? "-" : row.parser_confidence.toFixed(2)}
+              />
+            </dl>
+            {row.missing_fields.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {row.missing_fields.map((field) => (
+                  <Chip key={field} label={`missing ${field}`} tone="yellow" />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -196,6 +254,27 @@ export default async function CrmRawInboxDetailPage({
         </div>
       </section>
     </div>
+  );
+}
+
+function EnrichField({
+  label,
+  name,
+  value,
+}: {
+  label: string;
+  name: string;
+  value: string | null;
+}) {
+  return (
+    <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+      <span>{label}</span>
+      <input
+        name={name}
+        defaultValue={value ?? ""}
+        className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+      />
+    </label>
   );
 }
 

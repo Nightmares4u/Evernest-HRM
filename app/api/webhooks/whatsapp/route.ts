@@ -6,6 +6,7 @@ import {
   parserActivityType,
 } from "@/lib/crm/intake";
 import { runGeminiParserFallback } from "@/lib/crm/gemini-parser";
+import { resolveRawIntakeAssignment } from "@/lib/crm/assignment";
 
 const VERIFY_TOKEN = process.env.META_WHATSAPP_VERIFY_TOKEN ?? "";
 const APP_SECRET = process.env.META_WHATSAPP_APP_SECRET ?? "";
@@ -168,17 +169,32 @@ async function ingestMessage(input: IngestInput): Promise<string> {
   // 2. Match phone_number_id → crm_whatsapp_numbers
   const { data: waNumber } = await admin
     .from("crm_whatsapp_numbers")
-    .select("id, assigned_employee_id, label")
+    .select("id, assigned_employee_id, label, default_branch_id")
     .eq("phone_number_id", input.phoneNumberId)
     .eq("is_active", true)
     .maybeSingle();
 
   const receivedAt = new Date(Number(input.timestamp) * 1000).toISOString();
 
-  // 3. Run rule-based parser
+  // 3. Resolve ownership at RECEIPT — the receiving EN number's counselor
+  //    owns the inquiry regardless of message quality.
+  const assignment = waNumber?.id
+    ? await resolveRawIntakeAssignment({
+        source_whatsapp_number_id: waNumber.id,
+        campaign_source_id: null,
+        fallback_branch_id: waNumber.default_branch_id ?? null,
+      })
+    : {
+        assigned_employee_id: null,
+        branch_id: null,
+        assignment_method: null,
+        assignment_reason: "No receiving WhatsApp number matched.",
+      };
+
+  // 4. Run rule-based parser (quality only)
   const parsedPayload = parseRawIntakePayload(input.textBody);
 
-  // 4. Insert into crm_raw_inbox
+  // 5. Insert into crm_raw_inbox
   const { data: rawRow, error: rawError } = await admin
     .from("crm_raw_inbox")
     .insert({
@@ -188,6 +204,10 @@ async function ingestMessage(input: IngestInput): Promise<string> {
       sender_name: input.profileName,
       first_wa_message_id: input.messageId,
       ...parsedPayload.rawUpdate,
+      assigned_employee_id: assignment.assigned_employee_id,
+      branch_id: assignment.branch_id,
+      assignment_method: assignment.assignment_method,
+      assignment_reason: assignment.assignment_reason,
       first_message_text: input.textBody,
       last_message_text: input.textBody,
       last_message_at: receivedAt,
@@ -200,7 +220,7 @@ async function ingestMessage(input: IngestInput): Promise<string> {
     return `error:insert_raw:${rawError?.message}`;
   }
 
-  // 5. Insert into crm_lead_messages + crm_lead_activities
+  // 6. Insert into crm_lead_messages + crm_lead_activities
   const [{ error: messageError }, { error: activityError }] = await Promise.all(
     [
       admin.from("crm_lead_messages").insert({
@@ -239,7 +259,34 @@ async function ingestMessage(input: IngestInput): Promise<string> {
     console.error("[whatsapp-webhook] activity insert failed:", activityError);
   }
 
-  // 6. Gemini fallback for low-confidence results
+  // 7. Log the receipt-time owner assignment (best-effort).
+  if (assignment.assigned_employee_id) {
+    const { error: assignActivityError } = await admin
+      .from("crm_lead_activities")
+      .insert({
+        lead_id: null,
+        raw_inbox_id: rawRow.id,
+        activity_type: "assigned",
+        actor_user_id: null,
+        description:
+          assignment.assignment_reason ??
+          "Raw intake auto-assigned from WhatsApp number owner.",
+        payload: {
+          method: assignment.assignment_method,
+          target_employee_id: assignment.assigned_employee_id,
+          target_branch_id: assignment.branch_id,
+          at: "receipt",
+        },
+      });
+    if (assignActivityError) {
+      console.error(
+        "[whatsapp-webhook] assignment activity insert failed:",
+        assignActivityError
+      );
+    }
+  }
+
+  // 8. Gemini fallback for low-confidence results
   if (parsedPayload.parsed.confidence < 0.8) {
     const geminiResult = await runGeminiParserFallback(
       input.textBody,

@@ -39,6 +39,8 @@ export function canViewCrmClient(
   // → clients.view
   if (!me.appUser.is_active) return false;
   if (me.appUser.role === "super_admin") return true;
+  // Ops processes converted/client-stage work across ALL branches.
+  if (me.appUser.role === "ops") return true;
   if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
   if (
     isBranchManagerOrAboveRole(me.appUser.role) &&
@@ -49,6 +51,21 @@ export function canViewCrmClient(
     return true;
   }
   return false;
+}
+
+/**
+ * Financial visibility (payment/refund history + financials page). Same
+ * audience as canViewCrmClient EXCEPT ops, which processes client cases but
+ * is not (yet) cleared for financials. A dedicated finance role can be added
+ * here later without touching call sites.
+ */
+export function canViewClientFinancials(
+  me: CurrentUser,
+  client: { assigned_agent_id: string | null; branch_id: string | null }
+): boolean {
+  // → clients.financials.view
+  if (me.appUser.role === "ops") return false;
+  return canViewCrmClient(me, client);
 }
 
 /**
@@ -65,6 +82,7 @@ export function canVerifyClientDoc(
   // → clients.docs.verify
   if (!me.appUser.is_active) return false;
   if (me.appUser.role === "super_admin") return true;
+  if (me.appUser.role === "ops") return true;
   if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
   if (meDepartmentName === OPS_DEPARTMENT_NAME) return true;
   return false;
@@ -77,6 +95,7 @@ export function canEditClientApplication(
   // → clients.applications.edit
   if (!me.appUser.is_active) return false;
   if (me.appUser.role === "super_admin") return true;
+  if (me.appUser.role === "ops") return true;
   if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
   return false;
 }
@@ -89,6 +108,7 @@ export function canEditClientMilestone(
   // → clients.milestones.edit
   if (!me.appUser.is_active) return false;
   if (me.appUser.role === "super_admin") return true;
+  if (me.appUser.role === "ops") return true;
   if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
   if (meDepartmentName === OPS_DEPARTMENT_NAME) return true;
   return false;
@@ -101,6 +121,7 @@ export function canEditClientStatus(
   // → clients.status.edit
   if (!me.appUser.is_active) return false;
   if (me.appUser.role === "super_admin") return true;
+  if (me.appUser.role === "ops") return true;
   if (me.employee?.id && me.employee.id === client.assigned_agent_id) return true;
   return false;
 }
