@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
       source: "wab2c",
       sourceLabel: "WAB2C",
       phoneNumberId: event.phoneNumberId,
+      businessPhoneNumber: event.businessPhoneNumber,
       waId: event.customerPhone,
       profileName: event.customerName,
       messageId: event.whatsappMessageId,

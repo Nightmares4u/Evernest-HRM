@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
           source: "whatsapp_cloud_api",
           sourceLabel: "WhatsApp Cloud API",
           phoneNumberId: metadata.phone_number_id,
+          businessPhoneNumber: metadata.display_phone_number ?? null,
           waId: msg.from,
           profileName: contact?.profile?.name ?? null,
           messageId: msg.id,
