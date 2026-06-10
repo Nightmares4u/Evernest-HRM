@@ -125,3 +125,76 @@ precedent.
 **Still pending (later phases):** Phase B role helpers across all CRM list
 queries, Phase C manual `crm_ad_campaigns` shell, Phase D performance
 dashboards, Phase E Meta API.
+
+## 9. WAB2C / BSP coexistence webhook (LIVE on `main`)
+
+> Merged to `main`. `WAB2C_WEBHOOK_SECRET` (+ `WAB2C_API_*`) are configured in
+> Vercel; migrations are applied; production redeployed.
+
+EN uses WAB2C/BSP for WhatsApp Business coexistence: Rabia keeps using the
+native WhatsApp Business mobile app while WAB2C mirrors events. WAB2C forwards
+WhatsApp events to our CRM via an outbound webhook.
+
+### Correct WAB2C configuration
+- **Page:** Tenant Panel → **WhatsMark Settings → Web Hooks**
+  (`/{subdomain}/settings/whatsapp-web-hooks`). **NOT** "Ecom Webhooks" —
+  those forward external store/order payloads INTO WAB2C to trigger templates;
+  they are not the WhatsApp-event forwarding section.
+- **Enable WebHooks Re-send:** ON · **Method:** POST
+- **Webhook URL:** `https://evernest-hrm.vercel.app/api/webhooks/wab2c?secret=YOUR_SECRET`
+- **Event fields (MVP):** Messages, Message Echoes, SMB Message Echoes.
+  (Messages = inbound customer messages; Message Echoes = outbound echoes;
+  SMB Message Echoes = native WhatsApp Business app coexistence replies.)
+- **Do NOT subscribe** (noisy, defer to monitoring): Phone Number Name/Quality
+  Update, Payment Config, Partner Solutions, Template Status/Quality, Account
+  Alert, Web Message Echoes, Web App, Data Security.
+
+### Route
+- **`app/api/webhooks/wab2c/route.ts`** — POST ingest, GET health JSON.
+  Coexists with the direct Meta route (`/api/webhooks/whatsapp`); both funnel
+  inbound through the shared helper `lib/crm/whatsapp-ingestion.ts`.
+- **Secret:** `WAB2C_WEBHOOK_SECRET`. Accepted via `x-webhook-secret`,
+  `x-wab2c-secret`, `x-api-key`, `Authorization: Bearer`, or `?secret=` query
+  (the WAB2C UI lacks an explicit secret field, so the query param is the
+  practical option). Constant-time compare. If unset: allowed in development,
+  **fail closed (401) in production**. Secret never logged.
+
+### Payload handling
+- **Normalizer:** `lib/wab2c/normalize.ts` → `NormalizedWab2cEvent`.
+  Extraction priority: transformed/flat WAB2C fields → embedded Meta payload at
+  `whatsapp.original_payload` → direct Meta shape. Full event kept in
+  `rawPayload`. `customerPhone` is direction-aware (inbound = sender;
+  outbound/status = recipient).
+- **Inbound** (`whatsapp.message.received` / Meta `messages[]`, text only):
+  create `crm_raw_inbox` + `crm_lead_messages` with **receipt-time ownership**
+  (Phase A `resolveRawIntakeAssignment`), rule parser + Gemini fallback,
+  status `ready_for_promotion`/`needs_enrichment`. No auto-promotion, no reply.
+- **Outbound echo** (`whatsapp.message.sent`, message_echoes, smb_message_echoes):
+  never creates a lead/raw intake. Attaches as an outbound `crm_lead_messages`
+  row to an existing thread (lead by `customer_phone`, else raw intake by
+  `sender_phone`) only if safely matched; otherwise 200 ignored. Deduped by
+  `wa_message_id`.
+- **Status** (delivered/read/failed/status.updated) and all other event types
+  (template/account/phone/call/flow): 200 acknowledged + ignored, no mutation.
+
+### Dedupe
+- Inbound: `crm_raw_inbox.first_wa_message_id` using the **raw Meta WhatsApp
+  message id** (no prefix), so the direct Meta route and WAB2C dedupe against
+  each other if both ever receive the same event.
+- Outbound: `crm_lead_messages.wa_message_id` (unique index).
+
+### Limitations / notes
+- WAB2C does not guarantee local WAB2C chat/contact ids in transformed
+  attributes; mapping uses WhatsApp message id, customer phone, and
+  phone_number_id. WAB2C API enrichment (`WAB2C_API_*`) is reserved for later.
+- **Polling remains fallback only** — `GET /messages` is not called.
+- **No outbound sending** — no WAB2C/WhatsApp send API, no templates, no auto-reply.
+- Non-text inbound is skipped (matches the direct Meta route); revisit later.
+
+### Env
+`WAB2C_WEBHOOK_SECRET`, `WAB2C_API_BASE_URL`, `WAB2C_TENANT_SUBDOMAIN`,
+`WAB2C_API_TOKEN` (API token optional/future). See `.env.local.example`.
+
+### Test artifacts
+- `scripts/wab2c-normalize-check.ts` — pure normalizer check, 4 cases (no DB).
+- `scripts/wab2c-webhook-sim.mjs` — POST simulation against a local dev server.
