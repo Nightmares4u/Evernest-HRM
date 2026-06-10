@@ -29,14 +29,44 @@ export type ParsedRawIntakePayload = {
   rawUpdate: ParsedRawInboxUpdate;
 };
 
+// Quality classification for a raw intake row. Ownership is decided
+// separately at receipt — this ONLY decides whether a row is ready to
+// qualify, needs enrichment, or is spam. It never decides who owns the row.
+export function classifyRawIntake(
+  input: {
+    parser_confidence: number | null;
+    extracted_country: string | null;
+    extracted_city: string | null;
+    is_relevant?: boolean;
+  },
+  settings: CrmParserSettings = DEFAULT_CRM_PARSER_SETTINGS
+): CrmRawStatus {
+  if (input.is_relevant === false) return "spam_duplicate";
+  const ready =
+    input.parser_confidence != null &&
+    input.parser_confidence >= settings.auto_promote &&
+    input.extracted_country &&
+    input.extracted_city;
+  return ready ? "ready_for_promotion" : "needs_enrichment";
+}
+
 export function parseRawIntakePayload(
-  messageText: string | null | undefined
+  messageText: string | null | undefined,
+  settings: CrmParserSettings = DEFAULT_CRM_PARSER_SETTINGS
 ): ParsedRawIntakePayload {
   const parsed = parseSevenQuestionReply(messageText);
+  const status = classifyRawIntake(
+    {
+      parser_confidence: parsed.confidence,
+      extracted_country: parsed.country_interest,
+      extracted_city: parsed.city,
+    },
+    settings
+  );
   return {
     parsed,
     rawUpdate: {
-      status: parsed.status,
+      status,
       parser_confidence: parsed.confidence,
       extracted_country: parsed.country_interest,
       extracted_city: parsed.city,

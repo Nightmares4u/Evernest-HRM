@@ -7,6 +7,8 @@ import {
   type FollowupBucketKey,
 } from "@/components/crm/FollowupBoard";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { actorFromCurrentUser } from "@/lib/auth/permissions";
+import { leadScopeForActor } from "@/lib/crm/permissions-leads";
 import { todayPKT } from "@/lib/attendance/format";
 import {
   listCrmAssignableEmployees,
@@ -68,29 +70,33 @@ export default async function CrmFollowupsPage({
   if (!me) redirect("/login");
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
-  const isSuperAdmin = me.appUser.role === "super_admin";
-  const selectedAgentId = isSuperAdmin ? cleanParam(sp.agent) : null;
-  const scopeToEmployeeId = isSuperAdmin
-    ? selectedAgentId
-    : me.employee?.id ?? null;
+  // Role-based scope: global admin → all (with agent picker); branch_manager →
+  // branch; counselor → own assigned; ops/none → empty (raw-lead follow-ups
+  // are not ops work).
+  const scope = leadScopeForActor(actorFromCurrentUser(me));
+  const canPickAgent = scope.mode === "all";
+  const selectedAgentId = canPickAgent ? cleanParam(sp.agent) : null;
   const statusFilter = parseStatus(sp.status);
   const countryFilter = cleanParam(sp.country);
 
+  const boardOpts =
+    scope.mode === "all"
+      ? { scopeToEmployeeId: selectedAgentId, statusFilter, countryFilter }
+      : scope.mode === "branch"
+        ? { scopeToBranchId: scope.branchId, statusFilter, countryFilter }
+        : scope.mode === "assigned"
+          ? { scopeToEmployeeId: scope.employeeId, statusFilter, countryFilter }
+          : null;
+
   const [employees, leads] = await Promise.all([
-    isSuperAdmin ? listCrmAssignableEmployees() : Promise.resolve([]),
-    scopeToEmployeeId === null && !isSuperAdmin
-      ? Promise.resolve([])
-      : listCrmLeadsForFollowupBoard({
-          scopeToEmployeeId,
-          statusFilter,
-          countryFilter,
-        }),
+    canPickAgent ? listCrmAssignableEmployees() : Promise.resolve([]),
+    boardOpts ? listCrmLeadsForFollowupBoard(boardOpts) : Promise.resolve([]),
   ]);
 
   const nowUtc = new Date();
   const { startUtc, endUtc } = todayPktUtcBounds(nowUtc);
   const buckets = bucketLeads(leads, nowUtc, startUtc, endUtc);
-  const hasEmployeeScope = isSuperAdmin || Boolean(me.employee?.id);
+  const hasScope = scope.mode !== "none";
 
   return (
     <div className="space-y-6">
@@ -113,7 +119,7 @@ export default async function CrmFollowupsPage({
 
       <section className="sticky top-4 z-10 rounded-lg bg-white/95 p-4 shadow ring-1 ring-black/5 backdrop-blur">
         <form className="flex flex-wrap items-end gap-3">
-          {isSuperAdmin && (
+          {canPickAgent && (
             <label className="space-y-1 text-xs font-medium text-gray-600">
               <span>Counselor</span>
               <select
@@ -172,9 +178,9 @@ export default async function CrmFollowupsPage({
         </form>
       </section>
 
-      {!hasEmployeeScope ? (
+      {!hasScope ? (
         <p className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
-          No assigned leads found for your account.
+          No lead follow-ups are visible for your role.
         </p>
       ) : (
         <FollowupBoard buckets={buckets} nowUtc={nowUtc} />

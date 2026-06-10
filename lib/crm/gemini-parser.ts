@@ -106,10 +106,11 @@ function parseGeminiJson(text: string): GeminiParserOutput | null {
 }
 
 function toRawStatus(output: GeminiParserOutput): CrmRawStatus {
+  // Quality only — ownership is assigned at receipt regardless of this.
   if (!output.is_relevant) return "spam_duplicate";
-  if (output.confidence >= 0.8) return "details_received";
-  if (output.confidence >= 0.5) return "needs_review";
-  return "awaiting_details";
+  const ready =
+    output.confidence >= 0.8 && output.country_interest && output.city;
+  return ready ? "ready_for_promotion" : "needs_enrichment";
 }
 
 function toUpdate(output: GeminiParserOutput): GeminiFallbackUpdate {

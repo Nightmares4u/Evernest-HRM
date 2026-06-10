@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { UsersRound } from "lucide-react";
 
-type Search = { error?: string; ok?: string; assignment?: string };
+type Search = { error?: string; ok?: string; assignment?: string; enrichment?: string };
 
 const STATUS_TONES = {
   new: "blue",
@@ -33,7 +33,10 @@ export default async function CrmLeadsPage({
   if (!me) redirect("/login");
   if (!me.appUser.is_active) redirect("/dashboard?error=Active%20user%20required");
 
-  const leads = await listCrmLeads({ assignment: sp.assignment });
+  const leads = await listCrmLeads({
+    assignment: sp.assignment,
+    enrichment: sp.enrichment,
+  });
 
   return (
     <div className="space-y-6">
@@ -65,6 +68,18 @@ export default async function CrmLeadsPage({
               <option value="">All leads</option>
               <option value="assigned">Assigned</option>
               <option value="unassigned">Unassigned</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-xs font-medium text-gray-600">
+            <span>Enrichment</span>
+            <select
+              name="enrichment"
+              defaultValue={sp.enrichment ?? ""}
+              className="w-52 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 outline-none"
+            >
+              <option value="">All</option>
+              <option value="needs">Needs enrichment</option>
+              <option value="complete">Enrichment complete</option>
             </select>
           </label>
           <button
@@ -125,7 +140,12 @@ export default async function CrmLeadsPage({
                   </Td>
                   <Td>{lead.city ?? "-"}</Td>
                   <Td>
-                    <StatusBadge label={lead.status} tone={STATUS_TONES[lead.status] ?? "gray"} />
+                    <div className="flex flex-col items-start gap-1">
+                      <StatusBadge label={lead.status} tone={STATUS_TONES[lead.status] ?? "gray"} />
+                      {lead.needs_enrichment && (
+                        <StatusBadge label="needs enrichment" tone="amber" />
+                      )}
+                    </div>
                   </Td>
                   <Td>{lead.assigned_agent_name ?? "Unassigned"}</Td>
                   <Td>

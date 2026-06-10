@@ -23,6 +23,7 @@ const ROLE_RANK: Record<UserRole, number> = {
   branch_manager: 300,
   assistant_manager: 200,
   manager: 200,
+  ops: 150,
   employee: 100,
   team_member: 100,
 };
@@ -53,6 +54,10 @@ export function isBranchManagerOrAboveRole(role: UserRole): boolean {
 
 export function isTeamMemberRole(role: UserRole): boolean {
   return role === "employee" || role === "team_member";
+}
+
+export function isOpsRole(role: UserRole): boolean {
+  return role === "ops";
 }
 
 export function actorFromCurrentUser(me: CurrentUser): ActorForPermissions {

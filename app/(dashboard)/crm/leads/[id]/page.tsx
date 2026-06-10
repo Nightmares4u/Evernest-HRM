@@ -4,6 +4,7 @@ import { Chip } from "@/components/StatusChip";
 import {
   addCrmLeadNote,
   completeCrmLeadFollowup,
+  enrichCrmLead,
   scheduleCrmLeadFollowup,
   updateCrmLeadStatus,
 } from "@/app/(dashboard)/crm/leads/actions";
@@ -14,6 +15,8 @@ import {
 } from "@/app/(dashboard)/admin/crm/actions";
 import { requestLeadTransfer } from "@/app/(dashboard)/crm/transfers/actions";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { actorFromCurrentUser } from "@/lib/auth/permissions";
+import { canManageLead } from "@/lib/crm/permissions-leads";
 import { formatCrmDate, formatCrmDateTime } from "@/lib/crm/format";
 import {
   getCrmClientForLead,
@@ -23,7 +26,7 @@ import {
   listCrmLeadTransfersForLead,
   type CrmLeadTransferVM,
 } from "@/lib/db/crm";
-import type { CrmLeadStatus, CrmTransferStatus } from "@/lib/types/crm";
+import type { CrmLead, CrmLeadStatus, CrmTransferStatus } from "@/lib/types/crm";
 
 type Search = { error?: string; ok?: string };
 
@@ -61,6 +64,18 @@ const CRM_LEAD_STATUS_OPTIONS: CrmLeadStatus[] = [
   "converted",
 ];
 
+// Editable lead intake fields for enrichment. Country + city are the minimum
+// qualifying fields; the rest improve quality.
+const LEAD_ENRICHMENT_FIELDS: Array<{ key: keyof CrmLead; label: string; required?: boolean }> = [
+  { key: "interested_country", label: "Country interested", required: true },
+  { key: "city", label: "City", required: true },
+  { key: "last_qualification", label: "Last qualification" },
+  { key: "marks_cgpa", label: "Marks / CGPA" },
+  { key: "study_gap", label: "Study gap" },
+  { key: "budget_range", label: "Budget range" },
+  { key: "english_test_status", label: "English test" },
+];
+
 export default async function CrmLeadDetailPage({
   params,
   searchParams,
@@ -82,11 +97,18 @@ export default async function CrmLeadDetailPage({
   if (!lead) notFound();
 
   const canAssign = me.appUser.role === "super_admin";
-  const canWorkLead =
-    canAssign || Boolean(me.employee?.id && me.employee.id === lead.assigned_agent_id);
-  const canRequestTransfer = canWorkLead;
+  // Branch managers get branch-level control over leads; counselors get their
+  // assigned leads. Transfer requests stay assigned-counselor/super_admin only
+  // (the transfer action enforces the same), so they are computed separately.
+  const canWorkLead = canManageLead(actorFromCurrentUser(me), lead);
+  const canRequestTransfer =
+    me.appUser.role === "super_admin" ||
+    Boolean(me.employee?.id && me.employee.id === lead.assigned_agent_id);
   const transferTargetEmployees = employees.filter(
     (employee) => employee.id !== lead.assigned_agent_id
+  );
+  const missingLeadFields = LEAD_ENRICHMENT_FIELDS.filter(
+    (field) => !lead[field.key]
   );
 
   return (
@@ -112,6 +134,18 @@ export default async function CrmLeadDetailPage({
 
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.ok && <Notice tone="green">{sp.ok}</Notice>}
+
+      {lead.needs_enrichment && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <div className="font-semibold">This lead needs enrichment.</div>
+          <p className="mt-1">
+            {missingLeadFields.length > 0
+              ? `Missing: ${missingLeadFields.map((f) => f.label).join(", ")}.`
+              : "Minimum qualifying fields are present — save the lead below to clear this flag."}{" "}
+            Follow-up and notes are not blocked.
+          </p>
+        </section>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5 lg:col-span-2">
@@ -227,6 +261,10 @@ export default async function CrmLeadDetailPage({
         </div>
       </section>
 
+      {canWorkLead && (
+        <EnrichLeadPanel lead={lead} needsEnrichment={lead.needs_enrichment} />
+      )}
+
       <LeadWorkbench
         leadId={lead.id}
         canWorkLead={canWorkLead}
@@ -300,6 +338,13 @@ async function requestTransferForm(formData: FormData) {
   );
   const key = result.ok ? "ok" : "error";
   redirect(`/crm/leads/${leadId}?${key}=${encodeURIComponent(result.message)}`);
+}
+
+async function enrichLeadForm(formData: FormData) {
+  "use server";
+  const leadId = String(formData.get("lead_id") ?? "");
+  const result = await enrichCrmLead(formData);
+  redirectLeadActionResult(result, leadId);
 }
 
 async function addNoteForm(formData: FormData) {
@@ -399,6 +444,58 @@ function Info({ label, value }: { label: string; value: string }) {
       <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
       <dd className="mt-1 text-sm text-gray-900">{value}</dd>
     </div>
+  );
+}
+
+function EnrichLeadPanel({
+  lead,
+  needsEnrichment,
+}: {
+  lead: CrmLead;
+  needsEnrichment: boolean;
+}) {
+  return (
+    <section className="rounded-lg bg-white p-5 shadow ring-1 ring-black/5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Enrich lead details</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Complete or correct intake fields. Country + city clear the needs-enrichment flag.
+          </p>
+        </div>
+        <Chip
+          label={needsEnrichment ? "Needs enrichment" : "Complete"}
+          tone={needsEnrichment ? "amber" : "green"}
+        />
+      </div>
+      <form action={enrichLeadForm} className="mt-4 space-y-4">
+        <input type="hidden" name="lead_id" value={lead.id} />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {LEAD_ENRICHMENT_FIELDS.map((field) => (
+            <label
+              key={field.key}
+              className="space-y-1 text-xs font-medium uppercase tracking-wide text-gray-500"
+            >
+              <span>
+                {field.label}
+                {field.required && <span className="text-amber-600"> *</span>}
+              </span>
+              <input
+                name={field.key}
+                defaultValue={(lead[field.key] as string | null) ?? ""}
+                className={INPUT}
+              />
+            </label>
+          ))}
+        </div>
+        <button
+          type="submit"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+        >
+          Save lead details
+        </button>
+      </form>
+    </section>
   );
 }
 

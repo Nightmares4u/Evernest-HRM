@@ -27,6 +27,8 @@ export type CrmRawStatus =
   | "awaiting_details"
   | "details_received"
   | "needs_review"
+  | "needs_enrichment"
+  | "ready_for_promotion"
   | "qualified"
   | "spam_duplicate";
 
@@ -221,7 +223,13 @@ export type CrmRawInbox = {
   extracted_study_gap: string | null;
   extracted_budget_range: string | null;
   extracted_english_test: string | null;
+  extracted_product_category: string | null;
+  enrichment_notes: string | null;
   missing_fields: string[];
+  assigned_employee_id: string | null;
+  branch_id: string | null;
+  assignment_method: string | null;
+  assignment_reason: string | null;
   duplicate_of_inbox_id: string | null;
   first_message_text: string | null;
   last_message_text: string | null;
@@ -250,6 +258,7 @@ export type CrmLead = {
   budget_range: string | null;
   english_test_status: string | null;
   quality_score: number | null;
+  needs_enrichment: boolean;
   source_whatsapp_number_id: string | null;
   campaign_source_id: string | null;
   next_followup_at: string | null;

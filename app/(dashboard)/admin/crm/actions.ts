@@ -3,11 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth/require-role";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { actorFromCurrentUser } from "@/lib/auth/permissions";
+import {
+  canEnrichRawIntake,
+  canPromoteRawIntake,
+  type RawIntakeSubject,
+} from "@/lib/crm/permissions-leads";
 import {
   findCrmAssignmentRuleForLead,
   findSourceOwnerForLead,
+  resolveRawIntakeAssignment,
 } from "@/lib/crm/assignment";
 import {
+  classifyRawIntake,
   parseRawIntakePayload,
   parserActivityPayload,
   parserActivityType,
@@ -18,7 +27,7 @@ import {
   type CrmCampaignPlatform,
 } from "@/lib/db/crm";
 import { createAdminClient } from "@/lib/supabase/server";
-import type { CrmJsonObject } from "@/lib/types/crm";
+import type { CrmJsonObject, CrmRawStatus } from "@/lib/types/crm";
 
 const ADMIN_CRM_PATH = "/admin/crm";
 const WHATSAPP_PATH = "/admin/crm/whatsapp-numbers";
@@ -82,6 +91,13 @@ function parseOptionalDateTime(value: string): string | null {
 
 async function assertSuperAdmin(path: string) {
   return requireSuperAdmin(path);
+}
+
+async function requireActiveUser(path: string) {
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  if (!me.appUser.is_active) fail(path, "Active CRM user required.");
+  return me;
 }
 
 export async function createWhatsappNumber(formData: FormData) {
@@ -365,6 +381,13 @@ export async function createManualRawIntake(formData: FormData) {
 
   const parsedPayload = parseRawIntakePayload(messageText);
 
+  // Ownership is decided at receipt from the receiving EN number, never the
+  // customer's phone. A partial inquiry is still owned.
+  const assignment = await resolveRawIntakeAssignment({
+    source_whatsapp_number_id: nullable(whatsappNumberId),
+    campaign_source_id: nullable(campaignSourceId),
+  });
+
   const admin = createAdminClient();
   const { data: rawRow, error: rawError } = await admin
     .from("crm_raw_inbox")
@@ -374,6 +397,10 @@ export async function createManualRawIntake(formData: FormData) {
       sender_phone: senderPhone,
       sender_name: nullable(senderName),
       ...parsedPayload.rawUpdate,
+      assigned_employee_id: assignment.assigned_employee_id,
+      branch_id: assignment.branch_id,
+      assignment_method: assignment.assignment_method,
+      assignment_reason: assignment.assignment_reason,
       first_message_text: messageText,
       last_message_text: messageText,
       last_message_at: receivedAt,
@@ -468,8 +495,100 @@ export async function parseRawInboxDetails(formData: FormData) {
   ok(detailPath, "Raw details re-parsed.");
 }
 
+const ENRICHMENT_FIELDS = [
+  "extracted_country",
+  "extracted_city",
+  "extracted_qualification",
+  "extracted_marks_cgpa",
+  "extracted_study_gap",
+  "extracted_budget_range",
+  "extracted_english_test",
+  "extracted_product_category",
+  "enrichment_notes",
+] as const;
+
+// The seven core qualification fields, keyed to match the rule parser's
+// missing_fields vocabulary.
+const ENRICHMENT_CORE: Array<[string, (typeof ENRICHMENT_FIELDS)[number]]> = [
+  ["country_interest", "extracted_country"],
+  ["qualification", "extracted_qualification"],
+  ["marks_or_cgpa", "extracted_marks_cgpa"],
+  ["study_gap", "extracted_study_gap"],
+  ["city", "extracted_city"],
+  ["budget_range", "extracted_budget_range"],
+  ["english_test", "extracted_english_test"],
+];
+
+export async function enrichRawIntake(formData: FormData) {
+  const me = await requireActiveUser(INBOX_PATH);
+  const id = readString(formData, "id");
+  if (!id) fail(INBOX_PATH, "Missing raw inbox id.");
+
+  const detailPath = `/crm/inbox/${id}`;
+  const admin = createAdminClient();
+  const { data: raw, error: rawError } = await admin
+    .from("crm_raw_inbox")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (rawError || !raw) {
+    fail(INBOX_PATH, `Raw inbox row not found: ${rawError?.message ?? "missing row"}`);
+  }
+
+  const subject: RawIntakeSubject = {
+    assigned_employee_id: raw.assigned_employee_id,
+    branch_id: raw.branch_id,
+    status: raw.status,
+    lead_id: raw.lead_id,
+  };
+  if (!canEnrichRawIntake(actorFromCurrentUser(me), subject)) {
+    fail(detailPath, "You can only enrich intake assigned to you or your branch.");
+  }
+
+  const values: Record<string, string | null> = {};
+  for (const field of ENRICHMENT_FIELDS) {
+    values[field] = nullable(readString(formData, field));
+  }
+
+  const missingFields = ENRICHMENT_CORE.filter(
+    ([, col]) => !values[col]
+  ).map(([key]) => key);
+
+  // A human verified these fields, so country + city presence makes the row
+  // ready to promote regardless of the original parser confidence.
+  const status: CrmRawStatus =
+    values.extracted_country && values.extracted_city
+      ? "ready_for_promotion"
+      : "needs_enrichment";
+
+  const { error: updateError } = await admin
+    .from("crm_raw_inbox")
+    .update({ ...values, missing_fields: missingFields, status })
+    .eq("id", id);
+
+  if (updateError) {
+    fail(detailPath, `Could not save enrichment: ${updateError.message}`);
+  }
+
+  const { error: activityError } = await admin.from("crm_lead_activities").insert({
+    lead_id: raw.lead_id ?? null,
+    raw_inbox_id: id,
+    activity_type: "details_received",
+    actor_user_id: me.authUserId,
+    description: "Intake fields enriched manually.",
+    payload: { source: "manual_enrichment", status, missing_fields: missingFields },
+  });
+
+  if (activityError) {
+    fail(detailPath, `Enrichment saved, but activity failed: ${activityError.message}`);
+  }
+
+  ok(detailPath, "Intake fields saved.");
+}
+
 export async function promoteRawInboxToLead(formData: FormData) {
-  const me = await assertSuperAdmin(INBOX_PATH);
+  const me = await requireActiveUser(INBOX_PATH);
   const id = readString(formData, "id");
   if (!id) fail(INBOX_PATH, "Missing raw inbox id.");
 
@@ -487,9 +606,23 @@ export async function promoteRawInboxToLead(formData: FormData) {
   if (raw.lead_id) {
     redirect(`/crm/leads/${raw.lead_id}?ok=${encodeURIComponent("Raw intake is already promoted.")}`);
   }
-  if (!raw.extracted_country || !raw.extracted_city) {
-    fail(detailPath, "Country and city are required before promotion. Run Parse Details or review manually.");
+  if (raw.status === "spam_duplicate") {
+    fail(detailPath, "Spam/irrelevant intake cannot be promoted. Re-classify it via enrichment first.");
   }
+
+  const subject: RawIntakeSubject = {
+    assigned_employee_id: raw.assigned_employee_id,
+    branch_id: raw.branch_id,
+    status: raw.status,
+    lead_id: raw.lead_id,
+  };
+  if (!canPromoteRawIntake(actorFromCurrentUser(me), subject)) {
+    fail(detailPath, "You can only promote intake assigned to you or your branch.");
+  }
+
+  // Missing minimum fields no longer blocks ownership or lead creation — the
+  // lead is created with a needs_enrichment flag instead.
+  const needsEnrichment = !(raw.extracted_country && raw.extracted_city);
 
   const [{ data: number }, { data: campaign }] = await Promise.all([
     raw.whatsapp_number_id
@@ -545,6 +678,7 @@ export async function promoteRawInboxToLead(formData: FormData) {
       budget_range: raw.extracted_budget_range,
       english_test_status: raw.extracted_english_test,
       quality_score: raw.parser_confidence,
+      needs_enrichment: needsEnrichment,
       source_whatsapp_number_id: sourceWhatsappNumberId,
       campaign_source_id: raw.campaign_source_id,
       next_followup_at: null,
@@ -625,9 +759,12 @@ export async function promoteRawInboxToLead(formData: FormData) {
 
   revalidatePath(INBOX_PATH);
   revalidatePath(LEADS_PATH);
-  const promotionMsg = ownerMatch.matched
+  const ownerMsg = ownerMatch.matched
     ? "Raw intake promoted and assigned from WhatsApp number owner."
     : "Raw intake promoted to lead (no source owner found).";
+  const promotionMsg = needsEnrichment
+    ? `${ownerMsg} Lead needs enrichment (missing country/city).`
+    : ownerMsg;
   redirect(`/crm/leads/${lead.id}?ok=${encodeURIComponent(promotionMsg)}`);
 }
 

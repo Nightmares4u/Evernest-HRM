@@ -3,8 +3,6 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import {
   actorFromCurrentUser,
   isBranchManagerOrAboveRole,
-  isGlobalAdminRole,
-  isTeamMemberRole,
 } from "@/lib/auth/permissions";
 import type { Branch, Employee, UserRole } from "@/lib/types/hrm";
 import type {
@@ -45,6 +43,11 @@ import {
   normalizeTargetCountry,
 } from "@/lib/types/crm";
 import { DEFAULT_CRM_PARSER_SETTINGS } from "@/lib/crm/intake";
+import {
+  canViewLead,
+  canViewRawIntake,
+  leadScopeForActor,
+} from "@/lib/crm/permissions-leads";
 import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
 import {
   canEditClientMilestone,
@@ -52,6 +55,7 @@ import {
   canRecordClientPayment,
   canRecordClientRefund,
   canVerifyClientDoc,
+  canViewClientFinancials,
   canViewCrmClient,
   canWithdrawClient,
   isClientTerminal,
@@ -73,6 +77,8 @@ export const CRM_RAW_STATUSES: CrmRawStatus[] = [
   "awaiting_details",
   "details_received",
   "needs_review",
+  "needs_enrichment",
+  "ready_for_promotion",
   "qualified",
   "spam_duplicate",
 ];
@@ -136,6 +142,7 @@ export type CrmRawInboxVM = CrmRawInbox & {
   branch_id: string | null;
   branch_name: string | null;
   branch_code: string | null;
+  assigned_employee_name: string | null;
   campaign_label: string | null;
   campaign_platform: string | null;
   needs_review: boolean;
@@ -285,24 +292,18 @@ function requireActiveCrmUser(me: CurrentUser | null): CurrentUser {
 }
 
 function canViewCrmLead(me: CurrentUser, lead: Pick<CrmLead, "assigned_agent_id" | "branch_id">): boolean {
-  const actor = actorFromCurrentUser(me);
-  if (isGlobalAdminRole(actor.role)) return true;
-  if (isBranchManagerOrAboveRole(actor.role)) {
-    return Boolean(actor.branch_id && actor.branch_id === lead.branch_id);
-  }
-  if (isTeamMemberRole(actor.role)) {
-    return Boolean(actor.employee_id && actor.employee_id === lead.assigned_agent_id);
-  }
-  return false;
+  return canViewLead(actorFromCurrentUser(me), lead);
 }
 
 function canViewRawInboxRow(me: CurrentUser, row: CrmRawInboxVM): boolean {
-  const actor = actorFromCurrentUser(me);
-  if (isGlobalAdminRole(actor.role)) return true;
-  if (row.lead_id) {
-    return Boolean(row.branch_id && actor.branch_id && row.branch_id === actor.branch_id);
-  }
-  return false;
+  // Ownership is decided at receipt, so raw rows are visible to their assigned
+  // counselor (and that counselor's branch manager) before promotion.
+  return canViewRawIntake(actorFromCurrentUser(me), {
+    assigned_employee_id: row.assigned_employee_id,
+    branch_id: row.branch_id,
+    status: row.status,
+    lead_id: row.lead_id,
+  });
 }
 
 function canViewCrmTransfer(me: CurrentUser, transfer: CrmLeadTransfer): boolean {
@@ -566,18 +567,20 @@ export async function listCrmRawInbox(
     query = query.gte("created_at", `${filters.date_from}T00:00:00.000Z`);
   }
 
-  const [{ data: inboxRows, error }, whatsappNumbers, campaignSources, branches] =
+  const [{ data: inboxRows, error }, whatsappNumbers, campaignSources, branches, employees] =
     await Promise.all([
       query,
       listCrmWhatsappNumbers(),
       listCrmCampaignSources(),
       listCrmBranches(),
+      listCrmAssignableEmployees(),
     ]);
   if (error) throw new Error(`listCrmRawInbox: ${error.message}`);
 
   const numbersById = byId(whatsappNumbers);
   const campaignsById = byId(campaignSources);
   const branchesById = byId(branches);
+  const employeesById = byId(employees);
 
   const rows = ((inboxRows ?? []) as CrmRawInbox[]).map((row) => {
     const number = row.whatsapp_number_id
@@ -586,10 +589,18 @@ export async function listCrmRawInbox(
     const campaign = row.campaign_source_id
       ? campaignsById.get(row.campaign_source_id) ?? null
       : null;
+    // Prefer the owner-resolved branch stored at receipt; fall back to the
+    // number/campaign default for legacy rows that predate ownership.
     const branchId =
-      campaign?.default_branch_id ?? number?.default_branch_id ?? null;
+      row.branch_id ??
+      campaign?.default_branch_id ??
+      number?.default_branch_id ??
+      null;
     const branch = branchId ? branchesById.get(branchId) ?? null : null;
     const product = campaign?.product_category ?? number?.product_category ?? null;
+    const owner = row.assigned_employee_id
+      ? employeesById.get(row.assigned_employee_id) ?? null
+      : null;
     const missingCount = row.missing_fields?.length ?? 0;
 
     return {
@@ -602,11 +613,13 @@ export async function listCrmRawInbox(
       branch_id: branchId,
       branch_name: branch?.name ?? null,
       branch_code: branch?.code ?? null,
+      assigned_employee_name: owner?.full_name ?? null,
       campaign_label: campaign?.label ?? null,
       campaign_platform: campaign?.platform ?? null,
       needs_review:
         row.status === "needs_review" ||
         row.status === "awaiting_details" ||
+        row.status === "needs_enrichment" ||
         missingCount > 0 ||
         (row.parser_confidence != null && row.parser_confidence < 0.5),
     };
@@ -775,7 +788,9 @@ export async function getCrmRawInboxDetail(id: string): Promise<CrmRawInboxDetai
   };
 }
 
-export async function listCrmLeads(filters: { assignment?: string } = {}): Promise<CrmLeadVM[]> {
+export async function listCrmLeads(
+  filters: { assignment?: string; enrichment?: string } = {}
+): Promise<CrmLeadVM[]> {
   if (!isSupabaseConfigured()) return [];
 
   const me = requireActiveCrmUser(await getCurrentUser());
@@ -791,6 +806,8 @@ export async function listCrmLeads(filters: { assignment?: string } = {}): Promi
     if (!canViewCrmLead(me, lead)) return false;
     if (filters.assignment === "assigned" && !lead.assigned_agent_id) return false;
     if (filters.assignment === "unassigned" && lead.assigned_agent_id) return false;
+    if (filters.enrichment === "needs" && !lead.needs_enrichment) return false;
+    if (filters.enrichment === "complete" && lead.needs_enrichment) return false;
     return true;
   });
   return enrichCrmLeads(leads);
@@ -798,6 +815,7 @@ export async function listCrmLeads(filters: { assignment?: string } = {}): Promi
 
 export async function listCrmLeadsForFollowupBoard(opts: {
   scopeToEmployeeId?: string | null;
+  scopeToBranchId?: string | null;
   statusFilter?: CrmLeadStatus | null;
   countryFilter?: string | null;
 }): Promise<CrmFollowupBoardLeadVM[]> {
@@ -823,6 +841,9 @@ export async function listCrmLeadsForFollowupBoard(opts: {
     .not("status", "in", "(lost,converted)")
     .order("next_followup_at", { ascending: true, nullsFirst: false });
 
+  if (opts.scopeToBranchId) {
+    query = query.eq("branch_id", opts.scopeToBranchId);
+  }
   if (opts.scopeToEmployeeId) {
     query = query.eq("assigned_agent_id", opts.scopeToEmployeeId);
   }
@@ -1494,6 +1515,12 @@ export async function listCrmClients(filters: {
     if (filters.scopeToEmployeeId) {
       query = query.eq("assigned_agent_id", filters.scopeToEmployeeId);
     }
+  } else if (me.appUser.role === "ops") {
+    // Ops processes client-stage work across ALL branches.
+    // → clients.view (scope=all)
+    if (filters.scopeToEmployeeId) {
+      query = query.eq("assigned_agent_id", filters.scopeToEmployeeId);
+    }
   } else if (isBranchManagerOrAboveRole(me.appUser.role) && me.employee?.branch_id) {
     // Branch manager / assistant_manager / manager / admin_hr: see whole branch.
     // → clients.view (scope=branch)
@@ -1583,7 +1610,8 @@ export async function getCrmClientFinancialsPage(clientId: string): Promise<{
   const me = requireActiveCrmUser(await getCurrentUser());
   const admin = createAdminClient();
   const client = await loadClientVM(admin, clientId);
-  if (!client || !canViewCrmClient(me, client)) return null;
+  // Financials excludes ops (canViewClientFinancials), unlike general client view.
+  if (!client || !canViewClientFinancials(me, client)) return null;
 
   const [paymentsRes, refundsRes] = await Promise.all([
     admin

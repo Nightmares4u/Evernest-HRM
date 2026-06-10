@@ -257,6 +257,55 @@ export async function findSourceOwnerForLead(
   };
 }
 
+export type RawIntakeAssignment = {
+  assigned_employee_id: string | null;
+  branch_id: string | null;
+  assignment_method: string | null;
+  assignment_reason: string | null;
+};
+
+// Resolve the owner of a raw intake at RECEIPT time using the same
+// source-owner waterfall used at promotion. Ownership is independent of
+// message quality: a bad/partial inquiry is still owned by the number's
+// counselor. Returns a null employee (admin/unassigned queue) when no owner
+// is configured.
+export async function resolveRawIntakeAssignment(input: {
+  source_whatsapp_number_id: string | null;
+  campaign_source_id: string | null;
+  fallback_branch_id?: string | null;
+}): Promise<RawIntakeAssignment> {
+  const owner = await findSourceOwnerForLead({
+    source_whatsapp_number_id: input.source_whatsapp_number_id,
+    campaign_source_id: input.campaign_source_id,
+  });
+
+  if (!owner.matched) {
+    return {
+      assigned_employee_id: null,
+      branch_id: input.fallback_branch_id ?? null,
+      assignment_method: null,
+      assignment_reason: owner.reason,
+    };
+  }
+
+  const admin = createAdminClient();
+  const { data: employee } = await admin
+    .from("employees")
+    .select("branch_id")
+    .eq("id", owner.target_employee_id)
+    .maybeSingle();
+
+  return {
+    assigned_employee_id: owner.target_employee_id,
+    branch_id: employee?.branch_id ?? input.fallback_branch_id ?? null,
+    assignment_method:
+      owner.source_owner_type === "fallback"
+        ? "auto_source_owner_fallback"
+        : "auto_source_owner",
+    assignment_reason: owner.reason,
+  };
+}
+
 export async function findCrmAssignmentRuleForLead(
   lead: CrmLead
 ): Promise<CrmAssignmentMatch> {
