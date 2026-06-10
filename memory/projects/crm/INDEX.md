@@ -55,7 +55,7 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 - **Internal CRM Assistant MVP:** Complete and production-hardened for missing docs / missing Gemini env.
 - **UI/UX Revamp:** Broad dashboard/admin/CRM shell and page polish is staged from `ui-revamp-experiment`. Manual browser smoke testing is still required before final main merge.
 - **Production/Main Fixes Preserved:** origin/main payroll preview/export attendance exemption fix is preserved, including `attendanceExempt`, `presentDays`, and export exemption behavior. `0016_task_workflow.sql` is preserved.
-- **WhatsApp API:** Inbound ingestion is now LIVE on branch `whatsapp-integration` (`/api/webhooks/whatsapp`, signature-verified Cloud API). Intake Phase A (ownership-at-receipt + enrichment + relaxed promotion + `ops` role, migrations `0024`/`0025`) is implemented — see `WHATSAPP_INGESTION_PLAN.md` §8. Outbound/auto-reply and WAB2C/BSP coexistence webhook remain out of scope.
+- **WhatsApp API:** Inbound ingestion is LIVE. Direct Meta Cloud API webhook (`/api/webhooks/whatsapp`, signature-verified) + Intake Phase A (ownership-at-receipt + enrichment + relaxed promotion + `ops` role, migrations `0024`/`0025`) merged to `main` via PR #7 — see `WHATSAPP_INGESTION_PLAN.md` §8. **WAB2C/BSP coexistence webhook** (`/api/webhooks/wab2c`) is LIVE on `main`, coexisting via shared helper `lib/crm/whatsapp-ingestion.ts` (env keys configured, production redeployed) — see §9. Outbound sending, auto-reply, and WAB2C polling remain out of scope.
 - **Gemini Parser / Chatbot:** Parser fallback is LIVE for low-confidence intake extraction only (no auto-reply, no auto-promote, no lifecycle mutation). Client-facing chatbot still deferred.
 
 ## 5. Current Route Map
@@ -90,8 +90,9 @@ Do not use archived audits to override `CURRENT_STATE.md`, `CRM_BOARD.md`,
 - `/admin/financials` (Company-wide CRM/HRM dashboard)
 - `/admin/tasks/maintenance` (DB cleanup tool)
 
-**Future / Planned Routes:**
-- `/api/webhooks/whatsapp` (WhatsApp API Webhook)
+**Webhook Routes (live):**
+- `/api/webhooks/whatsapp` (direct Meta Cloud API webhook)
+- `/api/webhooks/wab2c` (WAB2C/BSP coexistence webhook)
 
 ## 6. Current Migration Map
 

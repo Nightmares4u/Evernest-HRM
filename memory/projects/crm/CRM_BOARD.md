@@ -48,6 +48,15 @@
 
 - **Phase A — Intake assignment + enrichment.** Ownership at receipt, `needs_enrichment` raw/lead states, counselor visibility/enrichment of assigned raw intake, relaxed promotion (no super_admin gate, no hard country/city block), `ops` role added. Migrations `0024`, `0025`. See `WHATSAPP_INGESTION_PLAN.md` §8.
 - **Phase B — Role/scoping helpers (code-only).** Centralized lead/raw scoping in `lib/crm/permissions-leads.ts` (`canViewLead`, `canManageLead`, `leadScopeForActor`); branch managers now manage branch leads; follow-up board role-scoped (branch managers see branch); `needs_enrichment` badge/filter on leads list + editable enrichment panel on lead detail; `ops` granted cross-branch client/doc/application/milestone/status access via role (department-name kept as fallback); `canViewClientFinancials` excludes ops from financials. Partially closes **T13**. See `CURRENT_STATE.md` → "CRM Role / Access Scoping (Phase B)".
+- **Phase A/B merged to `main`** via PR #7 (`b7496e3`). They were finalized after PR #6 but never merged; now on main.
+
+## WAB2C webhook ingestion (LIVE on `main`) — Done
+
+- New route `app/api/webhooks/wab2c/route.ts` coexisting with the direct Meta webhook. Flexible secret verification (`WAB2C_WEBHOOK_SECRET` via header/bearer/`?secret=`; fail-closed in prod).
+- Shared ingestion helper `lib/crm/whatsapp-ingestion.ts` (`ingestInboundWhatsappMessage` + `attachOutboundWhatsappEcho`); the direct Meta route was refactored to call it too (single source of truth, behaviour unchanged).
+- Normalizer `lib/wab2c/normalize.ts` (transformed → `whatsapp.original_payload` → direct Meta; direction-aware customer phone).
+- Inbound → owned raw intake (Phase A) + parser/Gemini; outbound echoes attach-if-safe (never new leads); status/other 200-ignored. Inbound dedupe via `first_wa_message_id` (raw Meta id, cross-transport safe); outbound dedupe via `crm_lead_messages.wa_message_id`.
+- No polling, no outbound send. Test artifacts: `scripts/wab2c-normalize-check.ts` (4/4 pass), `scripts/wab2c-webhook-sim.mjs`. See `WHATSAPP_INGESTION_PLAN.md` §9.
 
 ## Next Immediate
 

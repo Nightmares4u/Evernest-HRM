@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
-import {
-  parseRawIntakePayload,
-  parserActivityPayload,
-  parserActivityType,
-} from "@/lib/crm/intake";
-import { runGeminiParserFallback } from "@/lib/crm/gemini-parser";
-import { resolveRawIntakeAssignment } from "@/lib/crm/assignment";
+import { ingestInboundWhatsappMessage } from "@/lib/crm/whatsapp-ingestion";
 
 const VERIFY_TOKEN = process.env.META_WHATSAPP_VERIFY_TOKEN ?? "";
 const APP_SECRET = process.env.META_WHATSAPP_APP_SECRET ?? "";
@@ -125,7 +118,9 @@ export async function POST(request: NextRequest) {
         if (msg.type !== "text" || !msg.text?.body) continue;
 
         const contact = contacts?.find((c) => c.wa_id === msg.from);
-        const result = await ingestMessage({
+        const result = await ingestInboundWhatsappMessage({
+          source: "whatsapp_cloud_api",
+          sourceLabel: "WhatsApp Cloud API",
           phoneNumberId: metadata.phone_number_id,
           waId: msg.from,
           profileName: contact?.profile?.name ?? null,
@@ -133,172 +128,16 @@ export async function POST(request: NextRequest) {
           timestamp: msg.timestamp,
           textBody: msg.text.body,
         });
-        results.push(result);
+        results.push(
+          result.status === "ingested"
+            ? `ingested:${result.rawInboxId}`
+            : result.status === "duplicate"
+              ? `duplicate:${result.messageId}`
+              : `error:${result.reason}`
+        );
       }
     }
   }
 
   return NextResponse.json({ ok: true, results });
-}
-
-// ---------- Core ingestion logic ----------
-
-type IngestInput = {
-  phoneNumberId: string;
-  waId: string;
-  profileName: string | null;
-  messageId: string;
-  timestamp: string;
-  textBody: string;
-};
-
-async function ingestMessage(input: IngestInput): Promise<string> {
-  const admin = createAdminClient();
-
-  // 1. Deduplicate by wa_message_id
-  const { data: existing } = await admin
-    .from("crm_raw_inbox")
-    .select("id")
-    .eq("first_wa_message_id", input.messageId)
-    .maybeSingle();
-
-  if (existing) {
-    return `duplicate:${input.messageId}`;
-  }
-
-  // 2. Match phone_number_id → crm_whatsapp_numbers
-  const { data: waNumber } = await admin
-    .from("crm_whatsapp_numbers")
-    .select("id, assigned_employee_id, label, default_branch_id")
-    .eq("phone_number_id", input.phoneNumberId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  const receivedAt = new Date(Number(input.timestamp) * 1000).toISOString();
-
-  // 3. Resolve ownership at RECEIPT — the receiving EN number's counselor
-  //    owns the inquiry regardless of message quality.
-  const assignment = waNumber?.id
-    ? await resolveRawIntakeAssignment({
-        source_whatsapp_number_id: waNumber.id,
-        campaign_source_id: null,
-        fallback_branch_id: waNumber.default_branch_id ?? null,
-      })
-    : {
-        assigned_employee_id: null,
-        branch_id: null,
-        assignment_method: null,
-        assignment_reason: "No receiving WhatsApp number matched.",
-      };
-
-  // 4. Run rule-based parser (quality only)
-  const parsedPayload = parseRawIntakePayload(input.textBody);
-
-  // 5. Insert into crm_raw_inbox
-  const { data: rawRow, error: rawError } = await admin
-    .from("crm_raw_inbox")
-    .insert({
-      whatsapp_number_id: waNumber?.id ?? null,
-      campaign_source_id: null,
-      sender_phone: input.waId,
-      sender_name: input.profileName,
-      first_wa_message_id: input.messageId,
-      ...parsedPayload.rawUpdate,
-      assigned_employee_id: assignment.assigned_employee_id,
-      branch_id: assignment.branch_id,
-      assignment_method: assignment.assignment_method,
-      assignment_reason: assignment.assignment_reason,
-      first_message_text: input.textBody,
-      last_message_text: input.textBody,
-      last_message_at: receivedAt,
-    })
-    .select("id")
-    .single();
-
-  if (rawError || !rawRow) {
-    console.error("[whatsapp-webhook] raw_inbox insert failed:", rawError);
-    return `error:insert_raw:${rawError?.message}`;
-  }
-
-  // 6. Insert into crm_lead_messages + crm_lead_activities
-  const [{ error: messageError }, { error: activityError }] = await Promise.all(
-    [
-      admin.from("crm_lead_messages").insert({
-        raw_inbox_id: rawRow.id,
-        lead_id: null,
-        direction: "inbound",
-        wa_message_id: input.messageId,
-        from_phone: input.waId,
-        to_phone: input.phoneNumberId,
-        message_type: "text",
-        content: input.textBody,
-        raw_payload: {
-          source: "whatsapp_cloud_api",
-          phone_number_id: input.phoneNumberId,
-          profile_name: input.profileName,
-          wa_timestamp: input.timestamp,
-        },
-        sent_by_employee_id: null,
-        received_at: receivedAt,
-      }),
-      admin.from("crm_lead_activities").insert({
-        lead_id: null,
-        raw_inbox_id: rawRow.id,
-        activity_type: parserActivityType(parsedPayload.parsed.confidence),
-        actor_user_id: null,
-        description: `Rule parser confidence ${parsedPayload.parsed.confidence.toFixed(2)} (WhatsApp Cloud API)`,
-        payload: parserActivityPayload(parsedPayload.parsed),
-      }),
-    ]
-  );
-
-  if (messageError) {
-    console.error("[whatsapp-webhook] message insert failed:", messageError);
-  }
-  if (activityError) {
-    console.error("[whatsapp-webhook] activity insert failed:", activityError);
-  }
-
-  // 7. Log the receipt-time owner assignment (best-effort).
-  if (assignment.assigned_employee_id) {
-    const { error: assignActivityError } = await admin
-      .from("crm_lead_activities")
-      .insert({
-        lead_id: null,
-        raw_inbox_id: rawRow.id,
-        activity_type: "assigned",
-        actor_user_id: null,
-        description:
-          assignment.assignment_reason ??
-          "Raw intake auto-assigned from WhatsApp number owner.",
-        payload: {
-          method: assignment.assignment_method,
-          target_employee_id: assignment.assigned_employee_id,
-          target_branch_id: assignment.branch_id,
-          at: "receipt",
-        },
-      });
-    if (assignActivityError) {
-      console.error(
-        "[whatsapp-webhook] assignment activity insert failed:",
-        assignActivityError
-      );
-    }
-  }
-
-  // 8. Gemini fallback for low-confidence results
-  if (parsedPayload.parsed.confidence < 0.8) {
-    const geminiResult = await runGeminiParserFallback(
-      input.textBody,
-      rawRow.id
-    );
-    if (geminiResult.ran && geminiResult.update) {
-      await admin
-        .from("crm_raw_inbox")
-        .update(geminiResult.update)
-        .eq("id", rawRow.id);
-    }
-  }
-
-  return `ingested:${rawRow.id}`;
 }
