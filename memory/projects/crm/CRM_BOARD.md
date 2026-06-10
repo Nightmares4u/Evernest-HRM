@@ -57,6 +57,7 @@
 - Normalizer `lib/wab2c/normalize.ts` (transformed → `whatsapp.original_payload` → direct Meta; direction-aware customer phone).
 - Inbound → owned raw intake (Phase A) + parser/Gemini; outbound echoes attach-if-safe (never new leads); status/other 200-ignored. Inbound dedupe via `first_wa_message_id` (raw Meta id, cross-transport safe); outbound dedupe via `crm_lead_messages.wa_message_id`.
 - No polling, no outbound send. Test artifacts: `scripts/wab2c-normalize-check.ts` (4/4 pass), `scripts/wab2c-webhook-sim.mjs`. See `WHATSAPP_INGESTION_PLAN.md` §9.
+- **Number attribution fix (PR #9):** match by `phone_number_id` then normalized `display_number` fallback + auto-learn; both webhooks pass the business/display number; `no_receiving_number_match` logging. Admin can now set/backfill `phone_number_id` per number in the UI (`updateWhatsappNumberMetaId`). Rabia's number + orphan test lead repaired. Clean number-onboarding runbook in `WHATSAPP_INGESTION_PLAN.md` §10.
 
 ## Next Immediate
 

@@ -156,6 +156,34 @@ export async function updateWhatsappNumberOwner(formData: FormData) {
   );
 }
 
+// Set/clear the Meta phone_number_id on an existing number. This is the value
+// WAB2C/Meta forwards in webhooks and the primary match key for inbound
+// ingestion — so backfilling it (e.g. from a raw intake's stored
+// raw_payload.phone_number_id) makes that number auto-assign on the next
+// message without any SQL.
+export async function updateWhatsappNumberMetaId(formData: FormData) {
+  await assertSuperAdmin(WHATSAPP_PATH);
+
+  const id = readString(formData, "id");
+  const phoneNumberId = readString(formData, "phone_number_id");
+  if (!id) fail(WHATSAPP_PATH, "Missing WhatsApp number id.");
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("crm_whatsapp_numbers")
+    .update({ phone_number_id: nullable(phoneNumberId) })
+    .eq("id", id);
+
+  if (error) {
+    // Most likely a unique-constraint clash (phone_number_id already used).
+    fail(WHATSAPP_PATH, `Could not update phone_number_id: ${error.message}`);
+  }
+  ok(
+    WHATSAPP_PATH,
+    phoneNumberId ? "phone_number_id saved." : "phone_number_id cleared."
+  );
+}
+
 export async function updateWhatsappNumberFallback(formData: FormData) {
   await assertSuperAdmin(WHATSAPP_PATH);
 

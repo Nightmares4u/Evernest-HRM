@@ -6,6 +6,7 @@ import {
   createWhatsappNumber,
   setWhatsappNumberActive,
   updateWhatsappNumberFallback,
+  updateWhatsappNumberMetaId,
   updateWhatsappNumberOwner,
 } from "@/app/(dashboard)/admin/crm/actions";
 import {
@@ -153,9 +154,27 @@ export default async function CrmWhatsappNumbersPage({
                   <tr key={number.id} className="hover:bg-gray-50">
                     <Td className="font-medium text-gray-900">
                       <div>{number.label}</div>
-                      {number.phone_number_id && (
-                        <div className="mt-0.5 text-xs text-gray-400">
-                          {number.phone_number_id}
+                      <form
+                        action={updateWhatsappNumberMetaId}
+                        className="mt-1 flex items-center gap-1"
+                      >
+                        <input type="hidden" name="id" value={number.id} />
+                        <input
+                          name="phone_number_id"
+                          defaultValue={number.phone_number_id ?? ""}
+                          placeholder="phone_number_id"
+                          className="w-36 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-900"
+                        />
+                        <button
+                          type="submit"
+                          className="text-[11px] font-medium text-blue-600 hover:text-blue-500"
+                        >
+                          Save
+                        </button>
+                      </form>
+                      {!number.phone_number_id && (
+                        <div className="mt-0.5 text-[10px] text-amber-600">
+                          Set the Meta id WAB2C sends so inbound auto-assigns.
                         </div>
                       )}
                     </Td>
