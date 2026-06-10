@@ -207,3 +207,48 @@ WhatsApp events to our CRM via an outbound webhook.
 ### Test artifacts
 - `scripts/wab2c-normalize-check.ts` — pure normalizer check, 4 cases (no DB).
 - `scripts/wab2c-webhook-sim.mjs` — POST simulation against a local dev server.
+
+## 10. Number mapping model + onboarding runbook (how to add numbers like Rabia's)
+
+**One row in `crm_whatsapp_numbers` per WhatsApp number EN operates** (direct
+Meta or WAB2C-mirrored). The row is the single source of truth for who owns a
+number and how inbound is matched.
+
+| Field | Role |
+|---|---|
+| `phone_number_id` | **Primary match key** — the Meta id WAB2C/Meta forwards in every webhook (e.g. `690310694162308`). Set this. |
+| `display_number` | Human number (`+923105526201`). **Fallback match** (digits-only normalized) + identification. |
+| `assigned_employee_id` | The **counselor who owns the number** → becomes the lead owner at receipt. |
+| `default_branch_id` | Branch for the number (falls back to the owner's branch). |
+| `product_category`, `label` | Routing/reporting metadata. |
+| `fallback_employee_id` + window | Temporary cover for leave/breaks. |
+| `is_active` | Must be `true` to match. |
+
+**Matching order (inbound):** `phone_number_id` exact → normalized
+`display_number` fallback → auto-learn `phone_number_id` on a display match.
+No match → unassigned + `no_receiving_number_match` (never lost).
+
+### Add a new number — preferred (you know the phone_number_id)
+1. Get the number's Meta `phone_number_id` from the WAB2C/Meta dashboard.
+2. **Admin CRM → WhatsApp Numbers → Add:** label, display number (`+92…`),
+   product, branch, **phone_number_id**, assigned counselor, Active ✓.
+3. Done — inbound to that number auto-assigns to that counselor.
+
+### Add a new number — discovery (phone_number_id unknown)
+1. Add the row with label, display number, product, branch, **owner**,
+   Active ✓ (leave `phone_number_id` blank).
+2. Send one test WhatsApp to that number.
+3. It appears in **/crm/inbox**. Open the raw intake → the inbound message's
+   `raw_payload.phone_number_id` shows the id (also server-logged as
+   `no_receiving_number_match phone_number_id=…`).
+4. **Admin CRM → WhatsApp Numbers →** that number's row → paste the id into the
+   **phone_number_id** field → **Save** (action `updateWhatsappNumberMetaId`,
+   super_admin). No SQL needed.
+5. Re-send → auto-assigns to the owner.
+
+### Notes
+- `phone_number_id` is UNIQUE per row — two numbers cannot share one.
+- Changing the owner later (`updateWhatsappNumberOwner`) only affects **new**
+  inbound; existing leads keep their owner (use transfers to move them).
+- The same model serves the direct Meta webhook and WAB2C — set
+  `phone_number_id` once and both transports match.
