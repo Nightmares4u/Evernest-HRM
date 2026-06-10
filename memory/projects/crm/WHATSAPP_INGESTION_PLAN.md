@@ -169,6 +169,15 @@ WhatsApp events to our CRM via an outbound webhook.
   create `crm_raw_inbox` + `crm_lead_messages` with **receipt-time ownership**
   (Phase A `resolveRawIntakeAssignment`), rule parser + Gemini fallback,
   status `ready_for_promotion`/`needs_enrichment`. No auto-promotion, no reply.
+- **Receiving-number matching** (`matchReceivingNumber` in the shared helper):
+  match `crm_whatsapp_numbers` by `phone_number_id` first, then by **normalized
+  `display_number`** (digits-only, so `+923105526201` == `923105526201`) using
+  the event's business/display number. On a display match with no stored id,
+  the helper **auto-learns** `phone_number_id` (fills null only). Observed:
+  WAB2C forwards the Meta `phone_number_id` (e.g. `690310694162308` for Rabia's
+  `+923105526201`), so admins should set `phone_number_id` on each WAB2C number
+  (or the first inbound auto-learns it if WAB2C also sends a display number).
+  No match → unassigned + reason `no_receiving_number_match` (never lost).
 - **Outbound echo** (`whatsapp.message.sent`, message_echoes, smb_message_echoes):
   never creates a lead/raw intake. Attaches as an outbound `crm_lead_messages`
   row to an existing thread (lead by `customer_phone`, else raw intake by

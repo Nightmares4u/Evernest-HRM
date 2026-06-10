@@ -23,6 +23,10 @@ export type InboundWhatsappMessage = {
   sourceLabel: string;
   /** Meta phone_number_id of the receiving EN number; null if unmatched. */
   phoneNumberId: string | null;
+  /** Receiving EN display/business number (e.g. +923105526201). Used as a
+   *  fallback match against crm_whatsapp_numbers.display_number when the
+   *  number row has no phone_number_id yet. */
+  businessPhoneNumber: string | null;
   /** Customer WhatsApp id / phone (digits, no plus). */
   waId: string;
   profileName: string | null;
@@ -37,6 +41,65 @@ export type InboundIngestResult =
   | { status: "ingested"; rawInboxId: string }
   | { status: "duplicate"; messageId: string }
   | { status: "error"; reason: string };
+
+// Strip everything but digits so "+92 310-5526201" and "923105526201" match.
+export function normalizePhone(v: string | null | undefined): string {
+  return String(v ?? "").replace(/\D/g, "");
+}
+
+type MatchedWaNumber = {
+  id: string;
+  assigned_employee_id: string | null;
+  label: string | null;
+  default_branch_id: string | null;
+  phone_number_id: string | null;
+  display_number: string | null;
+};
+
+// Match the receiving EN number: phone_number_id first, then a normalized
+// display_number fallback. When matched by display and the row has no
+// phone_number_id yet, auto-learn it so future events match in one query.
+async function matchReceivingNumber(
+  admin: ReturnType<typeof createAdminClient>,
+  phoneNumberId: string | null,
+  businessPhoneNumber: string | null
+): Promise<MatchedWaNumber | null> {
+  const cols =
+    "id, assigned_employee_id, label, default_branch_id, phone_number_id, display_number";
+
+  if (phoneNumberId) {
+    const { data } = await admin
+      .from("crm_whatsapp_numbers")
+      .select(cols)
+      .eq("phone_number_id", phoneNumberId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (data) return data as MatchedWaNumber;
+  }
+
+  const target = normalizePhone(businessPhoneNumber);
+  if (!target) return null;
+
+  const { data: candidates } = await admin
+    .from("crm_whatsapp_numbers")
+    .select(cols)
+    .eq("is_active", true);
+  const matched =
+    ((candidates ?? []) as MatchedWaNumber[]).find(
+      (c) => normalizePhone(c.display_number) === target
+    ) ?? null;
+
+  // Auto-learn the phone_number_id (fill null only — never overwrite).
+  if (matched && phoneNumberId && !matched.phone_number_id) {
+    await admin
+      .from("crm_whatsapp_numbers")
+      .update({ phone_number_id: phoneNumberId })
+      .eq("id", matched.id)
+      .is("phone_number_id", null);
+    matched.phone_number_id = phoneNumberId;
+  }
+  return matched;
+}
 
 // Tolerant timestamp → ISO. Meta sends unix seconds (10 digits); WAB2C may
 // forward ISO or unix. Falls back to now() if unparseable so ingestion never
@@ -77,15 +140,12 @@ export async function ingestInboundWhatsappMessage(
     return { status: "duplicate", messageId: input.messageId };
   }
 
-  // 2. Match phone_number_id → crm_whatsapp_numbers (skip if no id).
-  const { data: waNumber } = input.phoneNumberId
-    ? await admin
-        .from("crm_whatsapp_numbers")
-        .select("id, assigned_employee_id, label, default_branch_id")
-        .eq("phone_number_id", input.phoneNumberId)
-        .eq("is_active", true)
-        .maybeSingle()
-    : { data: null };
+  // 2. Match receiving number by phone_number_id, then display fallback.
+  const waNumber = await matchReceivingNumber(
+    admin,
+    input.phoneNumberId,
+    input.businessPhoneNumber
+  );
 
   const receivedAt = toReceivedAtIso(input.timestamp);
 
@@ -97,12 +157,21 @@ export async function ingestInboundWhatsappMessage(
         campaign_source_id: null,
         fallback_branch_id: waNumber.default_branch_id ?? null,
       })
-    : {
-        assigned_employee_id: null,
-        branch_id: null,
-        assignment_method: null,
-        assignment_reason: "No receiving WhatsApp number matched.",
-      };
+    : (() => {
+        console.warn(
+          `[whatsapp-ingestion] no_receiving_number_match phone_number_id=${
+            input.phoneNumberId ?? "none"
+          } display=${input.businessPhoneNumber ?? "none"} source=${input.source}`
+        );
+        return {
+          assigned_employee_id: null,
+          branch_id: null,
+          assignment_method: null,
+          assignment_reason: `No receiving WhatsApp number matched (no_receiving_number_match; phone_number_id=${
+            input.phoneNumberId ?? "none"
+          }, display=${input.businessPhoneNumber ?? "none"}).`,
+        };
+      })();
 
   // 4. Run rule-based parser (quality only).
   const parsedPayload = parseRawIntakePayload(input.textBody);
@@ -147,6 +216,8 @@ export async function ingestInboundWhatsappMessage(
       raw_payload: {
         source: input.source,
         phone_number_id: input.phoneNumberId,
+        business_phone_number: input.businessPhoneNumber,
+        matched_whatsapp_number_id: waNumber?.id ?? null,
         profile_name: input.profileName,
         wa_timestamp: input.timestamp,
       },
