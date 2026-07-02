@@ -126,7 +126,7 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 
 ## Pending / Planned Work
 
-- **Apply migration 0027** to Supabase (Supabase SQL editor) — direct client shells + audit-trail invoice RPCs. Nothing about the new lifecycle works until this is applied. (0026 is already applied.)
+- **Apply migration 0028** to Supabase (Supabase SQL editor) — without it, flipping a step's status will keep re-creating stale "Due"/"Paid" labels on the printable invoice. (0026 and 0027 are applied; 0028's one-time data fix has already been run directly.)
 - **Re-wire raw inbox ↔ client logic later** — flip `CRM_INTAKE_ENABLED`, restore nav items, and restore webhook routes from git history when the intake pipeline returns.
 - **Final Claude Staged-Diff Audit:** Review all 143 staged files before committing the integration branch.
 - **Full Regression Testing:** Manual smoke testing across Stage 1 + Stage 2 + Financials + Assistant + Admin Task Maintenance + Payroll before internal rollout.
@@ -154,7 +154,8 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 - `0024_crm_raw_intake_ownership.sql` (raw owner/branch/enrichment columns; `needs_enrichment`/`ready_for_promotion` raw statuses; assigned-counselor RLS)
 - `0025_crm_lead_needs_enrichment_and_ops_role.sql` (`crm_leads.needs_enrichment`; `ops` user_role)
 - `0026_crm_client_invoices.sql` (client invoices + steps, invoice RPCs, convert-RPC redefinition, backfill) — **applied**
-- `0027_crm_direct_client_shells.sql` (nullable lead/agreement/advance, client identity columns, `crm_create_client_shell`, invoice RPC redefinitions with audit diffs) — **PENDING APPLY**
+- `0027_crm_direct_client_shells.sql` (nullable lead/agreement/advance, client identity columns, `crm_create_client_shell`, invoice RPC redefinitions with audit diffs) — **applied**
+- `0028_crm_invoice_step_detail_status_sync.sql` (auto-managed detail_status labels follow step status; stale-label data fix) — **PENDING APPLY** (data fix already executed 2026-07-02 via service role; the RPC redefinition still needs the SQL editor)
 
 ## Current Route Inventory
 
