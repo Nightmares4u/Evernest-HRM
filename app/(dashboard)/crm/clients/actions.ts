@@ -3,8 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
+import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
-import { canRecordClientPayment } from "@/lib/crm/permissions-clients";
+import {
+  canCreateClientShell,
+  canEditClientInvoice,
+  canRecordClientPayment,
+} from "@/lib/crm/permissions-clients";
 import type {
   CrmClientInvoiceStatus,
   CrmClientInvoiceStepStatus,
@@ -104,8 +109,134 @@ function parseInvoiceStatus(value: string): CrmClientInvoiceStatus | null {
   return value === "draft" || value === "issued" || value === "void" ? value : null;
 }
 
+/**
+ * Load the client and enforce invoice-edit permission + terminal lock for
+ * invoice actions. Redirects (throws) on any failure; returns the client
+ * scope row on success. Both checks are also enforced in the Postgres RPCs —
+ * this keeps behavior correct regardless of migration state.
+ */
+async function requireInvoiceEditableClient(
+  admin: ReturnType<typeof createAdminClient>,
+  me: CurrentUser,
+  clientId: string
+): Promise<void> {
+  const clientRes = await admin
+    .from("crm_clients")
+    .select("status, assigned_agent_id, branch_id")
+    .eq("id", clientId)
+    .maybeSingle();
+  if (clientRes.error || !clientRes.data) {
+    redirectClient(clientId, "error", "Client not found.", "financials");
+  }
+  const client = clientRes.data!;
+  if (!canEditClientInvoice(me, client)) {
+    redirectClient(clientId, "error", "You do not have access to edit this client's invoice.", "financials");
+  }
+  if (client.status === "alumni" || client.status === "withdrawn_refunded") {
+    redirectClient(clientId, "error", "Invoice updates are closed for terminal clients.", "financials");
+  }
+}
+
 function parseInvoiceStepStatus(value: string): CrmClientInvoiceStepStatus | null {
   return value === "due" || value === "paid" || value === "waived" ? value : null;
+}
+
+function parseOptionalNonNegativeMoney(raw: string, label: string, redirectTo: string): number | null {
+  if (!raw) return null;
+  const amount = Number(raw);
+  if (!Number.isFinite(amount) || amount < 0) {
+    redirect(`${redirectTo}?error=${encodeURIComponent(`${label} must be zero or greater.`)}`);
+  }
+  return amount;
+}
+
+/**
+ * Direct client shell creation (post-pivot lifecycle entry point — no lead).
+ * Counselors create shells assigned to themselves in their own branch;
+ * branch managers create within their branch; super_admin/admin_hr/ops can
+ * pick any branch and counselor.
+ */
+export async function createClientShell(formData: FormData): Promise<void> {
+  const me = requireActiveUser(await getCurrentUser());
+  if (!canCreateClientShell(me)) {
+    redirect("/crm/clients?error=You%20do%20not%20have%20access%20to%20create%20clients.");
+  }
+
+  const customerName = readString(formData, "customer_name");
+  const customerPhone = readString(formData, "customer_phone");
+  if (!customerName) redirect("/crm/clients/new?error=Customer%20name%20is%20required.");
+  if (!customerPhone) redirect("/crm/clients/new?error=Customer%20phone%20is%20required.");
+
+  const totalFee = parseOptionalNonNegativeMoney(
+    readString(formData, "total_fee"),
+    "Total fee",
+    "/crm/clients/new"
+  );
+  const registrationFee = parseOptionalNonNegativeMoney(
+    readString(formData, "registration_fee"),
+    "Registration fee",
+    "/crm/clients/new"
+  );
+
+  const isGlobal =
+    me.appUser.role === "super_admin" ||
+    me.appUser.role === "admin_hr" ||
+    me.appUser.role === "ops";
+  const isManager = isBranchManagerOrAboveRole(me.appUser.role);
+
+  let branchId = readString(formData, "branch_id") || null;
+  let agentId = readString(formData, "assigned_agent_id") || null;
+
+  const admin = createAdminClient();
+
+  if (!isGlobal) {
+    if (isManager) {
+      // Branch managers create within their own branch only.
+      branchId = me.employee?.branch_id ?? null;
+      if (agentId) {
+        const { data: agentRow } = await admin
+          .from("employees")
+          .select("branch_id")
+          .eq("id", agentId)
+          .maybeSingle();
+        if (!agentRow || agentRow.branch_id !== branchId) {
+          redirect("/crm/clients/new?error=Selected%20counselor%20is%20not%20in%20your%20branch.");
+        }
+      }
+    } else {
+      // Counselors (sales) create their own shells.
+      if (!me.employee?.id) {
+        redirect("/crm/clients/new?error=Your%20account%20has%20no%20employee%20record.");
+      }
+      agentId = me.employee!.id;
+      branchId = me.employee!.branch_id ?? null;
+    }
+  }
+
+  const { data, error } = await admin.rpc("crm_create_client_shell", {
+    p_customer_name: customerName,
+    p_customer_phone: customerPhone,
+    p_target_country: readString(formData, "target_country"),
+    p_target_level: readString(formData, "target_level"),
+    p_total_fee: totalFee,
+    p_registration_fee: registrationFee,
+    p_branch_id: branchId,
+    p_assigned_agent_id: agentId,
+    p_actor_user_id: me.authUserId,
+  });
+
+  if (error) {
+    redirect(`/crm/clients/new?error=${encodeURIComponent(`Could not create client: ${error.message}`)}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const newClientId = (row as { client_id?: string } | null)?.client_id;
+  if (!newClientId) {
+    redirect("/crm/clients?error=Client%20was%20created%20but%20could%20not%20be%20opened.");
+  }
+
+  revalidatePath("/crm/clients");
+  redirect(`/crm/clients/${newClientId}?ok=${encodeURIComponent("Client shell created with invoice.")}`);
 }
 
 export async function convertLeadToClient(formData: FormData): Promise<void> {
@@ -246,9 +377,6 @@ export async function updateClientInvoice(formData: FormData): Promise<void> {
   const invoiceId = readString(formData, "invoice_id");
   if (!clientId) redirect("/crm/clients?error=Client%20id%20is%20required");
   if (!invoiceId) redirectClient(clientId, "error", "Invoice id is required.", "financials");
-  if (!canRecordClientPayment(me)) {
-    redirectClient(clientId, "error", "Only super admin can update client invoices.", "financials");
-  }
 
   const status = parseInvoiceStatus(readString(formData, "status"));
   const invoiceDate = parseInvoiceDate(readString(formData, "invoice_date"));
@@ -256,20 +384,7 @@ export async function updateClientInvoice(formData: FormData): Promise<void> {
   if (!invoiceDate) redirectClient(clientId, "error", "Invoice date is required.", "financials");
 
   const admin = createAdminClient();
-
-  // Terminal clients are locked from workflow mutations; enforce in the action
-  // as well as the RPC so the lock holds regardless of migration state.
-  const clientRes = await admin
-    .from("crm_clients")
-    .select("status")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (clientRes.error || !clientRes.data) {
-    redirectClient(clientId, "error", "Client not found.", "financials");
-  }
-  if (clientRes.data!.status === "alumni" || clientRes.data!.status === "withdrawn_refunded") {
-    redirectClient(clientId, "error", "Invoice updates are closed for terminal clients.", "financials");
-  }
+  await requireInvoiceEditableClient(admin, me, clientId);
 
   const { error } = await admin.rpc("crm_update_client_invoice", {
     p_invoice_id: invoiceId,
@@ -301,9 +416,6 @@ export async function upsertClientInvoiceStep(formData: FormData): Promise<void>
   const stepId = readString(formData, "step_id") || null;
   if (!clientId) redirect("/crm/clients?error=Client%20id%20is%20required");
   if (!invoiceId) redirectClient(clientId, "error", "Invoice id is required.", "financials");
-  if (!canRecordClientPayment(me)) {
-    redirectClient(clientId, "error", "Only super admin can update invoice steps.", "financials");
-  }
 
   const lineOrder = Number.parseInt(readString(formData, "line_order"), 10);
   const quantity = parseRequiredQuantity(readString(formData, "quantity"));
@@ -324,6 +436,8 @@ export async function upsertClientInvoiceStep(formData: FormData): Promise<void>
   }
 
   const admin = createAdminClient();
+  await requireInvoiceEditableClient(admin, me, clientId);
+
   const { error } = await admin.rpc("crm_upsert_client_invoice_step", {
     p_invoice_id: invoiceId,
     p_step_id: stepId,

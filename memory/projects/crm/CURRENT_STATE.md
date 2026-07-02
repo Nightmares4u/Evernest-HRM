@@ -1,8 +1,22 @@
 # Current State
 
-> **Last updated:** 2026-06-03 (CRM/HRM Integration Live on main)
-> **Branch:** `main`
-> **Status:** Integrated and Pushed.
+> **Last updated:** 2026-07-02 (Business pivot: direct client shells)
+> **Branch:** `feature/direct-client-shells`
+> **Status:** Intake pipeline paused; lifecycle starts at client shells.
+
+## ⚠️ 2026-07 Business Pivot — Direct Client Shells
+
+The WhatsApp-based raw-inbox → lead → client intake pipeline is **paused, not deleted**. The client lifecycle now starts directly at client shell creation. Key facts:
+
+- **Feature flag:** `lib/crm/feature-flags.ts` → `CRM_INTAKE_ENABLED = false`. Intake routes (`/crm/inbox`, `/crm/leads`, `/crm/leads/follow-ups`, `/crm/transfers`, `/admin/crm/transfers`, `/admin/crm/clients/conversion-queue`) are gated by tiny `layout.tsx` redirects; nav items are commented out in `app/(dashboard)/layout.tsx`. All intake code (pages, actions, `lib/crm/whatsapp-ingestion.ts`, parsers, permissions-leads) is preserved for later re-wiring.
+- **WhatsApp webhook APIs removed:** `app/api/webhooks/whatsapp` and `app/api/webhooks/wab2c` route handlers are deleted (recoverable from git history) so nothing writes intake data anymore. WhatsApp env keys remain in `.env.local` but are unused.
+- **Database wiped of intake test data (2026-07-02):** all rows deleted from raw inbox, leads (+messages/assignments/activities/transfers), clients (+payments, refunds, invoices, steps, documents, applications, milestones, visa decisions, activities) — 573 rows + 47 storage files (`crm-client-docs` bucket). Config tables kept: `crm_whatsapp_numbers`, `crm_campaign_sources`, `crm_assignment_rules`. Script: `scripts/cleanup-crm-test-data.mjs --confirm`.
+- **Direct client shells (migration `0027`):** `crm_clients.lead_id`, `agreement_signed_at`, `advance_paid_at` are now nullable; clients carry their own `customer_name`/`customer_phone`. New RPC `crm_create_client_shell` atomically creates client + invoice + DUE Step 1 "Registration / Agreement Fees" (advance optional — no payment row until a step is marked paid). UI: `/crm/clients/new` + "New client shell" button on the clients list.
+- **Hierarchy:** counselors (sales) create their own shells (self-assigned, own branch); branch managers create within their branch; `ops`, `admin_hr`, `super_admin` create anywhere. Ops has full lifecycle access (docs, applications, visa, status) AND financials/invoice editing across all clients.
+- **Financials permissions:** `canViewClientFinancials` = client view (ops + assigned counselor + branch + admins). New `canEditClientInvoice` — same audience — gates invoice header/step editing including marking steps paid. Refunds/withdraw remain super_admin. **Audit trail:** the 0027 invoice RPCs write field-level before/after diffs into `crm_client_activities` (`invoice_updated`, `invoice_step_added`, `invoice_step_edited`, plus existing `invoice_step_paid`/`invoice_step_status_changed`).
+- **Lead conversion (`convertLeadToClient`/`crm_convert_lead_to_client`) still exists** but is unreachable while the intake flag is off.
+
+Everything below this section describes the pre-pivot system; treat intake-related parts as dormant reference.
 
 ## Status Summary
 
@@ -112,7 +126,8 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 
 ## Pending / Planned Work
 
-- **Apply migration 0026** to Supabase (invoice tables, RPCs, backfill) before using invoicing in production.
+- **Apply migration 0027** to Supabase (Supabase SQL editor) — direct client shells + audit-trail invoice RPCs. Nothing about the new lifecycle works until this is applied. (0026 is already applied.)
+- **Re-wire raw inbox ↔ client logic later** — flip `CRM_INTAKE_ENABLED`, restore nav items, and restore webhook routes from git history when the intake pipeline returns.
 - **Final Claude Staged-Diff Audit:** Review all 143 staged files before committing the integration branch.
 - **Full Regression Testing:** Manual smoke testing across Stage 1 + Stage 2 + Financials + Assistant + Admin Task Maintenance + Payroll before internal rollout.
 - **Lead Conversion Test:** Verify `convertLeadToClient` works against the manually applied `0023` RPC.
@@ -138,16 +153,18 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 - `0023_crm_convert_lead_to_client_rpc.sql`
 - `0024_crm_raw_intake_ownership.sql` (raw owner/branch/enrichment columns; `needs_enrichment`/`ready_for_promotion` raw statuses; assigned-counselor RLS)
 - `0025_crm_lead_needs_enrichment_and_ops_role.sql` (`crm_leads.needs_enrichment`; `ops` user_role)
-- `0026_crm_client_invoices.sql` (client invoices + steps, invoice RPCs, convert-RPC redefinition, backfill)
+- `0026_crm_client_invoices.sql` (client invoices + steps, invoice RPCs, convert-RPC redefinition, backfill) — **applied**
+- `0027_crm_direct_client_shells.sql` (nullable lead/agreement/advance, client identity columns, `crm_create_client_shell`, invoice RPC redefinitions with audit diffs) — **PENDING APPLY**
 
 ## Current Route Inventory
 
 **Staff Routes:**
-- `/crm/inbox` (List) & `/crm/inbox/[id]` (Detail)
-- `/crm/leads` (List) & `/crm/leads/[id]` (Detail)
-- `/crm/leads/follow-ups` (Board)
-- `/crm/transfers` (Pending requests)
+- `/crm/inbox` (List) & `/crm/inbox/[id]` (Detail) — GATED OFF (intake paused)
+- `/crm/leads` (List) & `/crm/leads/[id]` (Detail) — GATED OFF (intake paused)
+- `/crm/leads/follow-ups` (Board) — GATED OFF (intake paused)
+- `/crm/transfers` (Pending requests) — GATED OFF (intake paused)
 - `/crm/clients` (List)
+- `/crm/clients/new` (Direct client shell creation)
 - `/crm/clients/[id]` (Detail)
 - `/crm/clients/[id]/documents`
 - `/crm/clients/[id]/applications`

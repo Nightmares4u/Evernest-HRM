@@ -152,12 +152,12 @@ export default async function ClientFinancialsPage({
 
       {invoice ? (
         <>
-          <InvoiceHeaderPanel invoice={invoice} canEdit={data.canRecordPayment && !isTerminal} />
+          <InvoiceHeaderPanel invoice={invoice} canEdit={data.canEditInvoice} />
           <InvoiceStepsPanel
             clientId={client.id}
             invoice={invoice}
             steps={invoiceSteps}
-            canEdit={data.canRecordPayment && !isTerminal}
+            canEdit={data.canEditInvoice}
           />
         </>
       ) : (
@@ -166,7 +166,7 @@ export default async function ClientFinancialsPage({
         </Notice>
       )}
 
-      {!data.canRecordPayment && isTerminal && (
+      {isTerminal && (
         <Notice tone="amber">Invoice payment updates are closed for terminal clients.</Notice>
       )}
 

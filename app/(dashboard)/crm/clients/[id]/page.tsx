@@ -156,12 +156,14 @@ export default async function CrmClientDetailPage({
         }
         action={
           <div className="flex items-center gap-3">
-            <Link
-              href={`/crm/leads/${client.lead_id}`}
-              className="text-sm font-medium text-blue-700 transition-colors hover:text-blue-900"
-            >
-              Back to lead
-            </Link>
+            {client.lead_id && (
+              <Link
+                href={`/crm/leads/${client.lead_id}`}
+                className="text-sm font-medium text-blue-700 transition-colors hover:text-blue-900"
+              >
+                Back to lead
+              </Link>
+            )}
             <StatusBadge label={formatLabel(client.status)} tone={STATUS_TONES[client.status]} />
           </div>
         }
@@ -199,7 +201,11 @@ export default async function CrmClientDetailPage({
         <div className="space-y-6 lg:col-span-2">
           <SectionCard
             title="Client shell"
-            description="Phase 2A read-only client record created from a converted lead."
+            description={
+              client.lead_id
+                ? "Client record created from a converted lead."
+                : "Client record created directly (direct shell)."
+            }
           >
             <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Info label="Assigned counselor" value={client.assigned_agent_name ?? "Unassigned"} />

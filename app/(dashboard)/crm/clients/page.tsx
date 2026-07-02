@@ -77,13 +77,13 @@ export default async function CrmClientsPage({
     <div className="space-y-6">
       <PageHeader
         title="CRM Clients"
-        description="Converted clients in the Stage 2 lifecycle."
+        description="Clients in the lifecycle — created directly as client shells."
         action={
           <Link
-            href="/crm/leads"
-            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 transition-colors"
+            href="/crm/clients/new"
+            className="rounded-md bg-blue-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 transition-colors"
           >
-            Switch to Leads
+            New client shell
           </Link>
         }
       />
