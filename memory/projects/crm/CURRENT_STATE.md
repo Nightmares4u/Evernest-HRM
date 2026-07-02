@@ -102,8 +102,17 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 - **Financials excluded for ops.** New `canViewClientFinancials` (= client view but excludes ops) gates `getCrmClientFinancialsPage`. Payments/refunds/withdraw remain super_admin-only.
 - **No migrations.** Phase B is code-only; relies on the `ops` enum + `needs_enrichment` column from `0024`/`0025`.
 
+### Phase 2F-2 (Client Invoicing) — Completed
+- **Invoice-first financials.** Every client gets one invoice (`crm_client_invoices`, one per client) with ordered steps (`crm_client_invoice_steps`). Migration `0026` adds tables, RPCs, and backfills invoice shells + a Step 1 row for all existing clients (linking the historical advance payment where amounts match).
+- **Conversion integration.** `crm_convert_lead_to_client` (redefined in `0026`, same signature as `0023`) now atomically creates the client, the invoice (number `<client_code>-01`, file number = client code), the Step 1 "Registration / Agreement Fees" row marked `paid`, and its linked `crm_client_payments` row.
+- **Cash = paid steps only.** Marking a step `paid` creates/updates a matching `crm_client_payments` row (method `invoice_step_paid`) via `crm_apply_invoice_step_payment`; reverting to `due`/`waived` deletes the linked payment. Client and `/admin/financials` totals therefore keep aggregating `crm_client_payments` unchanged — due/waived/draft lines never count as received cash.
+- **UI.** `/crm/clients/[id]/financials` shows invoice stat cards (subtotal / paid / waived / balance due), an editable invoice header (number, file no, status draft/issued/void, dates, bill-to, package, terms, footer), and per-step edit/add forms. Editing is super_admin-only (`canRecordClientPayment`) and closed for terminal clients — enforced in UI, server actions, and RPCs (terminal lock + void-invoice lock).
+- **PDF export.** `/crm/clients/[id]/financials/invoice` is a print-ready A4 replica of the reference invoice (`00514-02 Invoice M Shahzad Farooq.pdf`): office header + logo, BILL TO, description table with File no / package / Total Package / step rows / Assessment Fees "Free", invoice-details status table, subtotal (paid), balance due, terms, footer note. Print CSS in `AppShell`/`Sidebar` hides app chrome; export via browser print-to-PDF (`PrintButton`).
+- **PKR-only** enforced by table CHECK constraint and forced in RPCs/actions.
+
 ## Pending / Planned Work
 
+- **Apply migration 0026** to Supabase (invoice tables, RPCs, backfill) before using invoicing in production.
 - **Final Claude Staged-Diff Audit:** Review all 143 staged files before committing the integration branch.
 - **Full Regression Testing:** Manual smoke testing across Stage 1 + Stage 2 + Financials + Assistant + Admin Task Maintenance + Payroll before internal rollout.
 - **Lead Conversion Test:** Verify `convertLeadToClient` works against the manually applied `0023` RPC.
@@ -129,6 +138,7 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 - `0023_crm_convert_lead_to_client_rpc.sql`
 - `0024_crm_raw_intake_ownership.sql` (raw owner/branch/enrichment columns; `needs_enrichment`/`ready_for_promotion` raw statuses; assigned-counselor RLS)
 - `0025_crm_lead_needs_enrichment_and_ops_role.sql` (`crm_leads.needs_enrichment`; `ops` user_role)
+- `0026_crm_client_invoices.sql` (client invoices + steps, invoice RPCs, convert-RPC redefinition, backfill)
 
 ## Current Route Inventory
 
@@ -144,6 +154,7 @@ Helper-based scoping (no DB capability table). Roles: `super_admin`, `admin_hr` 
 - `/crm/clients/[id]/visa`
 - `/crm/clients/[id]/closure`
 - `/crm/clients/[id]/financials`
+- `/crm/clients/[id]/financials/invoice` (print/PDF export)
 - `/crm/assistant` (Internal CRM docs-grounded assistant)
 
 **Admin Routes:**

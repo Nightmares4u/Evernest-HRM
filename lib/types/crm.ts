@@ -58,6 +58,10 @@ export type CrmClientStatus =
   | "alumni"
   | "withdrawn_refunded";
 
+export type CrmClientInvoiceStatus = "draft" | "issued" | "void";
+
+export type CrmClientInvoiceStepStatus = "due" | "paid" | "waived";
+
 export type CrmClientDocState =
   | "uploaded"
   | "under_review"
@@ -318,6 +322,47 @@ export type CrmClientPayment = {
   notes: string | null;
   recorded_by_user_id: string | null;
   created_at: string;
+};
+
+export type CrmClientInvoice = {
+  id: string;
+  client_id: string;
+  invoice_number: string;
+  file_number: string | null;
+  status: CrmClientInvoiceStatus;
+  currency: string;
+  invoice_date: string;
+  due_label: string;
+  bill_to_name: string | null;
+  bill_to_location: string | null;
+  package_title: string;
+  office_name: string;
+  office_address: string;
+  office_phone: string;
+  office_email: string;
+  office_website: string;
+  terms: string;
+  footer_note: string;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CrmClientInvoiceStep = {
+  id: string;
+  invoice_id: string;
+  line_order: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  status: CrmClientInvoiceStepStatus;
+  detail_label: string | null;
+  detail_status: string | null;
+  paid_at: string | null;
+  payment_id: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type CrmClientDocument = {

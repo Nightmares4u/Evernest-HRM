@@ -18,6 +18,8 @@ import type {
   CrmClientCountryMilestoneVM,
   CrmClientDocument,
   CrmClientDocumentVM,
+  CrmClientInvoice,
+  CrmClientInvoiceStep,
   CrmClientPayment,
   CrmClientRefund,
   CrmClientStatus,
@@ -1598,6 +1600,12 @@ export async function getCrmClientDetail(id: string): Promise<{
 
 export async function getCrmClientFinancialsPage(clientId: string): Promise<{
   client: CrmClientVM;
+  invoice: CrmClientInvoice | null;
+  invoiceSteps: CrmClientInvoiceStep[];
+  invoiceSubtotal: number;
+  invoicePaidTotal: number;
+  invoiceWaivedTotal: number;
+  invoiceBalanceDue: number;
   payments: CrmClientPayment[];
   refunds: CrmClientRefund[];
   totalReceived: number;
@@ -1613,7 +1621,12 @@ export async function getCrmClientFinancialsPage(clientId: string): Promise<{
   // Financials excludes ops (canViewClientFinancials), unlike general client view.
   if (!client || !canViewClientFinancials(me, client)) return null;
 
-  const [paymentsRes, refundsRes] = await Promise.all([
+  const [invoiceRes, paymentsRes, refundsRes] = await Promise.all([
+    admin
+      .from("crm_client_invoices")
+      .select("*")
+      .eq("client_id", client.id)
+      .maybeSingle(),
     admin
       .from("crm_client_payments")
       .select("*")
@@ -1626,6 +1639,9 @@ export async function getCrmClientFinancialsPage(clientId: string): Promise<{
       .order("refunded_at", { ascending: false }),
   ]);
 
+  if (invoiceRes.error && invoiceRes.error.code !== "PGRST116") {
+    throw new Error(`getCrmClientFinancialsPage invoice: ${invoiceRes.error.message}`);
+  }
   if (paymentsRes.error) {
     throw new Error(`getCrmClientFinancialsPage payments: ${paymentsRes.error.message}`);
   }
@@ -1633,13 +1649,44 @@ export async function getCrmClientFinancialsPage(clientId: string): Promise<{
     throw new Error(`getCrmClientFinancialsPage refunds: ${refundsRes.error.message}`);
   }
 
+  const invoice = (invoiceRes.data ?? null) as CrmClientInvoice | null;
+  let invoiceSteps: CrmClientInvoiceStep[] = [];
+  if (invoice) {
+    const stepsRes = await admin
+      .from("crm_client_invoice_steps")
+      .select("*")
+      .eq("invoice_id", invoice.id)
+      .order("line_order", { ascending: true });
+
+    if (stepsRes.error) {
+      throw new Error(`getCrmClientFinancialsPage invoice steps: ${stepsRes.error.message}`);
+    }
+    invoiceSteps = (stepsRes.data ?? []) as CrmClientInvoiceStep[];
+  }
+
   const payments = (paymentsRes.data ?? []) as CrmClientPayment[];
   const refunds = (refundsRes.data ?? []) as CrmClientRefund[];
   const totalReceived = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const totalRefunded = refunds.reduce((sum, refund) => sum + Number(refund.amount), 0);
+  const invoiceSubtotal = invoiceSteps.reduce(
+    (sum, step) => sum + Number(step.quantity) * Number(step.unit_price),
+    0
+  );
+  const invoicePaidTotal = invoiceSteps
+    .filter((step) => step.status === "paid")
+    .reduce((sum, step) => sum + Number(step.quantity) * Number(step.unit_price), 0);
+  const invoiceWaivedTotal = invoiceSteps
+    .filter((step) => step.status === "waived")
+    .reduce((sum, step) => sum + Number(step.quantity) * Number(step.unit_price), 0);
 
   return {
     client,
+    invoice,
+    invoiceSteps,
+    invoiceSubtotal,
+    invoicePaidTotal,
+    invoiceWaivedTotal,
+    invoiceBalanceDue: Math.max(0, invoiceSubtotal - invoicePaidTotal - invoiceWaivedTotal),
     payments,
     refunds,
     totalReceived,

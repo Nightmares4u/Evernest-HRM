@@ -5,7 +5,11 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { createAdminClient } from "@/lib/supabase/server";
 import { canRecordClientPayment } from "@/lib/crm/permissions-clients";
-import type { CrmLead } from "@/lib/types/crm";
+import type {
+  CrmClientInvoiceStatus,
+  CrmClientInvoiceStepStatus,
+  CrmLead,
+} from "@/lib/types/crm";
 
 const CRM_FINANCIAL_CURRENCY = "PKR";
 
@@ -51,6 +55,21 @@ function parseOptionalMoney(value: string): number | null {
   return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
+function parseRequiredNonNegativeMoney(value: string): number | null {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
+function parseRequiredQuantity(value: string): number | null {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+function parseInvoiceDate(value: string): string | null {
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
 function requireActiveUser(me: CurrentUser | null): CurrentUser {
   if (!me) redirect("/login");
   if (!me.appUser.is_active) {
@@ -79,6 +98,14 @@ function redirectClient(
       ? `/crm/clients/${clientId}/financials`
       : `/crm/clients/${clientId}`;
   redirect(`${path}?${key}=${encodeURIComponent(message)}`);
+}
+
+function parseInvoiceStatus(value: string): CrmClientInvoiceStatus | null {
+  return value === "draft" || value === "issued" || value === "void" ? value : null;
+}
+
+function parseInvoiceStepStatus(value: string): CrmClientInvoiceStepStatus | null {
+  return value === "due" || value === "paid" || value === "waived" ? value : null;
 }
 
 export async function convertLeadToClient(formData: FormData): Promise<void> {
@@ -211,4 +238,113 @@ export async function recordClientPayment(formData: FormData): Promise<void> {
   revalidatePath(`/crm/clients/${clientId}`);
   revalidatePath(`/crm/clients/${clientId}/financials`);
   redirectClient(clientId, "ok", "Payment recorded.", returnTo);
+}
+
+export async function updateClientInvoice(formData: FormData): Promise<void> {
+  const me = requireActiveUser(await getCurrentUser());
+  const clientId = readString(formData, "client_id");
+  const invoiceId = readString(formData, "invoice_id");
+  if (!clientId) redirect("/crm/clients?error=Client%20id%20is%20required");
+  if (!invoiceId) redirectClient(clientId, "error", "Invoice id is required.", "financials");
+  if (!canRecordClientPayment(me)) {
+    redirectClient(clientId, "error", "Only super admin can update client invoices.", "financials");
+  }
+
+  const status = parseInvoiceStatus(readString(formData, "status"));
+  const invoiceDate = parseInvoiceDate(readString(formData, "invoice_date"));
+  if (!status) redirectClient(clientId, "error", "Invoice status is invalid.", "financials");
+  if (!invoiceDate) redirectClient(clientId, "error", "Invoice date is required.", "financials");
+
+  const admin = createAdminClient();
+
+  // Terminal clients are locked from workflow mutations; enforce in the action
+  // as well as the RPC so the lock holds regardless of migration state.
+  const clientRes = await admin
+    .from("crm_clients")
+    .select("status")
+    .eq("id", clientId)
+    .maybeSingle();
+  if (clientRes.error || !clientRes.data) {
+    redirectClient(clientId, "error", "Client not found.", "financials");
+  }
+  if (clientRes.data!.status === "alumni" || clientRes.data!.status === "withdrawn_refunded") {
+    redirectClient(clientId, "error", "Invoice updates are closed for terminal clients.", "financials");
+  }
+
+  const { error } = await admin.rpc("crm_update_client_invoice", {
+    p_invoice_id: invoiceId,
+    p_invoice_number: readString(formData, "invoice_number"),
+    p_file_number: readString(formData, "file_number"),
+    p_status: status,
+    p_invoice_date: invoiceDate,
+    p_due_label: readString(formData, "due_label"),
+    p_bill_to_name: readString(formData, "bill_to_name"),
+    p_bill_to_location: readString(formData, "bill_to_location"),
+    p_package_title: readString(formData, "package_title"),
+    p_terms: readString(formData, "terms"),
+    p_footer_note: readString(formData, "footer_note"),
+    p_actor_user_id: me.authUserId,
+  });
+
+  if (error) redirectClient(clientId, "error", `Could not update invoice: ${error.message}`, "financials");
+
+  revalidatePath(`/crm/clients/${clientId}`);
+  revalidatePath(`/crm/clients/${clientId}/financials`);
+  revalidatePath(`/crm/clients/${clientId}/financials/invoice`);
+  redirectClient(clientId, "ok", "Invoice updated.", "financials");
+}
+
+export async function upsertClientInvoiceStep(formData: FormData): Promise<void> {
+  const me = requireActiveUser(await getCurrentUser());
+  const clientId = readString(formData, "client_id");
+  const invoiceId = readString(formData, "invoice_id");
+  const stepId = readString(formData, "step_id") || null;
+  if (!clientId) redirect("/crm/clients?error=Client%20id%20is%20required");
+  if (!invoiceId) redirectClient(clientId, "error", "Invoice id is required.", "financials");
+  if (!canRecordClientPayment(me)) {
+    redirectClient(clientId, "error", "Only super admin can update invoice steps.", "financials");
+  }
+
+  const lineOrder = Number.parseInt(readString(formData, "line_order"), 10);
+  const quantity = parseRequiredQuantity(readString(formData, "quantity"));
+  const unitPrice = parseRequiredNonNegativeMoney(readString(formData, "unit_price"));
+  const status = parseInvoiceStepStatus(readString(formData, "status"));
+  const paidAt = parsePakistanDateTime(readString(formData, "paid_at"));
+  const description = readString(formData, "description");
+
+  if (!Number.isInteger(lineOrder) || lineOrder <= 0) {
+    redirectClient(clientId, "error", "Line order must be greater than zero.", "financials");
+  }
+  if (!description) redirectClient(clientId, "error", "Step description is required.", "financials");
+  if (quantity == null) redirectClient(clientId, "error", "Quantity must be greater than zero.", "financials");
+  if (unitPrice == null) redirectClient(clientId, "error", "Unit price must be zero or greater.", "financials");
+  if (!status) redirectClient(clientId, "error", "Step status is invalid.", "financials");
+  if (status === "paid" && !paidAt) {
+    redirectClient(clientId, "error", "Paid at is required when marking a step paid.", "financials");
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.rpc("crm_upsert_client_invoice_step", {
+    p_invoice_id: invoiceId,
+    p_step_id: stepId,
+    p_line_order: lineOrder,
+    p_description: description,
+    p_quantity: quantity,
+    p_unit_price: unitPrice,
+    p_status: status,
+    p_detail_label: readString(formData, "detail_label"),
+    p_detail_status: readString(formData, "detail_status"),
+    p_paid_at: paidAt ? paidAt.toISOString() : null,
+    p_actor_user_id: me.authUserId,
+  });
+
+  if (error) {
+    redirectClient(clientId, "error", `Could not save invoice step: ${error.message}`, "financials");
+  }
+
+  revalidatePath("/admin/financials");
+  revalidatePath(`/crm/clients/${clientId}`);
+  revalidatePath(`/crm/clients/${clientId}/financials`);
+  revalidatePath(`/crm/clients/${clientId}/financials/invoice`);
+  redirectClient(clientId, "ok", "Invoice step saved.", "financials");
 }
