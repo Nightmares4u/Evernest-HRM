@@ -32,12 +32,12 @@ export function AppShell({
     : "";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-gray-50 print:block print:h-auto print:overflow-visible print:bg-white">
       <Sidebar groups={groups} />
 
       {/* Mobile off-canvas drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden print:hidden">
           <div
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
@@ -71,8 +71,8 @@ export function AppShell({
         </div>
       )}
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 print:hidden sm:px-6 lg:px-8">
           <button
             onClick={() => setMobileOpen(true)}
             className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 lg:hidden"
@@ -136,12 +136,14 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl p-4 pb-24 sm:p-6 lg:p-8">{children}</div>
+        <main className="flex-1 overflow-y-auto print:block print:overflow-visible">
+          <div className="mx-auto max-w-7xl p-4 pb-24 print:max-w-none print:p-0 sm:p-6 lg:p-8">{children}</div>
         </main>
       </div>
 
-      <AssistantFloatingButton />
+      <div className="print:hidden">
+        <AssistantFloatingButton />
+      </div>
     </div>
   );
 }

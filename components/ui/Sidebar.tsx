@@ -189,7 +189,7 @@ export function Sidebar({ groups }: { groups: NavGroup[] }) {
 
   return (
     <aside
-      className={`hidden h-full flex-shrink-0 flex-col border-r border-slate-800 bg-slate-900 text-white transition-[width] duration-200 lg:flex ${
+      className={`hidden h-full flex-shrink-0 flex-col border-r border-slate-800 bg-slate-900 text-white transition-[width] duration-200 print:hidden lg:flex ${
         collapsed ? "w-16" : "w-64"
       }`}
     >
