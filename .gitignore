@@ -43,3 +43,4 @@ memory/projects/hrm/seed/users.csv
 
 # OS
 Thumbs.db
+supabase/.temp/

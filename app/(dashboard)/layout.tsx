@@ -30,15 +30,17 @@ export default async function DashboardLayout({
     { href: "/employees", label: "Employees", icon: "users" },
   ];
 
+  // Intake pipeline (raw inbox → leads → conversion) is paused; the
+  // lifecycle now starts at client shells. Routes are gated on
+  // CRM_INTAKE_ENABLED (lib/crm/feature-flags.ts) — restore these nav
+  // items when the pipeline is re-wired:
+  //   { href: "/crm/leads", label: "Leads", icon: "users-round" },
+  //   { href: "/crm/leads/follow-ups", label: "Follow-ups", icon: "calendar" },
+  //   { href: "/crm/transfers", label: "Transfers", icon: "arrow-right-left" },
+  //   isSuperAdmin && { href: "/crm/inbox", label: "Raw Inbox", icon: "inbox" }
   const crmNav: NavItem[] = [
-    { href: "/crm/leads", label: "Leads", icon: "users-round" },
     { href: "/crm/clients", label: "Clients", icon: "briefcase" },
-    { href: "/crm/leads/follow-ups", label: "Follow-ups", icon: "calendar" },
-    { href: "/crm/transfers", label: "Transfers", icon: "arrow-right-left" },
   ];
-  if (isSuperAdmin) {
-    crmNav.push({ href: "/crm/inbox", label: "Raw Inbox", icon: "inbox" });
-  }
 
   const adminNav: NavItem[] = [];
   if (isSuperAdmin) {

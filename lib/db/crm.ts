@@ -52,9 +52,9 @@ import {
 } from "@/lib/crm/permissions-leads";
 import { isWhatsappNumberFallbackActiveNow } from "@/lib/crm/fallback";
 import {
+  canEditClientInvoice,
   canEditClientMilestone,
   canEditClientStatus,
-  canRecordClientPayment,
   canRecordClientRefund,
   canVerifyClientDoc,
   canViewClientFinancials,
@@ -1249,6 +1249,8 @@ function clientRowToVM(row: CrmClientJoinedRow): CrmClientVM {
     client_type: row.client_type,
     client_code: row.client_code,
     status: row.status,
+    customer_name: row.customer_name ?? null,
+    customer_phone: row.customer_phone ?? null,
     target_country: row.target_country,
     target_level: row.target_level,
     agreement_signed_at: row.agreement_signed_at,
@@ -1272,8 +1274,10 @@ function clientRowToVM(row: CrmClientJoinedRow): CrmClientVM {
     withdrawn_reason: row.withdrawn_reason,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    lead_customer_phone: lead?.customer_phone ?? "",
-    lead_customer_name: lead?.customer_name ?? null,
+    // Direct shells carry their own identity; lead join is the fallback for
+    // legacy lead-converted clients.
+    lead_customer_phone: row.customer_phone ?? lead?.customer_phone ?? "",
+    lead_customer_name: row.customer_name ?? lead?.customer_name ?? null,
     assigned_agent_name: assignedAgent?.full_name ?? null,
     branch_code: branch?.code ?? null,
     branch_name: branch?.name ?? null,
@@ -1611,14 +1615,15 @@ export async function getCrmClientFinancialsPage(clientId: string): Promise<{
   totalReceived: number;
   totalRefunded: number;
   netReceived: number;
-  canRecordPayment: boolean;
+  canEditInvoice: boolean;
 } | null> {
   if (!isSupabaseConfigured()) return null;
 
   const me = requireActiveCrmUser(await getCurrentUser());
   const admin = createAdminClient();
   const client = await loadClientVM(admin, clientId);
-  // Financials excludes ops (canViewClientFinancials), unlike general client view.
+  // Financials view matches general client view since the direct-shell pivot
+  // (ops + assigned counselor + branch scope + admins).
   if (!client || !canViewClientFinancials(me, client)) return null;
 
   const [invoiceRes, paymentsRes, refundsRes] = await Promise.all([
@@ -1692,7 +1697,7 @@ export async function getCrmClientFinancialsPage(clientId: string): Promise<{
     totalReceived,
     totalRefunded,
     netReceived: totalReceived - totalRefunded,
-    canRecordPayment: canRecordClientPayment(me) && !isClientTerminal(client),
+    canEditInvoice: canEditClientInvoice(me, client) && !isClientTerminal(client),
   };
 }
 

@@ -272,14 +272,19 @@ export type CrmLead = {
 
 export type CrmClient = {
   id: string;
-  lead_id: string;
+  // Null for direct client shells (post-pivot); set when converted from a lead.
+  lead_id: string | null;
   client_type: CrmClientType;
   client_code: string;
   status: CrmClientStatus;
+  // Identity lives on the client itself for direct shells; for lead-converted
+  // clients these are backfilled from the lead by migration 0027.
+  customer_name: string | null;
+  customer_phone: string | null;
   target_country: string | null;
   target_level: string | null;
-  agreement_signed_at: string;
-  advance_paid_at: string;
+  agreement_signed_at: string | null;
+  advance_paid_at: string | null;
   advance_amount: number | null;
   total_fee: number | null;
   currency: string;
