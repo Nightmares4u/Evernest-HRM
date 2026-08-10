@@ -3,6 +3,7 @@ import { listEmployees, isSupabaseConfigured } from "@/lib/db/queries";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import { personalProfileCompletionStatus } from "@/lib/employees/personal-profile";
+import { shortDatePKT } from "@/lib/attendance/format";
 import type { EmployeeWithJoins } from "@/lib/types/hrm";
 
 const PKR = new Intl.NumberFormat("en-PK", {
@@ -94,6 +95,8 @@ export default async function EmployeesPage() {
               {isSuperAdmin && <Th>Profile</Th>}
               {isSuperAdmin && <Th className="text-right">Salary (PKR)</Th>}
               <Th>Remote days</Th>
+              <Th>Start date</Th>
+              <Th>End date</Th>
               <Th>Flags</Th>
             </tr>
           </thead>
@@ -133,6 +136,10 @@ export default async function EmployeesPage() {
                   </Td>
                 )}
                 <Td className="text-xs">{formatRemoteDays(e.remote_default_days)}</Td>
+                <Td className="text-xs">{shortDatePKT(e.hire_date)}</Td>
+                <Td className="text-xs">
+                  {e.termination_date ? shortDatePKT(e.termination_date) : "—"}
+                </Td>
                 <Td>
                   <div className="flex flex-wrap gap-1">
                     {exemptionBadges(e).map((b) => (
@@ -149,7 +156,7 @@ export default async function EmployeesPage() {
             ))}
             {employees.length === 0 && (
               <tr>
-                <td colSpan={isSuperAdmin ? 9 : 7} className="px-4 py-6 text-center text-sm text-gray-500">
+                <td colSpan={isSuperAdmin ? 11 : 9} className="px-4 py-6 text-center text-sm text-gray-500">
                   No employees visible to your account.
                 </td>
               </tr>

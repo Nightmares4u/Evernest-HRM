@@ -474,6 +474,73 @@ export async function listTodayAttendance(
     });
 }
 
+export async function listPendingAttendanceReviews(): Promise<AttendanceRowVM[]> {
+  if (!isSupabaseConfigured()) {
+    return makeMockTodayAttendance().filter((r) => r.requires_review);
+  }
+
+  const me = await getCurrentUser();
+  if (!me) return [];
+  const actor = actorFromCurrentUser(me);
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .select(
+      `
+      *,
+      employees!inner ( id, user_id, branch_id, full_name, app_users:user_id ( role ), branches ( code ) )
+      `
+    )
+    .eq("requires_review", true)
+    .order("date", { ascending: false });
+
+  if (error) throw new Error(`listPendingAttendanceReviews: ${error.message}`);
+
+  type Row = AttendanceRecord & {
+    employees:
+      | {
+          id: string;
+          user_id: string;
+          branch_id: string | null;
+          full_name: string;
+          app_users: { role: EmployeeWithJoins["user_role"] } | { role: EmployeeWithJoins["user_role"] }[] | null;
+          branches: { code: string } | { code: string }[] | null;
+        }
+      | {
+          id: string;
+          user_id: string;
+          branch_id: string | null;
+          full_name: string;
+          app_users: { role: EmployeeWithJoins["user_role"] } | { role: EmployeeWithJoins["user_role"] }[] | null;
+          branches: { code: string } | { code: string }[] | null;
+        }[]
+      | null;
+  };
+
+  return ((data ?? []) as Row[])
+    .filter((row) => {
+      const emp = pickOne(row.employees);
+      const appUser = emp ? pickOne(emp.app_users) : null;
+      if (!emp) return false;
+      return canSeeEmployee(actor, {
+        id: emp.id,
+        user_id: emp.user_id,
+        branch_id: emp.branch_id,
+        user_role: appUser?.role ?? "employee",
+      });
+    })
+    .map((row) => {
+      const emp = pickOne(row.employees);
+      const branch = emp ? pickOne(emp.branches) : null;
+      return {
+        ...row,
+        employee_full_name: emp?.full_name ?? "?",
+        branch_code: branch?.code ?? null,
+      };
+    });
+}
+
 export async function listEmployeeAttendanceRange(
   employeeId: string,
   startDate: string,

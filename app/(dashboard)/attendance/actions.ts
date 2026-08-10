@@ -29,6 +29,7 @@ import {
 import { resolveEmployeeShift } from "@/lib/attendance/shifts";
 import {
   actorFromCurrentUser,
+  canBulkOverrideAttendance,
   canOverrideAttendance,
 } from "@/lib/auth/permissions";
 import { getCurrentUser } from "@/lib/auth/current-user";
@@ -729,4 +730,114 @@ export async function overrideAttendanceRecord(formData: FormData) {
   revalidatePath("/employees");
   revalidatePath(`/admin/employees/${record.employee_id}`);
   overrideOk(formData, "Attendance override saved.");
+}
+
+const BULK_ACTIONS = ["approve", "override"] as const;
+type BulkAction = (typeof BULK_ACTIONS)[number];
+
+export async function bulkOverrideAttendanceRecords(formData: FormData) {
+  const recordIds = formData
+    .getAll("record_ids")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  const bulkActionRaw = String(formData.get("bulk_action") ?? "").trim();
+  const statusRaw = String(formData.get("status") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  if (recordIds.length === 0) {
+    attendanceFail("Select at least one attendance record to review.");
+  }
+  if (!BULK_ACTIONS.includes(bulkActionRaw as BulkAction)) {
+    attendanceFail("Pick a valid bulk action.");
+  }
+  const bulkAction = bulkActionRaw as BulkAction;
+  if (bulkAction === "override" && !OVERRIDE_STATUSES.includes(statusRaw as AttendanceStatus)) {
+    attendanceFail("Pick a valid corrected status for the bulk override.");
+  }
+  if (!reason) attendanceFail("A reason is required for the whole batch.");
+
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const actor = actorFromCurrentUser(me);
+  if (!canBulkOverrideAttendance(actor)) {
+    attendanceFail("Only super-admins can bulk-review attendance records.");
+  }
+
+  const admin = createAdminClient();
+  const recordSelect = `
+    id, employee_id, date, expected_start, expected_end, status, check_in_at,
+    check_out_at, worked_minutes, late_minutes, is_late, is_half_day, is_absent,
+    requires_review, updated_at
+  `;
+  const { data: records, error: fetchError } = await admin
+    .from("attendance_records")
+    .select(recordSelect)
+    .in("id", recordIds);
+  if (fetchError) attendanceFail(`Could not load selected records: ${fetchError.message}`);
+  if (!records || records.length === 0) {
+    attendanceFail("None of the selected attendance records could be found.");
+  }
+
+  const now = new Date().toISOString();
+  const correctedStatus = bulkAction === "override" ? (statusRaw as AttendanceStatus) : null;
+
+  for (const record of records) {
+    const oldValue = {
+      status: record.status,
+      requires_review: record.requires_review,
+      is_late: record.is_late,
+      is_half_day: record.is_half_day,
+      is_absent: record.is_absent,
+      late_minutes: record.late_minutes,
+      updated_at: record.updated_at,
+    };
+
+    const newValue =
+      correctedStatus === null
+        ? {
+            requires_review: false,
+            approved_by: me.authUserId,
+            approval_note: reason,
+            updated_at: now,
+          }
+        : {
+            status: correctedStatus,
+            mode: modeForOverrideStatus(correctedStatus),
+            requires_review: false,
+            approved_by: me.authUserId,
+            approval_note: reason,
+            is_late: correctedStatus === "late" || correctedStatus === "remote_late",
+            is_half_day:
+              correctedStatus === "half_day" || correctedStatus === "remote_half_day",
+            is_absent: correctedStatus === "absent",
+            late_minutes:
+              correctedStatus === "late" || correctedStatus === "remote_late"
+                ? lateMinutesFrom(record.expected_start, record.check_in_at)
+                : 0,
+            updated_at: now,
+          };
+
+    const { error: updateError } = await admin
+      .from("attendance_records")
+      .update(newValue)
+      .eq("id", record.id);
+    if (updateError) {
+      attendanceFail(`Bulk update failed on one record: ${updateError.message}`);
+    }
+
+    await admin.from("audit_logs").insert({
+      actor_id: me.authUserId,
+      target_type: "attendance_record",
+      target_id: record.id,
+      action: bulkAction === "approve" ? "bulk_approve_attendance" : "bulk_override_attendance",
+      old_value: oldValue,
+      new_value: newValue,
+      reason,
+    });
+  }
+
+  revalidatePath("/attendance");
+  revalidatePath("/dashboard");
+  revalidatePath("/employees");
+  attendanceOk(`${records.length} attendance record(s) reviewed.`);
 }

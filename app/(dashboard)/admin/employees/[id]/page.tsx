@@ -374,6 +374,11 @@ function ProfilePanel({
         <Info label="Manager" value={employee.manager_name ?? "—"} />
         <Info label="Leave balance" value={`${leaveBalance.toFixed(1)} day(s)`} />
         <Info label="Remote days" value={formatRemoteDays(employee.remote_default_days)} />
+        <Info label="Employment start date" value={shortDatePKT(employee.hire_date)} />
+        <Info
+          label="Employment end date"
+          value={employee.termination_date ? shortDatePKT(employee.termination_date) : "—"}
+        />
       </dl>
 
       {canEdit && (
@@ -454,6 +459,12 @@ function ProfilePanel({
             </Field>
             <Field label="Custom shift end">
               <input name="custom_shift_end" type="time" defaultValue={employee.custom_shift_end?.slice(0, 5) ?? ""} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Employment start date">
+              <input name="hire_date" type="date" required defaultValue={employee.hire_date} className={INPUT_CLASS} />
+            </Field>
+            <Field label="Employment end date">
+              <input name="termination_date" type="date" defaultValue={employee.termination_date ?? ""} className={INPUT_CLASS} />
             </Field>
             <Field label="Update reason">
               <input name="reason" required className={INPUT_CLASS} placeholder="Role change, profile correction, shift update..." />

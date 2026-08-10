@@ -145,6 +145,10 @@ export function canOverrideAttendance(
   return roleRank(actor.role) > roleRank(target.user_role);
 }
 
+export function canBulkOverrideAttendance(actor: ActorForPermissions): boolean {
+  return actor.is_active && actor.role === "super_admin";
+}
+
 export function canAssignTask(
   actor: ActorForPermissions,
   target: TargetEmployeeForPermissions | null

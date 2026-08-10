@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createEmployee } from "@/app/(dashboard)/admin/employees/actions";
+import { todayPKT } from "@/lib/attendance/format";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   listBranches,
@@ -244,6 +245,23 @@ export default async function NewEmployeePage({
 
           <Field label="Custom shift end">
             <input name="custom_shift_end" type="time" className={INPUT_CLASS} />
+          </Field>
+
+          <Field label="Employment start date" required>
+            <input
+              name="hire_date"
+              type="date"
+              required
+              defaultValue={todayPKT()}
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field label="Employment end date">
+            <input name="termination_date" type="date" className={INPUT_CLASS} />
+            <p className="mt-1 text-xs text-gray-500">
+              Leave blank unless the employee already has a known end date.
+            </p>
           </Field>
         </div>
 

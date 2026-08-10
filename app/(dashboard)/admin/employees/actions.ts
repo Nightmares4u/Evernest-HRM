@@ -96,6 +96,12 @@ function currentYearMonth() {
   };
 }
 
+function parseDate(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
 export async function createEmployee(formData: FormData) {
   const errorPath = "/admin/employees/new";
   const me = await requireSuperAdmin(errorPath);
@@ -120,6 +126,10 @@ export async function createEmployee(formData: FormData) {
   const customShiftEnabled = formData.get("custom_shift_enabled") === "on";
   const customShiftStart = parseTime(readString(formData, "custom_shift_start"));
   const customShiftEnd = parseTime(readString(formData, "custom_shift_end"));
+  const hireDateInput = readString(formData, "hire_date");
+  const hireDate = parseDate(hireDateInput);
+  const terminationDateInput = readString(formData, "termination_date");
+  const terminationDate = parseDate(terminationDateInput);
 
   if (!fullName) fail(errorPath, "Full name is required.");
   if (!email || !email.includes("@")) fail(errorPath, "A valid email is required.");
@@ -137,6 +147,13 @@ export async function createEmployee(formData: FormData) {
   }
   if (customShiftEnabled && (!customShiftStart || !customShiftEnd)) {
     fail(errorPath, "Custom shift start and end are required when override is enabled.");
+  }
+  if (!hireDate) fail(errorPath, "A valid employment start date is required.");
+  if (terminationDateInput && !terminationDate) {
+    fail(errorPath, "Employment end date must be a valid date.");
+  }
+  if (terminationDate && terminationDate < hireDate) {
+    fail(errorPath, "Employment end date cannot be before the start date.");
   }
 
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -187,7 +204,8 @@ export async function createEmployee(formData: FormData) {
       payroll_exempt: false,
       remote_allowed: remoteAllowed,
       remote_default_days: remoteAllowed ? remoteDefaultDays : [],
-      hire_date: todayPKT(),
+      hire_date: hireDate,
+      termination_date: terminationDate,
     })
     .select("id")
     .single();
@@ -237,6 +255,8 @@ export async function createEmployee(formData: FormData) {
       attendance_exempt: attendanceExempt,
       remote_allowed: remoteAllowed,
       remote_default_days: remoteAllowed ? remoteDefaultDays : [],
+      hire_date: hireDate,
+      termination_date: terminationDate,
       leave_balance_month: { year, month, accrued: 1.0 },
     },
     reason: "Employee onboarded by super-admin",
@@ -279,6 +299,10 @@ export async function updateEmployee(formData: FormData) {
   const customShiftEnabled = formData.get("custom_shift_enabled") === "on";
   const customShiftStart = parseTime(readString(formData, "custom_shift_start"));
   const customShiftEnd = parseTime(readString(formData, "custom_shift_end"));
+  const hireDateInput = readString(formData, "hire_date");
+  const hireDate = parseDate(hireDateInput);
+  const terminationDateInput = readString(formData, "termination_date");
+  const terminationDate = parseDate(terminationDateInput);
   const reason = readString(formData, "reason");
 
   if (!fullName) fail(errorPath, "Full name is required.");
@@ -295,6 +319,15 @@ export async function updateEmployee(formData: FormData) {
   if (customShiftEnabled && (!customShiftStart || !customShiftEnd)) {
     fail(errorPath, "Custom shift start and end are required when override is enabled.");
   }
+  if (hireDateInput && !hireDate) {
+    fail(errorPath, "Employment start date must be a valid date.");
+  }
+  if (terminationDateInput && !terminationDate) {
+    fail(errorPath, "Employment end date must be a valid date.");
+  }
+  if (hireDate && terminationDate && terminationDate < hireDate) {
+    fail(errorPath, "Employment end date cannot be before the start date.");
+  }
   if (!reason) fail(errorPath, "Update reason is required.");
 
   const admin = createAdminClient();
@@ -307,6 +340,7 @@ export async function updateEmployee(formData: FormData) {
       custom_shift_enabled, custom_shift_start, custom_shift_end,
       monthly_salary, role_description, employment_status,
       attendance_exempt, remote_allowed, remote_default_days,
+      hire_date, termination_date,
       app_users:user_id ( display_name, email, role, is_active )
       `
     )
@@ -357,6 +391,10 @@ export async function updateEmployee(formData: FormData) {
       : existing.attendance_exempt,
     remote_allowed: remoteAllowed,
     remote_default_days: remoteAllowed ? remoteDefaultDays : [],
+    hire_date: canEditSensitive && hireDate ? hireDate : existing.hire_date,
+    termination_date: canEditSensitive
+      ? terminationDate
+      : existing.termination_date,
     updated_at: new Date().toISOString(),
   };
   const nextRole = canEditSensitive ? role : existingUser?.role ?? "employee";
@@ -382,6 +420,8 @@ export async function updateEmployee(formData: FormData) {
     ["attendance_exempt", existing.attendance_exempt, nextEmployee.attendance_exempt],
     ["remote_allowed", existing.remote_allowed, nextEmployee.remote_allowed],
     ["remote_default_days", existing.remote_default_days ?? [], nextEmployee.remote_default_days],
+    ["hire_date", existing.hire_date, nextEmployee.hire_date],
+    ["termination_date", existing.termination_date, nextEmployee.termination_date],
     ["role", existingUser?.role, nextRole],
     ["is_active", existingUser?.is_active, nextIsActive],
   ]

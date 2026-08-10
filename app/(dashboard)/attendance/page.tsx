@@ -1,4 +1,5 @@
 import { Chip, StatusChip } from "@/components/StatusChip";
+import { BulkAttendanceReview } from "@/components/attendance/BulkAttendanceReview";
 import {
   formatTimePKT,
   formatWorkedMinutes,
@@ -8,12 +9,13 @@ import {
 import {
   isSupabaseConfigured,
   listEmployees,
+  listPendingAttendanceReviews,
   listTodayAttendance,
 } from "@/lib/db/queries";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isBranchManagerOrAboveRole } from "@/lib/auth/permissions";
 import type { AttendanceStatus } from "@/lib/types/hrm";
-import { overrideAttendanceRecord } from "./actions";
+import { bulkOverrideAttendanceRecords, overrideAttendanceRecord } from "./actions";
 
 const PRESENT_STATES: AttendanceStatus[] = [
   "present",
@@ -58,6 +60,8 @@ export default async function AttendancePage({
     getCurrentUser(),
   ]);
   const canManageAttendance = me ? isBranchManagerOrAboveRole(me.appUser.role) : false;
+  const isSuperAdmin = me?.appUser.role === "super_admin";
+  const pendingReviews = isSuperAdmin ? await listPendingAttendanceReviews() : [];
 
   const presentCount = records.filter((r) => PRESENT_STATES.includes(r.status)).length;
   const lateCount = records.filter((r) => LATE_STATES.includes(r.status)).length;
@@ -107,6 +111,14 @@ export default async function AttendancePage({
         <SummaryCard label="Pending review" value={pendingCount} tone="yellow" />
       </div>
 
+      {isSuperAdmin && (
+        <BulkAttendanceReview
+          records={pendingReviews}
+          bulkOverrideAction={bulkOverrideAttendanceRecords}
+        />
+      )}
+
+      <h2 className="text-sm font-semibold text-gray-700">Today&apos;s attendance</h2>
       <div className="overflow-hidden rounded-lg bg-white shadow ring-1 ring-black/5">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
